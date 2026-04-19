@@ -1,0 +1,182 @@
+{
+    "meta": {
+        "lastTouchedVersion": "2026.2.3-1",
+        "lastTouchedAt": "2026-02-07T11:58:45.952Z"
+    },
+    "wizard": {
+        "lastRunAt": "2026-02-07T12:09:22.407Z",
+        "lastRunVersion": "2026.02.07",
+        "lastRunCommand": "onboard",
+        "lastRunMode": "local"
+    },
+    "models": {
+        "mode": "merge",
+        "providers": {
+            "yunyi-claude": {
+                "baseUrl": "https://claudelike.online/api",
+                "apiKey": "cr_96a620e5d6375d920ab1e1ad04f3f03b624d45188d091d47bbf1a5b8391b3f13",
+                "auth": "api-key",
+                "api": "anthropic-messages",
+                "headers": {},
+                "authHeader": false,
+                "models": [
+                    {
+                        "id": "claude-opus-4-6",
+                        "name": "Claude Opus 4.6 "
+                    }
+                ]
+            },
+            "zhkj": {
+                "baseUrl": "https://zhkj.dpdns.org/v1",
+                "apiKey": "O9btjF5QbWsxx-o3Pc4xSU6E2vzMuDbr",
+                "auth": "api-key",
+                "api": "openai-responses",
+                "models": [
+                    {
+                        "id": "claude-opus-4-6-thinking",
+                        "name": "Claude Opus 4.6 Thinking"
+                    },
+                    {
+                        "id": "claude-sonnet-4-6",
+                        "name": "Claude Sonnet 4.6"
+                    },
+                    {
+                        "id": "gemini-3-flash",
+                        "name": "Gemini 3 Flash"
+                    },
+                    {
+                        "id": "gemini-3-pro-high",
+                        "name": "Gemini 3 Pro High"
+                    },
+                    {
+                        "id": "gemini-3.1-pro-high",
+                        "name": "Gemini 3.1 Pro High"
+                    },
+                    {
+                        "id": "gemini-3.1-pro-low",
+                        "name": "Gemini 3.1 Pro Low"
+                    },
+                    {
+                        "id": "gemini-3.1-flash-image",
+                        "name": "Gemini 3.1 Flash Image"
+                    },
+                    {
+                        "id": "gemini-2.5-flash",
+                        "name": "Gemini 2.5 Flash"
+                    },
+                    {
+                        "id": "gemini-2.5-flash-lite",
+                        "name": "Gemini 2.5 Flash Lite"
+                    },
+                    {
+                        "id": "gpt-oss-120b-medium",
+                        "name": "GPT-OSS 120B Medium"
+                    },
+                    {
+                        "id": "gpt-5.3-codex",
+                        "name": "gpt-5.3-codex"
+                    },
+                    {
+                        "id": "gpt-5.3-codex-spark",
+                        "name": "gpt-5.3-codex-spark"
+                    },
+                    {
+                        "id": "tab_jump_flash_lite_preview",
+                        "name": "Tab Jump Flash Lite Pre
+view"},{"id": "tab_flash_lite_preview","name": "Tab Flash Lite Preview"
+                    }
+                ]
+            },
+            "gmn": {
+                "baseUrl": "https://gmn.chuangzuoli.com/v1",
+                "apiKey": "sk-b2eb474a056da6cdb08c926899c1ca5b2f2f68318d9afa0e789a07cd05ed5a3e",
+                "auth": "api-key",
+                "api": "openai-responses",
+                "models": [
+                    {
+                        "id": "gpt-5.3-codex",
+                        "name": "GPT-5.3 Codex",
+                        "reasoning": true,
+                        "input": [
+                            "text",
+                            "image"
+                        ],
+                        "cost": {
+                            "input": 1.75,
+                            "output": 14,
+                            "cacheRead": 0.175,
+                            "cacheWrite": 0.175
+                        },
+                        "contextWindow": 400000,
+                        "maxTokens": 128000
+                    }
+                ]
+            }
+        }
+    },
+    "agents": {
+        "defaults": {
+            "model": {
+                "primary": "yunyi-claude/claude-opus-4-6"
+            },
+            "workspace": "/home/openclaw/.openclaw/workspace",
+            "compaction": {
+                "mode": "safeguard"
+            },
+            "maxConcurrent": 4,
+            "subagents": {
+                "maxConcurrent": 8
+            }
+        }
+    },
+    "messages": {
+        "ackReactionScope": "group-mentions"
+    },
+    "commands": {
+        "native": "auto",
+        "nativeSkills": "auto"
+    },
+    "hooks": {
+        "internal": {
+            "enabled": true,
+            "entries": {
+                "boot-md": {
+                    "enabled": true
+                },
+                "command-logger": {
+                    "enabled": true
+                },
+                "session-memory": {
+                    "enabled": true
+                }
+            }
+        }
+    },
+    "gateway": {
+        "port": 18789,
+        "mode": "local",
+        "bind": "loopback",
+        "auth": {
+            "mode": "token",
+            "token": "ba9cda2f202c2f435ee5510a981a9f15759a6eee4df5d47b"
+        },
+        "tailscale": {
+            "mode": "off",
+            "resetOnExit": false
+        }
+    },
+    "plugins": {
+        "entries": {
+            "telegram": {
+                "enabled": true
+            }
+        }
+    },
+    "channels": {
+        "telegram": {
+            "enabled": true,
+            "botToken": "8354271112:AAFaowq5JL_-dZ3bb6LvUIeMoM2Qv4SPKPQ",
+            "name": "Yf-929"
+        }
+    }
+}
