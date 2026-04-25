@@ -3,19 +3,73 @@ import { ref } from 'vue'
 import { fetchRouters } from '../../api/auth'
 import MainLayout from '../../layout/index.vue'
 import ParentView from '../../layout/components/ParentView.vue'
+import PlaceholderPage from '../../pages/PlaceholderPage.vue'
 
 const viewModules = import.meta.glob('../../views/**/*.vue')
+const pageModules = import.meta.glob('../../pages/**/*.vue')
+
+/**
+ * 后端 sys_menu.component → 前端组件路径的显式别名。
+ *
+ * 仅在后端 component 写法跟前端文件名对不上时才需要加一条。优先约定：
+ *   - 后端 component 写 "xxx/yyy/index"  → 前端在 src/views/xxx/yyy/index.vue 放组件
+ *   - 后端 component 写 "XxxPage"        → 前端在 src/pages/XxxPage.vue 放组件
+ * 只要任一约定满足，`loadView` 会自动解析，不需要在这里加映射。
+ *
+ * 支持前缀：
+ *   - "views:foo/bar"  → src/views/foo/bar.vue
+ *   - "pages:FooPage"  → src/pages/FooPage.vue
+ *   - 无前缀           → 先找 views/，找不到再找 pages/
+ */
+const componentAliasMap = {
+  // 成本试算
+  'cost-trial/oa-form/index':       'pages:OaFormListPage',
+  'cost-trial/trial-run/index':     'pages:CostRunPage',
+  'cost-trial/trial-result/index':  'pages:CostRunResultPage',
+  'cost-trial/cost-detail/index':   'pages:CostRunDetailPage',
+  // 基础数据
+  'base-data/material/index':        'views:base/materweight/index',
+  'base-data/material-price/index':  'views:base/map/index',
+  'base-data/product-property/index':'views:base/productProperty/index',
+  'base-data/bom/index':             'pages:BomManagePage',
+  'base-data/salary-cost/index':     'views:base/salary/index',
+  // 费率管理
+  'rate/manufacture-rate/index':     'views:base/manufactureRate/index',
+  'rate/three-expense-rate/index':   'views:base/threeExpenseRate/index',
+  'rate/quality-loss-rate/index':    'views:base/quantityLoss/index',
+  'rate/department-fund-rate/index': 'views:base/fixed/index',
+  'rate/other-expense-rate/index':   'views:base/other/index',
+  'rate/aux-rate/index':             'views:base/aux/subject/index',
+  'rate/finance-base-price/index':   'pages:PriceLinkedFinanceBasePage',
+  // 价格管理
+  'price/price-variable/index':      'pages:PriceVariableAdminPage',
+  'price/price-fixed/index':         'views:price/fixed/index',
+  'price/price-linked/index':        'views:price/linked/result/index',
+  'price/price-range/index':         'views:price/range/index',
+}
 
 function loadView(component) {
   if (!component) return null
-  const key = `../../views/${component}.vue`
-  return viewModules[key] || null
+  const mapped = componentAliasMap[component] || component
+  if (mapped.startsWith('views:')) {
+    return viewModules[`../../views/${mapped.slice(6)}.vue`] || null
+  }
+  if (mapped.startsWith('pages:')) {
+    return pageModules[`../../pages/${mapped.slice(6)}.vue`] || null
+  }
+  return (
+    viewModules[`../../views/${mapped}.vue`] ||
+    pageModules[`../../pages/${mapped}.vue`] ||
+    null
+  )
 }
 
 /**
  * 将后端 RouterVO 树节点转成 Vue Router 路由对象。
  * - 顶层目录（isTop=true）→ MainLayout；嵌套目录 → ParentView（避免双层 Layout）
- * - 其他 → 从 src/views/{component}.vue 动态加载；加载失败时返回 null（调用方 filter）
+ * - 叶子组件 → 从 src/views/{component}.vue 或 src/pages/{component}.vue 动态加载
+ * - 加载失败的叶子节点 → 降级为 PlaceholderPage，同时在控制台 warn
+ *   （绝不返回 null 丢菜单，避免触发全量 fallback 把无权限菜单也展示给用户）
  * - route.name 统一用 dyn-{menuId} 避免与静态路由冲突、便于 logout 清理
  */
 function toRoute(node, isTop = true) {
@@ -28,11 +82,16 @@ function toRoute(node, isTop = true) {
     component = isTop ? MainLayout : ParentView
   } else {
     const loader = loadView(node.component)
-    if (!loader) {
-      if (!hasChildrenRaw) return null
+    if (loader) {
+      component = loader
+    } else if (hasChildrenRaw) {
       component = isTop ? MainLayout : ParentView
     } else {
-      component = loader
+      console.warn(
+        `[permission] 无法解析菜单组件: "${node.component}"（menuId=${node.menuId}, title="${node.meta?.title || ''}"）。` +
+          ` 请在 src/views/${node.component}.vue 或 src/pages/ 下放置对应组件，或在 permission.js 的 componentAliasMap 中添加映射。暂以占位页兜底。`
+      )
+      component = PlaceholderPage
     }
   }
 
@@ -67,7 +126,10 @@ export const usePermissionStore = defineStore('permission', () => {
 
   async function generateRoutes() {
     const tree = (await fetchRouters()) || []
-    routes.value = tree.map(toRoute).filter(Boolean)
+    // 显式包一层，避免 map 把 index 当作 toRoute 的 isTop 参数传进去 ——
+    // 那样 tree[0] 的 isTop=0（falsy）会被误判为非顶级，拿不到 MainLayout，
+    // 导致第一组菜单点进去没有侧边栏 / 导航栏。
+    routes.value = tree.map((node) => toRoute(node)).filter(Boolean)
     loaded.value = true
     return routes.value
   }

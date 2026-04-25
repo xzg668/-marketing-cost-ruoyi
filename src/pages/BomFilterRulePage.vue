@@ -1,656 +1,837 @@
 <template>
-  <div class="bom-filter-page">
-    <el-card shadow="never" class="filter-card">
-      <div class="filter-header">
-        <div class="filter-title">BOM明细过滤规则</div>
-        <div class="filter-actions">
-          <el-button type="primary" @click="applyRule">预览</el-button>
-          <el-button @click="resetRule">重置</el-button>
+  <!-- BOM 过滤规则维护页（T6 整页替换）
+       旧版是 A/B/C/D 本地 stub，无后端联动；
+       新版对接 /api/v1/bom/drill-rules CRUD + 启停 + 软删 -->
+  <div class="base-page">
+    <el-card shadow="never" class="header-card">
+      <div class="header-row">
+        <div>
+          <div class="page-title">BOM 过滤规则</div>
+          <div class="page-subtitle">
+            规则命中后在 Flatten 阶段决定节点动作（停止下钻 / 排除）。
+            修改后需重新跑 Flatten 才会生效。
+          </div>
+        </div>
+        <div class="header-actions">
+          <el-button type="primary" @click="openCreate">新增规则</el-button>
+          <el-button :loading="loading" @click="reload">刷新</el-button>
+          <!-- 高级模式入口：IT 用，或财务配向导不够用时直接进 -->
+          <el-button link type="info" @click="openCreateAdvanced">高级模式 →</el-button>
         </div>
       </div>
-      <el-form :inline="true" label-width="90px" class="rule-form">
-        <el-form-item label="BOM编码">
-          <el-select v-model="form.bomCode" placeholder="选择BOM">
-            <el-option label="全部" value="" />
-            <el-option v-for="code in bomOptions" :key="code" :label="code" :value="code" />
+
+      <el-form :inline="true" class="filter-form">
+        <el-form-item label="启用状态">
+          <el-select
+            v-model="filters.enabled"
+            placeholder="全部"
+            clearable
+            style="width: 140px"
+            @change="reload"
+          >
+            <el-option label="启用" :value="1" />
+            <el-option label="停用" :value="0" />
           </el-select>
         </el-form-item>
-        <el-form-item label="过滤规则">
-          <el-radio-group v-model="form.rule">
-            <el-radio-button label="A">规则A</el-radio-button>
-            <el-radio-button label="B">规则B</el-radio-button>
-            <el-radio-button label="C">规则C</el-radio-button>
-            <el-radio-button label="D">规则D</el-radio-button>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item v-if="showShapeAttr" label="形态属性">
-          <el-select v-model="form.shapeAttr" placeholder="全部">
-            <el-option label="全部" value="" />
-            <el-option label="制造件" value="制造件" />
-            <el-option label="采购件" value="采购件" />
+        <el-form-item label="匹配类型">
+          <el-select
+            v-model="filters.matchType"
+            placeholder="全部"
+            clearable
+            style="width: 260px"
+            @change="reload"
+          >
+            <el-option
+              v-for="opt in MATCH_TYPE_OPTIONS"
+              :key="opt.value"
+              :label="opt.label"
+              :value="opt.value"
+            />
           </el-select>
-        </el-form-item>
-        <el-form-item v-if="showLevel" label="层级范围">
-          <el-input-number v-model="form.levelFrom" :min="1" />
-          <span class="range-sep">至</span>
-          <el-input-number v-model="form.levelTo" :min="1" />
-        </el-form-item>
-        <el-form-item label="父子展示">
-          <el-switch v-model="form.includeParents" active-text="展示父件链" />
         </el-form-item>
       </el-form>
     </el-card>
 
-    <div class="summary-grid">
-      <el-card shadow="never" class="summary-card">
-        <div class="summary-title">规则说明</div>
-        <div class="summary-content">
-          <div class="summary-row">
-            <span class="summary-label">当前规则</span>
-            <span class="summary-value">{{ currentRule.label }}</span>
-            <el-tag size="small" type="info">{{ currentRule.title }}</el-tag>
-          </div>
-          <div class="summary-row">
-            <span class="summary-label">规则描述</span>
-            <span class="summary-value">{{ currentRule.desc }}</span>
-          </div>
-          <div class="summary-row">
-            <span class="summary-label">形态属性</span>
-            <span class="summary-value">
-              {{ showShapeAttr ? (applied.shapeAttr || '全部') : '不限制' }}
-            </span>
-          </div>
-          <div class="summary-row">
-            <span class="summary-label">层级范围</span>
-            <span class="summary-value">
-              {{ showLevel ? levelRangeText : '不限制' }}
-            </span>
-          </div>
-        </div>
-      </el-card>
-
-      <el-card shadow="never" class="summary-card stats-card">
-        <div class="summary-title">规则影响</div>
-        <div class="stats-content">
-          <div class="stat-item">
-            <div class="stat-label">BOM料件总数</div>
-            <div class="stat-value">{{ stats.total }}</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">叶子节点数</div>
-            <div class="stat-value">{{ stats.leaf }}</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">规则筛选数</div>
-            <div class="stat-value">{{ stats.filtered }}</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-label">含父件后数量</div>
-            <div class="stat-value">{{ stats.included }}</div>
-          </div>
-        </div>
-      </el-card>
-    </div>
-
     <el-card shadow="never">
-      <div class="result-header">
-        <div class="result-title">过滤结果预览</div>
-        <div class="result-meta">
-          <el-tag size="small" type="success">共 {{ total }} 条</el-tag>
-        </div>
-      </div>
-      <el-tabs v-model="activeTab">
-        <el-tab-pane label="列表视图" name="list">
-          <el-table :data="pagedRows" stripe v-loading="loading">
-            <el-table-column prop="bomCode" label="BOM编码" width="120" />
-            <el-table-column prop="itemCode" label="料号" width="160" />
-            <el-table-column prop="itemName" label="名称" min-width="160" />
-            <el-table-column prop="itemSpec" label="规格" min-width="160" />
-            <el-table-column prop="itemModel" label="型号" min-width="160" />
-            <el-table-column prop="bomLevel" label="层级" width="90" />
-            <el-table-column prop="parentCode" label="父件" width="160" />
-            <el-table-column prop="shapeAttr" label="形态属性" width="100" />
-            <template #empty>
-              <el-empty description="暂无可预览的数据" />
-            </template>
-          </el-table>
-          <BasePagination
-            v-model:current-page="currentPage"
-            v-model:page-size="pageSize"
-            :total="total"
-          />
-        </el-tab-pane>
-        <el-tab-pane label="结构视图" name="tree">
-          <el-table
-            :data="treeRows"
-            row-key="rowKey"
-            :tree-props="{ children: 'children' }"
-            stripe
-          >
-            <el-table-column prop="itemCode" label="料号" width="160" />
-            <el-table-column prop="itemName" label="名称" min-width="160" />
-            <el-table-column prop="itemSpec" label="规格" min-width="160" />
-            <el-table-column prop="itemModel" label="型号" min-width="160" />
-            <el-table-column prop="bomLevel" label="层级" width="90" />
-            <el-table-column prop="shapeAttr" label="形态属性" width="100" />
-            <template #empty>
-              <el-empty description="暂无可预览的数据" />
-            </template>
-          </el-table>
-        </el-tab-pane>
-      </el-tabs>
+      <el-table
+        :data="rows"
+        v-loading="loading"
+        stripe
+        empty-text="暂无规则"
+      >
+        <el-table-column prop="id" label="ID" width="70" />
+        <el-table-column label="匹配类型" width="220">
+          <template #default="{ row }">
+            <el-tag size="small" :type="matchTypeTagType(row.matchType)">
+              {{ row.matchType }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column
+          prop="matchValue"
+          label="匹配值"
+          min-width="160"
+          show-overflow-tooltip
+        />
+        <el-table-column label="下钻动作" width="170">
+          <template #default="{ row }">
+            <el-tag
+              size="small"
+              :type="row.drillAction === 'EXCLUDE' ? 'danger' : 'warning'"
+            >{{ row.drillAction }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="标记子树成本" width="120" align="center">
+          <template #default="{ row }">
+            <el-icon v-if="row.markSubtreeCostRequired === 1" color="#67c23a">
+              <icon-check />
+            </el-icon>
+            <span v-else class="dim">—</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="priority" label="优先级" width="90" align="right" />
+        <el-table-column label="启用" width="80" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.enabled === 1 ? 'success' : 'info'" size="small">
+              {{ row.enabled === 1 ? '是' : '否' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="生效期" width="200">
+          <template #default="{ row }">
+            <span class="dim">
+              {{ row.effectiveFrom || '—' }} ~ {{ row.effectiveTo || '—' }}
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column
+          prop="businessUnitType"
+          label="业务单元"
+          width="110"
+        >
+          <template #default="{ row }">
+            <span>{{ row.businessUnitType || '全局' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column
+          prop="remark"
+          label="备注"
+          min-width="160"
+          show-overflow-tooltip
+        />
+        <el-table-column label="操作" width="220" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+            <el-button link type="warning" @click="onToggle(row)">
+              {{ row.enabled === 1 ? '停用' : '启用' }}
+            </el-button>
+            <el-button link type="danger" @click="onDelete(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
     </el-card>
+
+    <!-- T10：向导弹窗（财务默认入口） -->
+    <BomRuleWizardDialog
+      v-model="wizardVisible"
+      :editing-rule="wizardEditingRule"
+      @saved="onWizardSaved"
+      @switch-advanced="onSwitchToAdvanced"
+    />
+
+    <!-- 高级模式弹窗（原 JSON 编辑对话框，保留给 IT 及非标规则） -->
+    <el-dialog
+      v-model="dialogVisible"
+      :title="editingId ? '编辑规则（高级模式）' : '新增规则（高级模式）'"
+      width="560px"
+      :close-on-click-modal="false"
+      @close="resetForm"
+    >
+      <el-form
+        ref="formRef"
+        :model="form"
+        :rules="formRules"
+        label-width="140px"
+      >
+        <el-form-item label="匹配类型" prop="matchType">
+          <el-select v-model="form.matchType" style="width: 100%">
+            <el-option
+              v-for="opt in MATCH_TYPE_OPTIONS"
+              :key="opt.value"
+              :label="opt.label"
+              :value="opt.value"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="匹配值" prop="matchValue" v-if="form.matchType !== 'COMPOSITE'">
+          <el-input
+            v-model="form.matchValue"
+            placeholder="按匹配类型含义填：名称关键字 / 料号前缀 / 主分类名..."
+          />
+        </el-form-item>
+
+        <!-- T8 复合条件编辑器（只在 matchType=COMPOSITE 时显示） -->
+        <template v-if="form.matchType === 'COMPOSITE'">
+          <el-divider content-position="left">
+            <el-text size="small" type="info">复合条件（所有三组取 AND 语义）</el-text>
+          </el-divider>
+
+          <!-- 本节点条件 -->
+          <el-form-item label="本节点条件">
+            <div class="clause-block">
+              <div
+                v-for="(clause, idx) in composite.nodeConditions"
+                :key="'node-' + idx"
+                class="clause-row"
+              >
+                <el-select v-model="clause.field" placeholder="字段" style="width: 220px">
+                  <el-option
+                    v-for="opt in CONDITION_FIELD_OPTIONS"
+                    :key="opt.value"
+                    :label="opt.label"
+                    :value="opt.value"
+                  />
+                </el-select>
+                <el-select v-model="clause.op" placeholder="操作符" style="width: 120px">
+                  <el-option
+                    v-for="opt in CONDITION_OP_OPTIONS"
+                    :key="opt.value"
+                    :label="opt.label"
+                    :value="opt.value"
+                  />
+                </el-select>
+                <!-- IN 用多选，字段为 material_category_1/2 时从字典拉；其他走文本 tag 自由输入 -->
+                <el-select
+                  v-if="clause.op === 'IN' && (clause.field === 'material_category_1' || clause.field === 'material_category_2')"
+                  v-model="clause.values"
+                  multiple
+                  filterable
+                  allow-create
+                  placeholder="从字典选或自由填"
+                  style="flex: 1"
+                >
+                  <el-option
+                    v-for="opt in categoryDictOptions"
+                    :key="opt.value"
+                    :label="opt.label"
+                    :value="opt.value"
+                  />
+                </el-select>
+                <el-select
+                  v-else-if="clause.op === 'IN'"
+                  v-model="clause.values"
+                  multiple
+                  filterable
+                  allow-create
+                  placeholder="输入多个值（回车添加）"
+                  style="flex: 1"
+                />
+                <el-input
+                  v-else
+                  v-model="clause.value"
+                  placeholder="值"
+                  style="flex: 1"
+                />
+                <el-button link type="danger" @click="removeClause('nodeConditions', idx)">删除</el-button>
+              </div>
+              <el-button link type="primary" @click="addClause('nodeConditions')">+ 加一条本节点条件</el-button>
+            </div>
+          </el-form-item>
+
+          <!-- 父节点条件 -->
+          <el-form-item label="父节点条件">
+            <div class="clause-block">
+              <div
+                v-for="(clause, idx) in composite.parentConditions"
+                :key="'parent-' + idx"
+                class="clause-row"
+              >
+                <el-select v-model="clause.field" placeholder="字段" style="width: 220px">
+                  <el-option
+                    v-for="opt in CONDITION_FIELD_OPTIONS"
+                    :key="opt.value"
+                    :label="opt.label"
+                    :value="opt.value"
+                  />
+                </el-select>
+                <el-select v-model="clause.op" placeholder="操作符" style="width: 120px">
+                  <el-option
+                    v-for="opt in CONDITION_OP_OPTIONS"
+                    :key="opt.value"
+                    :label="opt.label"
+                    :value="opt.value"
+                  />
+                </el-select>
+                <el-select
+                  v-if="clause.op === 'IN' && (clause.field === 'material_category_1' || clause.field === 'material_category_2')"
+                  v-model="clause.values"
+                  multiple
+                  filterable
+                  allow-create
+                  placeholder="从字典选或自由填"
+                  style="flex: 1"
+                >
+                  <el-option
+                    v-for="opt in categoryDictOptions"
+                    :key="opt.value"
+                    :label="opt.label"
+                    :value="opt.value"
+                  />
+                </el-select>
+                <el-select
+                  v-else-if="clause.op === 'IN'"
+                  v-model="clause.values"
+                  multiple
+                  filterable
+                  allow-create
+                  placeholder="输入多个值（回车添加）"
+                  style="flex: 1"
+                />
+                <el-input
+                  v-else
+                  v-model="clause.value"
+                  placeholder="值"
+                  style="flex: 1"
+                />
+                <el-button link type="danger" @click="removeClause('parentConditions', idx)">删除</el-button>
+              </div>
+              <el-button link type="primary" @click="addClause('parentConditions')">+ 加一条父节点条件</el-button>
+            </div>
+          </el-form-item>
+
+          <!-- 子节点条件 -->
+          <el-form-item label="子节点条件">
+            <div class="clause-block">
+              <div class="clause-hint">至少一个直接子节点满足即命中（OR within children）</div>
+              <div
+                v-for="(clause, idx) in composite.childConditions"
+                :key="'child-' + idx"
+                class="clause-row"
+              >
+                <el-select v-model="clause.field" placeholder="字段" style="width: 220px">
+                  <el-option
+                    v-for="opt in CONDITION_FIELD_OPTIONS"
+                    :key="opt.value"
+                    :label="opt.label"
+                    :value="opt.value"
+                  />
+                </el-select>
+                <el-select v-model="clause.op" placeholder="操作符" style="width: 120px">
+                  <el-option
+                    v-for="opt in CONDITION_OP_OPTIONS"
+                    :key="opt.value"
+                    :label="opt.label"
+                    :value="opt.value"
+                  />
+                </el-select>
+                <el-select
+                  v-if="clause.op === 'IN' && (clause.field === 'material_category_1' || clause.field === 'material_category_2')"
+                  v-model="clause.values"
+                  multiple
+                  filterable
+                  allow-create
+                  placeholder="从字典选或自由填"
+                  style="flex: 1"
+                >
+                  <el-option
+                    v-for="opt in categoryDictOptions"
+                    :key="opt.value"
+                    :label="opt.label"
+                    :value="opt.value"
+                  />
+                </el-select>
+                <el-select
+                  v-else-if="clause.op === 'IN'"
+                  v-model="clause.values"
+                  multiple
+                  filterable
+                  allow-create
+                  placeholder="输入多个值（回车添加）"
+                  style="flex: 1"
+                />
+                <el-input
+                  v-else
+                  v-model="clause.value"
+                  placeholder="值"
+                  style="flex: 1"
+                />
+                <el-button link type="danger" @click="removeClause('childConditions', idx)">删除</el-button>
+              </div>
+              <el-button link type="primary" @click="addClause('childConditions')">+ 加一条子节点条件</el-button>
+            </div>
+          </el-form-item>
+        </template>
+
+        <el-form-item label="下钻动作" prop="drillAction">
+          <el-radio-group v-model="form.drillAction">
+            <el-radio
+              v-for="opt in DRILL_ACTION_OPTIONS"
+              :key="opt.value"
+              :value="opt.value"
+            >
+              {{ opt.label }}
+            </el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="标记子树需成本">
+          <el-switch
+            v-model="form.markSubtreeCostRequired"
+            :active-value="1"
+            :inactive-value="0"
+          />
+          <span class="form-hint">仅 STOP_AND_COST_ROW 动作有意义</span>
+        </el-form-item>
+        <el-form-item label="优先级" prop="priority">
+          <el-input-number
+            v-model="form.priority"
+            :min="1"
+            :max="9999"
+          />
+          <span class="form-hint">值越小越优先；命中多条时按最小取第一条</span>
+        </el-form-item>
+        <el-form-item label="启用">
+          <el-switch
+            v-model="form.enabled"
+            :active-value="1"
+            :inactive-value="0"
+          />
+        </el-form-item>
+        <el-form-item label="生效期">
+          <el-date-picker
+            v-model="effectiveRange"
+            type="daterange"
+            value-format="YYYY-MM-DD"
+            range-separator="~"
+            start-placeholder="起"
+            end-placeholder="止"
+            style="width: 100%"
+          />
+          <span class="form-hint">留空 = 永久生效</span>
+        </el-form-item>
+        <el-form-item label="业务单元">
+          <el-select
+            v-model="form.businessUnitType"
+            placeholder="留空 = 全局"
+            clearable
+            style="width: 100%"
+          >
+            <el-option label="商用" value="COMMERCIAL" />
+            <el-option label="家用" value="HOUSEHOLD" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input
+            v-model="form.remark"
+            type="textarea"
+            :rows="2"
+            placeholder="可选"
+          />
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="dialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="submitting" @click="submitForm">
+          保存
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import BasePagination from '../components/BasePagination.vue'
-
-const ruleOptions = [
-  {
-    value: 'A',
-    label: '规则A',
-    title: '仅叶子节点',
-    desc: '只保留末级料件，避免父子重复计价。',
-  },
-  {
-    value: 'B',
-    label: '规则B',
-    title: '叶子节点 + 形态属性',
-    desc: '在叶子节点基础上，按形态属性筛选。',
-  },
-  {
-    value: 'C',
-    label: '规则C',
-    title: '指定层级',
-    desc: '仅保留指定层级范围内的料件。',
-  },
-  {
-    value: 'D',
-    label: '规则D',
-    title: '叶子节点 + 形态属性 + 层级',
-    desc: '组合筛选，精确控制筛选范围。',
-  },
-]
-
-const form = ref({
-  bomCode: '',
-  rule: 'A',
-  shapeAttr: '',
-  levelFrom: null,
-  levelTo: null,
-  includeParents: true,
-})
-
-const applied = ref({ ...form.value })
+// BomFilterRulePage —— 真实 CRUD，全部走后端，无本地 stub
+import { computed, onMounted, reactive, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Check as IconCheck } from '@element-plus/icons-vue'
+import {
+  listDrillRules,
+  createDrillRule,
+  updateDrillRule,
+  deleteDrillRule,
+  toggleDrillRule,
+  fetchDictData,
+  matchTemplate,
+  MATCH_TYPE_OPTIONS,
+  DRILL_ACTION_OPTIONS,
+  CONDITION_FIELD_OPTIONS,
+  CONDITION_OP_OPTIONS,
+} from '../api/bom'
+import BomRuleWizardDialog from '../components/BomRuleWizardDialog.vue'
 
 const loading = ref(false)
-const applyTimer = ref(null)
-const previewRows = ref([])
-const total = ref(0)
-const currentPage = ref(1)
-const pageSize = ref(20)
-const activeTab = ref('list')
-
-const sampleRows = [
-  {
-    id: 1,
-    bomCode: 'BOM0001',
-    itemCode: '1008900031271',
-    itemName: '热力膨胀阀',
-    itemSpec: 'RFG-K19060A-3128',
-    itemModel: 'RFGK19E-6.0A-3128',
-    bomLevel: 1,
-    parentCode: '',
-    shapeAttr: '制造件',
-  },
-  {
-    id: 2,
-    bomCode: 'BOM0001',
-    itemCode: '102053856',
-    itemName: '热力膨胀阀',
-    itemSpec: 'RFG-K19060A-3128',
-    itemModel: 'RFGK19E-6.0A-3128',
-    bomLevel: 2,
-    parentCode: '1008900031271',
-    shapeAttr: '制造件',
-  },
-  {
-    id: 3,
-    bomCode: 'BOM0001',
-    itemCode: '1008000300173',
-    itemName: '阀体',
-    itemSpec: 'RFG-K04-003424',
-    itemModel: 'RFG-K04-003424',
-    bomLevel: 3,
-    parentCode: '102053856',
-    shapeAttr: '制造件',
-  },
-  {
-    id: 4,
-    bomCode: 'BOM0001',
-    itemCode: '1008000300944',
-    itemName: '阀体部件',
-    itemSpec: 'RFG-K04-002784',
-    itemModel: 'RFG-K04-002784',
-    bomLevel: 4,
-    parentCode: '1008000300173',
-    shapeAttr: '制造件',
-  },
-  {
-    id: 5,
-    bomCode: 'BOM0001',
-    itemCode: '1008000300950',
-    itemName: '调节部件',
-    itemSpec: 'RFGN-14003',
-    itemModel: 'RFGN-14003',
-    bomLevel: 4,
-    parentCode: '1008000300173',
-    shapeAttr: '采购件',
-  },
-  {
-    id: 6,
-    bomCode: 'BOM0001',
-    itemCode: '1008000300939',
-    itemName: '阀芯部件',
-    itemSpec: 'RFGC-23158',
-    itemModel: 'RFGC-23158',
-    bomLevel: 4,
-    parentCode: '1008000300173',
-    shapeAttr: '采购件',
-  },
-  {
-    id: 7,
-    bomCode: 'BOM0001',
-    itemCode: '9990000056820',
-    itemName: '端子',
-    itemSpec: 'MOLEX 0850-0031',
-    itemModel: 'MOLEX 0850-0031',
-    bomLevel: 3,
-    parentCode: '102053856',
-    shapeAttr: '采购件',
-  },
-  {
-    id: 8,
-    bomCode: 'BOM0001',
-    itemCode: '9830000025884',
-    itemName: '包装组件',
-    itemSpec: 'BZ-RFGF001_标准大包装',
-    itemModel: '',
-    bomLevel: 2,
-    parentCode: '1008900031271',
-    shapeAttr: '制造件',
-  },
-  {
-    id: 9,
-    bomCode: 'BOM0001',
-    itemCode: '250012748',
-    itemName: '瓦楞纸箱',
-    itemSpec: 'BZ-RFG-F05001-02_外*425*275*275',
-    itemModel: '',
-    bomLevel: 3,
-    parentCode: '9830000025884',
-    shapeAttr: '采购件',
-  },
-  {
-    id: 10,
-    bomCode: 'BOM0002',
-    itemCode: '200001',
-    itemName: '压缩机',
-    itemSpec: 'CP-K100',
-    itemModel: 'CP-K100',
-    bomLevel: 1,
-    parentCode: '',
-    shapeAttr: '制造件',
-  },
-  {
-    id: 11,
-    bomCode: 'BOM0002',
-    itemCode: '200002',
-    itemName: '壳体组件',
-    itemSpec: 'CP-H101',
-    itemModel: 'CP-H101',
-    bomLevel: 2,
-    parentCode: '200001',
-    shapeAttr: '制造件',
-  },
-  {
-    id: 12,
-    bomCode: 'BOM0002',
-    itemCode: '200003',
-    itemName: '紧固件',
-    itemSpec: 'CP-BOLT',
-    itemModel: 'CP-BOLT',
-    bomLevel: 2,
-    parentCode: '200001',
-    shapeAttr: '采购件',
-  },
-]
-
-const bomOptions = computed(() => {
-  const codes = new Set(sampleRows.map((row) => row.bomCode))
-  return Array.from(codes)
+const rows = ref([])
+const filters = reactive({
+  enabled: null,
+  matchType: null,
 })
 
-const currentRule = computed(
-  () => ruleOptions.find((item) => item.value === applied.value.rule) || ruleOptions[0],
-)
+const dialogVisible = ref(false)
+const submitting = ref(false)
+const editingId = ref(null)
+const formRef = ref(null)
 
-const showShapeAttr = computed(() => ['B', 'D'].includes(form.value.rule))
-const showLevel = computed(() => ['C', 'D'].includes(form.value.rule))
+// T10：向导对话框状态
+const wizardVisible = ref(false)
+const wizardEditingRule = ref(null)
 
-const levelRangeText = computed(() => {
-  const from = applied.value.levelFrom
-  const to = applied.value.levelTo
-  if (!from && !to) {
-    return '不限制'
-  }
-  if (from && !to) {
-    return `>= ${from}`
-  }
-  if (!from && to) {
-    return `<= ${to}`
-  }
-  return `${from} - ${to}`
+const emptyForm = () => ({
+  matchType: 'NAME_LIKE',
+  matchValue: '',
+  drillAction: 'STOP_AND_COST_ROW',
+  markSubtreeCostRequired: 0,
+  replaceToCode: null,
+  priority: 100,
+  enabled: 1,
+  effectiveFrom: null,
+  effectiveTo: null,
+  businessUnitType: null,
+  remark: '',
 })
 
-const buildRowMap = (rows) =>
-  new Map(rows.map((row) => [row.itemCode, row]))
+const form = ref(emptyForm())
 
-const getLeafRows = (rows) => {
-  const parentCodes = new Set(rows.map((row) => row.parentCode).filter(Boolean))
-  return rows.filter((row) => !parentCodes.has(row.itemCode))
+// 生效期用 daterange picker 统一编辑，提交时拆回两个字段
+const effectiveRange = ref(null)
+
+// T8：复合条件的结构化编辑状态（matchType=COMPOSITE 时生效）
+const emptyComposite = () => ({
+  nodeConditions: [],
+  parentConditions: [],
+  childConditions: [],
+})
+const composite = ref(emptyComposite())
+
+// 字典：bom_material_category（T8 规则 IN 列表的候选值，从后端字典接口拉）
+const categoryDictOptions = ref([])
+
+/** 复合条件子句增删 */
+function addClause(group) {
+  composite.value[group].push({ field: '', op: 'EQ', value: '', values: [] })
+}
+function removeClause(group, idx) {
+  composite.value[group].splice(idx, 1)
 }
 
-const filterRowsByRule = (rows, rule) => {
-  let result = rows
-  const leafRows = getLeafRows(rows)
-  const hasLevel =
-    rule.levelFrom !== null ||
-    rule.levelTo !== null
-  const matchesLevel = (row) => {
-    if (!hasLevel) return true
-    const level = Number(row.bomLevel || 0)
-    if (rule.levelFrom !== null && level < rule.levelFrom) return false
-    if (rule.levelTo !== null && level > rule.levelTo) return false
-    return true
-  }
-  const matchesShape = (row) => !rule.shapeAttr || row.shapeAttr === rule.shapeAttr
-
-  switch (rule.rule) {
-    case 'A':
-      result = leafRows
-      break
-    case 'B':
-      result = leafRows.filter(matchesShape)
-      break
-    case 'C':
-      result = rows.filter(matchesLevel)
-      break
-    case 'D':
-      result = leafRows.filter((row) => matchesShape(row) && matchesLevel(row))
-      break
-    default:
-      result = leafRows
-  }
-  return result
+const formRules = {
+  matchType: [{ required: true, message: '必选', trigger: 'change' }],
+  matchValue: [
+    {
+      required: true,
+      trigger: 'blur',
+      validator: (_rule, value, callback) => {
+        // COMPOSITE 不要求 matchValue（走 JSON）；其他类型要求必填
+        if (form.value.matchType === 'COMPOSITE') {
+          callback()
+        } else if (!value || !String(value).trim()) {
+          callback(new Error('必填'))
+        } else {
+          callback()
+        }
+      },
+    },
+  ],
+  drillAction: [{ required: true, message: '必选', trigger: 'change' }],
+  priority: [{ required: true, message: '必填', trigger: 'blur' }],
 }
 
-const buildPreviewRows = () => {
-  const filtered = applied.value.bomCode
-    ? sampleRows.filter((row) => row.bomCode === applied.value.bomCode)
-    : sampleRows
-  const baseRows = filterRowsByRule(filtered, applied.value)
-  const rowMap = buildRowMap(filtered)
-  if (!applied.value.includeParents) {
-    return {
-      baseRows,
-      preview: baseRows,
-      leafCount: getLeafRows(filtered).length,
-      totalCount: filtered.length,
-    }
-  }
-  const includeMap = new Map()
-  baseRows.forEach((row) => {
-    includeMap.set(row.itemCode, row)
-    let current = row
-    const visited = new Set([row.itemCode])
-    while (current.parentCode) {
-      if (visited.has(current.parentCode)) {
-        break
-      }
-      visited.add(current.parentCode)
-      const parent = rowMap.get(current.parentCode)
-      if (!parent) {
-        break
-      }
-      includeMap.set(parent.itemCode, parent)
-      current = parent
-    }
-  })
-  return {
-    baseRows,
-    preview: Array.from(includeMap.values()),
-    leafCount: getLeafRows(filtered).length,
-    totalCount: filtered.length,
+/** 字典加载：按需（首次打开对话框时拉一次，结果缓存） */
+async function ensureDictLoaded() {
+  if (categoryDictOptions.value.length > 0) return
+  try {
+    const data = await fetchDictData('bom_material_category')
+    const list = Array.isArray(data) ? data : data?.data || []
+    // yudao 字典接口返回 {value, label} 或 {dictValue, dictLabel}，两种都兼容
+    categoryDictOptions.value = list.map((d) => ({
+      value: d.value ?? d.dictValue ?? d.dict_value,
+      label: d.label ?? d.dictLabel ?? d.dict_label,
+    }))
+  } catch (error) {
+    // 字典拉失败不阻塞表单编辑，IN 仍然能自由输入
+    console.warn('字典 bom_material_category 加载失败', error?.message)
   }
 }
 
-const stats = computed(() => {
-  const { baseRows, preview, leafCount, totalCount } = buildPreviewRows()
-  return {
-    total: totalCount,
-    leaf: leafCount,
-    filtered: baseRows.length,
-    included: preview.length,
-  }
-})
-
-const buildTreeRows = (rows) => {
-  const nodeMap = new Map()
-  rows.forEach((row) => {
-    nodeMap.set(row.itemCode, {
-      ...row,
-      rowKey: `${row.bomCode}-${row.itemCode}`,
-      children: [],
-    })
-  })
-  const roots = []
-  nodeMap.forEach((node) => {
-    if (node.parentCode && nodeMap.has(node.parentCode)) {
-      nodeMap.get(node.parentCode).children.push(node)
-    } else {
-      roots.push(node)
-    }
-  })
-  return roots
-}
-
-const pagedRows = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value
-  const end = start + pageSize.value
-  return previewRows.value.slice(start, end)
-})
-
-watch(pageSize, () => {
-  currentPage.value = 1
-})
-
-const applyRule = () => {
-  if (applyTimer.value) {
-    clearTimeout(applyTimer.value)
-  }
+async function reload() {
   loading.value = true
-  applyTimer.value = setTimeout(() => {
-    applyTimer.value = null
-    applied.value = { ...form.value }
-    const { preview } = buildPreviewRows()
-    const sorted = [...preview].sort((a, b) => {
-      if (a.bomLevel !== b.bomLevel) {
-        return a.bomLevel - b.bomLevel
-      }
-      return String(a.itemCode).localeCompare(String(b.itemCode))
-    })
-    previewRows.value = sorted
-    total.value = sorted.length
+  try {
+    const params = {}
+    if (filters.enabled !== null && filters.enabled !== undefined) {
+      params.enabled = filters.enabled
+    }
+    if (filters.matchType) {
+      params.matchType = filters.matchType
+    }
+    const data = await listDrillRules(params)
+    rows.value = Array.isArray(data) ? data : []
+  } catch (error) {
+    ElMessage.error(error?.message || '查询规则失败')
+  } finally {
     loading.value = false
-    currentPage.value = 1
-  }, 200)
+  }
 }
 
-const resetRule = () => {
+function resetForm() {
+  editingId.value = null
+  form.value = emptyForm()
+  composite.value = emptyComposite()
+  effectiveRange.value = null
+  formRef.value?.clearValidate?.()
+}
+
+/** T10：财务入口 —— 新增默认走向导 */
+function openCreate() {
+  wizardEditingRule.value = null
+  wizardVisible.value = true
+}
+
+/** IT 入口 —— 新增直接开高级模式对话框 */
+function openCreateAdvanced() {
+  resetForm()
+  ensureDictLoaded()
+  dialogVisible.value = true
+}
+
+/** T10：编辑按模板反推结果路由 —— 能反推进向导，反推不出进高级 */
+function openEdit(row) {
+  const tplCode = matchTemplate(row)
+  if (tplCode) {
+    wizardEditingRule.value = row
+    wizardVisible.value = true
+    return
+  }
+  // 反推不出 —— 非标规则，落回高级模式
+  openEditAdvanced(row)
+}
+
+/** 高级模式编辑（内部函数，仅在反推失败时调；页面没暴露入口） */
+function openEditAdvanced(row) {
+  editingId.value = row.id
   form.value = {
-    bomCode: '',
-    rule: 'A',
-    shapeAttr: '',
-    levelFrom: null,
-    levelTo: null,
-    includeParents: true,
+    matchType: row.matchType,
+    matchValue: row.matchValue,
+    drillAction: row.drillAction,
+    markSubtreeCostRequired: row.markSubtreeCostRequired ?? 0,
+    replaceToCode: row.replaceToCode,
+    priority: row.priority ?? 100,
+    enabled: row.enabled ?? 1,
+    effectiveFrom: row.effectiveFrom || null,
+    effectiveTo: row.effectiveTo || null,
+    businessUnitType: row.businessUnitType || null,
+    remark: row.remark || '',
   }
-  applyRule()
+  // T8：反序列化 matchConditionJson 到 composite 编辑状态
+  composite.value = parseConditionJson(row.matchConditionJson)
+  effectiveRange.value = row.effectiveFrom
+    ? [row.effectiveFrom, row.effectiveTo]
+    : null
+  ensureDictLoaded()
+  dialogVisible.value = true
 }
 
-const treeRows = computed(() => buildTreeRows(previewRows.value))
+/** 向导保存成功 —— 刷新列表 */
+function onWizardSaved() {
+  reload()
+}
 
-applyRule()
+/** 向导底部"使用高级模式 →"被点击 —— 向导组件保证在 @closed 后才 emit，这里直接开即可 */
+function onSwitchToAdvanced(rule) {
+  if (rule) openEditAdvanced(rule)
+  else openCreateAdvanced()
+}
 
-onBeforeUnmount(() => {
-  if (applyTimer.value) {
-    clearTimeout(applyTimer.value)
-    applyTimer.value = null
+/** 安全反序列化 matchConditionJson；无效 JSON 返回空结构，避免编辑器炸 */
+function parseConditionJson(json) {
+  if (!json) return emptyComposite()
+  try {
+    const parsed = typeof json === 'string' ? JSON.parse(json) : json
+    return {
+      nodeConditions: Array.isArray(parsed?.nodeConditions) ? parsed.nodeConditions : [],
+      parentConditions: Array.isArray(parsed?.parentConditions) ? parsed.parentConditions : [],
+      childConditions: Array.isArray(parsed?.childConditions) ? parsed.childConditions : [],
+    }
+  } catch (e) {
+    console.warn('规则 matchConditionJson 解析失败', e?.message)
+    return emptyComposite()
   }
-})
+}
+
+/** 把 composite 编辑状态序列化为 JSON 字符串；全空则返 null（老字段生效） */
+function serializeComposite(c) {
+  const allEmpty =
+    (!c.nodeConditions || c.nodeConditions.length === 0) &&
+    (!c.parentConditions || c.parentConditions.length === 0) &&
+    (!c.childConditions || c.childConditions.length === 0)
+  if (allEmpty) return null
+  // 去掉空字段；IN 情况用 values，其他用 value
+  const clean = (arr) =>
+    (arr || [])
+      .filter((c) => c?.field && c?.op)
+      .map((c) => {
+        const o = { field: c.field, op: c.op }
+        if (c.op === 'IN') o.values = Array.isArray(c.values) ? c.values : []
+        else o.value = c.value ?? ''
+        return o
+      })
+  return JSON.stringify({
+    nodeConditions: clean(c.nodeConditions),
+    parentConditions: clean(c.parentConditions),
+    childConditions: clean(c.childConditions),
+  })
+}
+
+async function submitForm() {
+  // 触发校验；未通过则抛异常被 catch 静默吞掉，用户看到字段红框
+  try {
+    await formRef.value.validate()
+  } catch (_) {
+    return
+  }
+  submitting.value = true
+  try {
+    const payload = { ...form.value }
+    // 拆 daterange 回到两字段
+    if (Array.isArray(effectiveRange.value) && effectiveRange.value.length === 2) {
+      payload.effectiveFrom = effectiveRange.value[0]
+      payload.effectiveTo = effectiveRange.value[1]
+    } else {
+      payload.effectiveFrom = null
+      payload.effectiveTo = null
+    }
+    // T8：matchType=COMPOSITE 时序列化 composite → matchConditionJson
+    if (form.value.matchType === 'COMPOSITE') {
+      payload.matchConditionJson = serializeComposite(composite.value)
+      if (!payload.matchConditionJson) {
+        ElMessage.warning('复合条件至少填一组（本节点/父节点/子节点）')
+        submitting.value = false
+        return
+      }
+      // matchValue 在 COMPOSITE 下留占位字符串（数据库 NOT NULL）
+      if (!payload.matchValue) payload.matchValue = 'composite-' + Date.now()
+    } else {
+      // 非 COMPOSITE 时清空 matchConditionJson，避免老规则误带上
+      payload.matchConditionJson = ''
+    }
+    if (editingId.value) {
+      await updateDrillRule(editingId.value, payload)
+      ElMessage.success('规则已更新，下次 BOM 计算生效')
+    } else {
+      await createDrillRule(payload)
+      ElMessage.success('规则已创建，下次 BOM 计算生效')
+    }
+    dialogVisible.value = false
+    await reload()
+  } catch (error) {
+    ElMessage.error(error?.message || '保存失败')
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function onToggle(row) {
+  try {
+    await toggleDrillRule(row.id)
+    ElMessage.success(row.enabled === 1 ? '已停用' : '已启用')
+    await reload()
+  } catch (error) {
+    ElMessage.error(error?.message || '切换失败')
+  }
+}
+
+async function onDelete(row) {
+  try {
+    await ElMessageBox.confirm(
+      `确认删除规则 #${row.id}（${row.matchType} = ${row.matchValue}）?`,
+      '软删确认',
+      { type: 'warning' }
+    )
+  } catch (_) {
+    return
+  }
+  try {
+    await deleteDrillRule(row.id)
+    ElMessage.success('已删除')
+    await reload()
+  } catch (error) {
+    ElMessage.error(error?.message || '删除失败')
+  }
+}
+
+/** 给不同 matchType 分配不同 tag 色便于快速识别；未命中时返 undefined 走 el-tag 默认样式
+ *  （不能返 '' —— el-tag 的 type prop validator 会拒绝空串并警告） */
+function matchTypeTagType(type) {
+  switch (type) {
+    case 'MATERIAL_CODE_PREFIX':
+      return 'success'
+    case 'MATERIAL_TYPE':
+      return 'warning'
+    case 'CATEGORY_EQ':
+      return 'info'
+    case 'SHAPE_ATTR_EQ':
+      return 'danger'
+    default:
+      return undefined
+  }
+}
+
+onMounted(reload)
 </script>
 
 <style scoped>
-.bom-filter-page {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+.base-page {
+  padding: 16px;
 }
-
-.filter-card {
-  padding-bottom: 6px;
+.header-card {
+  margin-bottom: 16px;
 }
-
-.filter-header {
+.header-row {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.filter-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1f2a37;
-}
-
-.filter-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.rule-form :deep(.el-form-item) {
-  margin-right: 18px;
-}
-
-.range-sep {
-  margin: 0 6px;
-  color: #6b7280;
-}
-
-.summary-card {
-  padding: 4px 2px 8px;
-}
-
-.summary-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  align-items: flex-start;
   gap: 16px;
 }
-
-.summary-title {
-  font-size: 13px;
+.page-title {
+  font-size: 16px;
   font-weight: 600;
-  color: #111827;
-  margin-bottom: 10px;
+  color: #303133;
 }
-
-.summary-content {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.summary-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 13px;
-  color: #374151;
-}
-
-.summary-label {
-  width: 80px;
-  color: #6b7280;
-}
-
-.summary-value {
-  flex: 1;
-}
-
-.stats-card {
-  background: linear-gradient(135deg, #f9fafb 0%, #eef2ff 100%);
-  border: 1px solid #e5e7eb;
-}
-
-.stats-content {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.stat-item {
-  background: #fff;
-  border-radius: 8px;
-  padding: 10px 12px;
-  border: 1px solid #eef2f7;
-}
-
-.stat-label {
+.page-subtitle {
   font-size: 12px;
-  color: #6b7280;
-}
-
-.stat-value {
-  font-size: 18px;
-  font-weight: 600;
-  color: #111827;
+  color: #909399;
   margin-top: 4px;
+  max-width: 520px;
 }
-
-.result-header {
+.header-actions {
   display: flex;
+  gap: 8px;
+}
+.filter-form {
+  margin-top: 16px;
+}
+.form-hint {
+  font-size: 12px;
+  color: #909399;
+  margin-left: 10px;
+}
+.dim {
+  color: #c0c4cc;
+}
+
+/* T8 复合条件编辑器样式 */
+.clause-block {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.clause-row {
+  display: flex;
+  gap: 8px;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
 }
-
-.result-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1f2a37;
-}
-
-@media (max-width: 900px) {
-  .summary-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .stats-content {
-    grid-template-columns: 1fr;
-  }
+.clause-hint {
+  font-size: 12px;
+  color: #909399;
+  margin-bottom: 4px;
 }
 </style>

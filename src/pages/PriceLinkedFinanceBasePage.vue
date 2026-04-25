@@ -4,14 +4,15 @@
       <div class="filter-header">
         <div class="filter-title">影响因素表</div>
         <div class="filter-actions">
+          <!-- T22：改用后端 /base-prices/import-excel —— 前端不再本地解析 Excel -->
           <el-upload
             class="upload-btn"
             :show-file-list="false"
             :auto-upload="false"
-            accept=".xlsx,.xls,.csv"
+            accept=".xlsx,.xls"
             :on-change="handleFileChange"
           >
-            <el-button :loading="importing">导入</el-button>
+            <el-button type="primary" :loading="importing">导入 Excel</el-button>
           </el-upload>
         </div>
       </div>
@@ -28,6 +29,22 @@
         <el-form-item label="关键词">
           <el-input v-model="filters.keyword" placeholder="简称/影响因素" />
         </el-form-item>
+        <!-- T22：批次历史下拉 —— 数据源来自当前查询结果中出现的 importBatchId，客户端筛选 -->
+        <el-form-item label="导入批次">
+          <el-select
+            v-model="filters.batchId"
+            placeholder="全部批次"
+            clearable
+            style="width: 240px"
+          >
+            <el-option
+              v-for="b in availableBatches"
+              :key="b.id"
+              :label="b.label"
+              :value="b.id"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="fetchList">查询</el-button>
           <el-button @click="resetFilters">重置</el-button>
@@ -37,19 +54,49 @@
 
     <el-card shadow="never">
       <div class="base-title">{{ monthTitle }}</div>
-      <el-table :data="tableRows" stripe v-loading="loading">
+      <el-table :data="filteredRows" stripe v-loading="loading">
         <el-table-column prop="seq" label="序号" width="90" />
         <el-table-column
           prop="factorName"
           label="价表影响因素名称"
-          min-width="360"
+          min-width="300"
           show-overflow-tooltip
         />
-        <el-table-column prop="shortName" label="简称" width="140" />
+        <el-table-column prop="shortName" label="简称" width="120" />
         <el-table-column prop="priceSource" label="取价来源" width="140" />
-        <el-table-column prop="price" label="价格" width="140" />
-        <el-table-column prop="unit" label="单位" width="120" />
-        <el-table-column prop="linkType" label="固定/联动" width="140" />
+        <!-- T22：当期价 / 原价 / 涨跌幅 三列 —— 替换原单列"价格" -->
+        <el-table-column prop="price" label="当期价" width="120" align="right">
+          <template #default="{ row }">{{ formatNumber(row.price) }}</template>
+        </el-table-column>
+        <el-table-column
+          prop="priceOriginal"
+          label="原价"
+          width="120"
+          align="right"
+        >
+          <template #default="{ row }">
+            {{ formatNumber(row.priceOriginal) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="涨跌幅" width="110" align="right">
+          <template #default="{ row }">
+            <span :class="percentChangeClass(row)">
+              {{ percentChangeText(row) }}
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="unit" label="单位" width="90" />
+        <el-table-column prop="linkType" label="固定/联动" width="110" />
+        <el-table-column
+          prop="importBatchId"
+          label="批次"
+          width="120"
+          show-overflow-tooltip
+        >
+          <template #default="{ row }">
+            <span class="batch-tag">{{ shortBatchId(row.importBatchId) }}</span>
+          </template>
+        </el-table-column>
         <el-table-column label="操作" width="140" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link @click="openEdit(row)">
@@ -86,8 +133,12 @@
         <el-form-item label="取价来源">
           <el-input v-model="formModel.priceSource" />
         </el-form-item>
-        <el-form-item label="价格">
+        <el-form-item label="当期价">
           <el-input v-model="formModel.price" />
+        </el-form-item>
+        <!-- T22：编辑时同样允许手工修正原价 -->
+        <el-form-item label="原价">
+          <el-input v-model="formModel.priceOriginal" />
         </el-form-item>
         <el-form-item label="单位">
           <el-input v-model="formModel.unit" placeholder="公斤" />
@@ -110,12 +161,15 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+// T22：列表走 T19 新建的 financeBasePrice.list，导入走 importInfluenceFactors（multipart）
+import { list as fetchBasePrices, importInfluenceFactors } from '../api/financeBasePrice'
+import { updateBasePrice, deleteBasePrice } from '../api/basePrices'
 import {
-  fetchBasePrices,
-  importBasePrices,
-  updateBasePrice,
-  deleteBasePrice,
-} from '../api/basePrices'
+  calcPercentChange,
+  formatNumber,
+  formatPercentChange,
+  shortBatchId,
+} from './financeBasePriceUtils'
 
 const loading = ref(false)
 const tableRows = ref([])
@@ -126,6 +180,8 @@ const importing = ref(false)
 const filters = ref({
   priceMonth: '',
   keyword: '',
+  /** T22：客户端批次过滤 —— 从当前 tableRows 推出可选项 */
+  batchId: '',
 })
 
 const formModel = ref({
@@ -135,6 +191,7 @@ const formModel = ref({
   shortName: '',
   priceSource: '',
   price: '',
+  priceOriginal: '',
   unit: '公斤',
   linkType: '固定',
 })
@@ -149,6 +206,29 @@ const monthTitle = computed(() => {
     return '参照基准'
   }
   return `${year}年${Number(monthPart)}月参照基准`
+})
+
+/** 从当前结果集中去重得到批次下拉选项；label 显示短批次+行数，方便定位 */
+const availableBatches = computed(() => {
+  const buckets = new Map()
+  for (const row of tableRows.value) {
+    const bid = row.importBatchId
+    if (!bid) continue
+    if (!buckets.has(bid)) buckets.set(bid, 0)
+    buckets.set(bid, buckets.get(bid) + 1)
+  }
+  return Array.from(buckets.entries()).map(([id, count]) => ({
+    id,
+    label: `${shortBatchId(id)}（${count} 行）`,
+  }))
+})
+
+/** T22：批次筛选在客户端做 —— 列表接口目前没有 batchId 过滤参数 */
+const filteredRows = computed(() => {
+  if (!filters.value.batchId) return tableRows.value
+  return tableRows.value.filter(
+    (row) => row.importBatchId === filters.value.batchId
+  )
 })
 
 const fetchList = async () => {
@@ -173,6 +253,7 @@ const resetFilters = () => {
   filters.value = {
     priceMonth: '',
     keyword: '',
+    batchId: '',
   }
   fetchList()
 }
@@ -186,6 +267,7 @@ const openEdit = (row) => {
     shortName: row.shortName,
     priceSource: row.priceSource,
     price: row.price,
+    priceOriginal: row.priceOriginal,
     unit: row.unit,
     linkType: row.linkType,
   }
@@ -216,177 +298,51 @@ const removeRow = async (row) => {
   fetchList()
 }
 
-const normalizeHeader = (value) =>
-  String(value || '')
-    .replace(/^\uFEFF/, '')
-    .replace(/[：:]/g, '')
-    .replace(/[\s\u3000]+/g, '')
-    .trim()
+/** 涨跌幅显示文本 —— 委托给纯函数 */
+const percentChangeText = (row) =>
+  formatPercentChange(calcPercentChange(row.price, row.priceOriginal))
 
-const parseNumber = (value) => {
-  const text = String(value ?? '').replace(/,/g, '').trim()
-  if (!text) {
-    return null
-  }
-  const parsed = Number(text)
-  return Number.isNaN(parsed) ? null : parsed
+/** 涨跌幅配色：涨橙跌绿（国内财务习惯） */
+const percentChangeClass = (row) => {
+  const ratio = calcPercentChange(row.price, row.priceOriginal)
+  if (ratio === null) return 'pct-flat'
+  if (ratio > 0) return 'pct-up'
+  if (ratio < 0) return 'pct-down'
+  return 'pct-flat'
 }
 
-const parseInteger = (value) => {
-  const parsed = parseNumber(value)
-  if (!Number.isFinite(parsed)) {
-    return null
-  }
-  return Math.trunc(parsed)
-}
-
-const formatMonth = (value) => {
-  if (!value) {
-    return ''
-  }
-  if (value instanceof Date) {
-    const year = value.getFullYear()
-    const month = String(value.getMonth() + 1).padStart(2, '0')
-    return `${year}-${month}`
-  }
-  const text = String(value).trim()
-  if (!text) {
-    return ''
-  }
-  const match = text.match(/^(\\d{4})[-/.](\\d{1,2})/)
-  if (match) {
-    return `${match[1]}-${String(match[2]).padStart(2, '0')}`
-  }
-  const compact = text.match(/^(\\d{4})(\\d{2})$/)
-  if (compact) {
-    return `${compact[1]}-${compact[2]}`
-  }
-  return text
-}
-
+/** T22：Excel 导入 —— 交给后端 /base-prices/import-excel 统一解析（T17） */
 const handleFileChange = async (uploadFile) => {
   const rawFile = uploadFile.raw
-  if (!rawFile) {
+  if (!rawFile) return
+  const priceMonth = filters.value.priceMonth
+  if (!priceMonth) {
+    ElMessage.warning('请先选择价格月份再导入')
     return
   }
   importing.value = true
   try {
-    let XLSX = null
-    try {
-      const mod = await import('xlsx')
-      XLSX = mod
-    } catch (error) {
-      ElMessage.error('未安装xlsx，请先运行 npm install xlsx')
-      return
+    const resp = await importInfluenceFactors(rawFile, priceMonth)
+    const imported = resp?.imported ?? 0
+    const batchId = resp?.batchId ?? ''
+    const skipped = resp?.skipped ?? 0
+    ElMessage.success(`${imported} 行导入，批次 ${shortBatchId(batchId)}`)
+    if (skipped > 0) {
+      // 跳过明细 toast 简化展示；详细错误行号后续可进明细弹窗
+      ElMessage.warning(`另有 ${skipped} 行跳过，请在错误列表确认`)
     }
-    const buffer = await rawFile.arrayBuffer()
-    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true })
-    const sheet = workbook.Sheets[workbook.SheetNames[0]]
-    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false })
-    const headerAliases = {
-      priceMonth: ['价格月份', '月份', '价格月', '期间'],
-      seq: ['序号', '序'],
-      factorName: ['价表影响因素名称', '影响因素', '影响因素名称'],
-      shortName: ['简称'],
-      factorCode: ['因素编码', '编码', '代码'],
-      priceSource: ['取价来源', '来源'],
-      price: ['价格', '单价'],
-      unit: ['单位'],
-      linkType: ['固定/联动', '联动/固定', '类型'],
-    }
-    const headerMap = Object.entries(headerAliases).reduce((acc, [key, values]) => {
-      values.forEach((value) => {
-        acc[normalizeHeader(value)] = key
-      })
-      return acc
-    }, {})
-    const headerKeys = Object.keys(headerMap).sort((a, b) => b.length - a.length)
-    const resolveHeaderField = (cell) => {
-      const normalized = normalizeHeader(cell)
-      if (!normalized) {
-        return null
-      }
-      if (headerMap[normalized]) {
-        return headerMap[normalized]
-      }
-      const matched = headerKeys.find((key) => normalized.includes(key))
-      return matched ? headerMap[matched] : null
-    }
-    const headerIndex = rows.reduce(
-      (best, row, index) => {
-        const hitCount = row.reduce((count, cell) => {
-          return resolveHeaderField(cell) ? count + 1 : count
-        }, 0)
-        if (hitCount > best.count) {
-          return { index, count: hitCount }
-        }
-        return best
-      },
-      { index: -1, count: 0 },
-    ).index
-    if (headerIndex === -1) {
-      ElMessage.error('未找到表头，请确认Excel格式是否正确')
-      return
-    }
-    const headerRow = rows[headerIndex]
-    const nextHeaderRow = rows[headerIndex + 1] || []
-    const fieldIndex = {}
-    headerRow.forEach((cell, index) => {
-      const field = resolveHeaderField(cell)
-      if (field) {
-        fieldIndex[field] = index
-      }
-    })
-    nextHeaderRow.forEach((cell, index) => {
-      const field = resolveHeaderField(cell)
-      if (field && fieldIndex[field] === undefined) {
-        fieldIndex[field] = index
-      }
-    })
-    const dataRows = rows
-      .slice(headerIndex + 1)
-      .map((row) => ({
-        priceMonth: formatMonth(row[fieldIndex.priceMonth]),
-        seq: parseInteger(row[fieldIndex.seq]),
-        factorName: String(row[fieldIndex.factorName] || '').trim(),
-        shortName: String(row[fieldIndex.shortName] || '').trim(),
-        factorCode: String(row[fieldIndex.factorCode] || '').trim(),
-        priceSource: String(row[fieldIndex.priceSource] || '').trim(),
-        price: parseNumber(row[fieldIndex.price]),
-        unit: String(row[fieldIndex.unit] || '').trim(),
-        linkType: String(row[fieldIndex.linkType] || '').trim(),
-      }))
-      .filter((row) => row.factorName || row.shortName)
-    if (dataRows.length === 0) {
-      ElMessage.warning('未解析到有效数据')
-      return
-    }
-    const importMonth =
-      dataRows.find((row) => row.priceMonth)?.priceMonth || filters.value.priceMonth
-    if (!importMonth) {
-      ElMessage.warning('缺少价格月份，请填写或在Excel中提供')
-      return
-    }
-    const payloadRows = dataRows.map((row) => ({
-      seq: row.seq,
-      factorName: row.factorName,
-      shortName: row.shortName,
-      factorCode: row.factorCode,
-      priceSource: row.priceSource,
-      price: row.price,
-      unit: row.unit,
-      linkType: row.linkType,
-    }))
-    await importBasePrices({ priceMonth: importMonth, rows: payloadRows })
-    filters.value.priceMonth = importMonth
-    ElMessage.success(`已导入${payloadRows.length}条影响因素`)
-    fetchList()
+    // 重新拉取并自动定位到本次批次
+    await fetchList()
+    filters.value.batchId = batchId
   } catch (error) {
     ElMessage.error(error?.message || '导入失败')
   } finally {
     importing.value = false
   }
 }
+
+/** 暴露给单测：calcPercentChange / shortBatchId（模板里已使用） */
+defineExpose({ calcPercentChange, shortBatchId })
 
 onMounted(fetchList)
 </script>
@@ -424,5 +380,27 @@ onMounted(fetchList)
 .filter-actions {
   display: flex;
   gap: 8px;
+}
+
+/* T22：涨跌幅颜色 —— 绿涨红跌（国内财务习惯） */
+.pct-up {
+  color: #e6a23c;
+}
+
+.pct-down {
+  color: #67c23a;
+}
+
+.pct-flat {
+  color: #909399;
+}
+
+.batch-tag {
+  font-family: 'JetBrains Mono', Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: #606266;
+  background: #f0f2f5;
+  padding: 2px 6px;
+  border-radius: 4px;
 }
 </style>

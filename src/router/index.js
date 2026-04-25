@@ -1,94 +1,25 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import MainLayout from '../layout/index.vue'
-import PlaceholderPage from '../pages/PlaceholderPage.vue'
-import CostRunPage from '../pages/CostRunPage.vue'
 import CostRunResultPage from '../pages/CostRunResultPage.vue'
 import CostRunDetailPage from '../pages/CostRunDetailPage.vue'
-import OaFormListPage from '../pages/OaFormListPage.vue'
 import OaFormDetailPage from '../pages/OaFormDetailPage.vue'
-import PriceLinkedResultPage from '../pages/PriceLinkedResultPage.vue'
-import PriceLinkedOaResultPage from '../pages/PriceLinkedOaResultPage.vue'
-import PriceLinkedFormulaPage from '../pages/PriceLinkedFormulaPage.vue'
-import PriceLinkedFinanceBasePage from '../pages/PriceLinkedFinanceBasePage.vue'
-import PriceMaterialWeightPage from '../pages/PriceMaterialWeightPage.vue'
-import BomManualImportPage from '../pages/BomManualImportPage.vue'
-import BomFilterRulePage from '../pages/BomFilterRulePage.vue'
-import BomManagePage from '../pages/BomManagePage.vue'
-import MaterialPriceTypePage from '../pages/MaterialPriceTypePage.vue'
-import MaterialMasterPage from '../pages/MaterialMasterPage.vue'
-import PriceFixedPage from '../pages/PriceFixedPage.vue'
-import PriceRangePage from '../pages/PriceRangePage.vue'
-import PriceSettlePage from '../pages/PriceSettlePage.vue'
-import AuxSubjectPage from '../pages/AuxSubjectPage.vue'
-import AuxItemPage from '../pages/AuxItemPage.vue'
-import QualityLossRatePage from '../pages/QualityLossRatePage.vue'
-import SalaryCostPage from '../pages/SalaryCostPage.vue'
-import ManufactureRatePage from '../pages/ManufactureRatePage.vue'
-import ThreeExpenseRatePage from '../pages/ThreeExpenseRatePage.vue'
-import ProductPropertyPage from '../pages/ProductPropertyPage.vue'
-import OtherExpenseRatePage from '../pages/OtherExpenseRatePage.vue'
-import DepartmentFundRatePage from '../pages/DepartmentFundRatePage.vue'
+import BomPipelineAdvancedPage from '../pages/BomPipelineAdvancedPage.vue'
 import LoginPage from '../pages/LoginPage.vue'
 import NotFoundPage from '../pages/NotFoundPage.vue'
-import { menuGroups } from '../menu'
 import { useUserStore } from '../store/modules/user'
 import { usePermissionStore } from '../store/modules/permission'
 
-const routeComponentMap = {
-  '/cost/run': CostRunPage,
-  '/cost/run/completed': CostRunPage,
-  '/ingest/oa-form': OaFormListPage,
-  '/price/linked/result': PriceLinkedResultPage,
-  '/price/linked/oa-result': PriceLinkedOaResultPage,
-  '/price/linked/formula': PriceLinkedFormulaPage,
-  '/price/linked/finance-base': PriceLinkedFinanceBasePage,
-  '/base/material-weight': PriceMaterialWeightPage,
-  '/base/addbom': BomManualImportPage,
-  '/base/bomfilter': BomFilterRulePage,
-  '/base/material': BomManagePage,
-  '/base/materweight': MaterialMasterPage,
-  '/base/map': MaterialPriceTypePage,
-  '/base/aux/subject': AuxSubjectPage,
-  '/base/aux/item': AuxItemPage,
-  '/price/fixed': PriceFixedPage,
-  '/price/range': PriceRangePage,
-  '/price/settle': PriceSettlePage,
-  '/base/quantityLoss': QualityLossRatePage,
-  '/base/salary': SalaryCostPage,
-  '/base/manufactureRate': ManufactureRatePage,
-  '/base/threeExpenseRate': ThreeExpenseRatePage,
-  '/base/productProperty': ProductPropertyPage,
-  '/base/other': OtherExpenseRatePage,
-  '/base/fixed': DepartmentFundRatePage,
-}
-
-const childRoutes = menuGroups.flatMap((group) =>
-  group.children.flatMap((item) => {
-    if (item.children) {
-      return item.children.map((child) => ({
-        path: child.index,
-        name: child.index.replace(/\//g, '-').replace(/^-/, ''),
-        component: routeComponentMap[child.index] || PlaceholderPage,
-        meta: {
-          title: child.title,
-          activeMenu: child.index,
-        },
-      }))
-    }
-    return [
-      {
-        path: item.index,
-        name: item.index.replace(/\//g, '-').replace(/^-/, ''),
-        component: routeComponentMap[item.index] || PlaceholderPage,
-        meta: {
-          title: item.title,
-        },
-      },
-    ]
-  })
-)
-
-/** 基础静态路由 —— 登录/404 公共，/ 下保留当前 menu.js 驱动的子路由以便过渡期业务页面可用 */
+/**
+ * 静态路由只保留三类：
+ *   1. 公共页：/login、/404、/collaborate（协作者独立 token）
+ *   2. 业务详情页（带路由参数，业务代码硬编码跳转依赖）：
+ *      - /cost/run/:oaNo、/cost/run/:oaNo/detail
+ *      - /ingest/oa-form/:id
+ *   3. 后台工具页：/admin/bom-pipeline、/system/dict/data
+ *
+ * 所有业务列表页（/cost/run、/ingest/oa-form、/base/* 等）改由
+ * permissionStore.generateRoutes() 根据后端 sys_menu 返回的 /auth/routers 动态 addRoute 注册。
+ */
 const staticRoutes = [
   {
     path: '/login',
@@ -125,7 +56,6 @@ const staticRoutes = [
     component: MainLayout,
     redirect: '/cost/run',
     children: [
-      ...childRoutes,
       {
         path: '/cost/run/:oaNo',
         name: 'cost-run-result',
@@ -149,6 +79,13 @@ const staticRoutes = [
         redirect: '/price/linked/result',
       },
       {
+        // 老三阶段 BOM 流水线（隐藏路由，不挂菜单）——面向 IT / 测试单独重跑某阶段
+        path: '/admin/bom-pipeline',
+        name: 'admin-bom-pipeline',
+        component: BomPipelineAdvancedPage,
+        meta: { title: 'BOM 流水线（高级）', activeMenu: '/base/u9Bom' },
+      },
+      {
         path: '/system/dict/data',
         name: 'system-dict-data',
         component: () => import('../views/system/dict/data.vue'),
@@ -168,7 +105,7 @@ const CATCH_ALL_NAME = 'dyn-catch-all'
 /**
  * 将 permissionStore.generateRoutes() 返回的顶层路由逐一 addRoute。
  * - 顶层节点 path 需绝对化（后端通常返回 "system" 这种相对形式）
- * - 注册失败只 warn 不抛；由 static fallback 兜底
+ * - 注册失败只 warn 不抛；permissionStore 内部已有 Placeholder 兜底
  */
 function registerDynamicRoutes(routes, permissionStore) {
   routes.forEach((route) => {

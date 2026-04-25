@@ -5,7 +5,15 @@
       <span v-else>成本</span>
     </div>
     <el-scrollbar>
+      <div v-if="displayRoutes.length === 0" class="sidebar-empty">
+        <el-empty
+          v-if="!appStore.sidebarCollapsed"
+          description="当前账号无菜单权限"
+          :image-size="60"
+        />
+      </div>
       <el-menu
+        v-else
         class="sidebar-menu"
         :default-active="activeMenu"
         :collapse="appStore.sidebarCollapsed"
@@ -31,33 +39,22 @@ import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { usePermissionStore } from '../../store/modules/permission'
 import { useAppStore } from '../../store/modules/app'
-import { menuGroups } from '../../menu'
-import { menuGroupsToRoutes } from '../utils/menuAdapter'
 import SidebarItem from './SidebarItem.vue'
 
 const route = useRoute()
 const appStore = useAppStore()
 const permissionStore = usePermissionStore()
 
-/** 优先用动态路由；动态业务菜单因历史 component 路径无法解析时，用静态业务菜单补齐。 */
-const displayRoutes = computed(() => {
-  const fallbackRoutes = menuGroupsToRoutes(menuGroups)
-  if (permissionStore.routes.length === 0) return fallbackRoutes
+// 过渡期（T04~T08）：后端 sys_menu 中仍然残留老业务顶级 200/300/400/500（cost-trial/base-data/rate/price），
+// 它们跟前端目录命名不对应。T08 会物理删除，在那之前这里主动过滤，避免侧边栏出现新旧两套业务菜单。
+// T08 完成后 permissionStore 自然不再返回它们，此过滤不生效但无害，可在后续维护时删除。
+const LEGACY_TOP_MENU_IDS = new Set([200, 300, 400, 500])
 
-  const usedTopPaths = new Set(
-    permissionStore.routes.map((r) => normalizeTopPath(r.path))
-  )
-  const missingFallbackRoutes = fallbackRoutes.filter(
-    (r) => !usedTopPaths.has(normalizeTopPath(r.path))
-  )
-  return [...permissionStore.routes, ...missingFallbackRoutes]
-})
+const displayRoutes = computed(() =>
+  permissionStore.routes.filter((r) => !LEGACY_TOP_MENU_IDS.has(r.meta?.menuId))
+)
 
 const activeMenu = computed(() => route.meta?.activeMenu || route.path)
-
-function normalizeTopPath(path) {
-  return String(path || '').replace(/^\/+/, '')
-}
 </script>
 
 <style scoped>
@@ -94,5 +91,11 @@ function normalizeTopPath(path) {
 
 .sidebar-menu:not(.el-menu--collapse) {
   width: 220px;
+}
+
+.sidebar-empty {
+  padding: 24px 12px;
+  color: #9ca3af;
+  text-align: center;
 }
 </style>

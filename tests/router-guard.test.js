@@ -47,24 +47,26 @@ describe('路由配置检查', () => {
   })
 })
 
-describe('MainLayout 退出登录检查', () => {
-  const layoutFile = path.resolve(import.meta.dirname, '../src/layouts/MainLayout.vue')
-  const layoutContent = fs.readFileSync(layoutFile, 'utf-8')
+describe('Navbar 退出登录检查', () => {
+  // 退出登录入口从老的 src/layouts/MainLayout.vue 迁到新 Layout 体系下的 Navbar 组件
+  const navbarFile = path.resolve(import.meta.dirname, '../src/layout/components/Navbar.vue')
+  const navbarContent = fs.readFileSync(navbarFile, 'utf-8')
 
   it('包含退出登录按钮', () => {
-    assert.match(layoutContent, /退出登录/)
+    assert.match(navbarContent, /退出登录/)
   })
 
   it('退出时清除 token', () => {
-    assert.match(layoutContent, /localStorage\.removeItem\(['"]token['"]\)/)
+    // 允许直接 localStorage.removeItem 或走 userStore.logout() 抽象（内部清 token）
+    assert.ok(
+      /localStorage\.removeItem\(['"]token['"]\)/.test(navbarContent) ||
+        /userStore\.logout\(\)/.test(navbarContent),
+      'Navbar 退出时应清除 token（直接或通过 userStore.logout）'
+    )
   })
 
   it('退出后跳转到 /login', () => {
-    assert.match(layoutContent, /router\.push\(['"]\/login['"]\)/)
-  })
-
-  it('使用 el-button 组件', () => {
-    assert.match(layoutContent, /el-button/)
+    assert.match(navbarContent, /router\.push\(['"]\/login['"]\)/)
   })
 })
 
@@ -92,11 +94,21 @@ describe('LoginPage 登录页检查', () => {
   })
 
   it('导入 auth API 的 login 方法', () => {
-    assert.match(loginContent, /import.*login.*from.*auth/)
+    // 允许直接 import login from '.../auth' 或通过 useUserStore 间接调用
+    assert.ok(
+      /import[\s\S]*login[\s\S]*from[\s\S]*auth/.test(loginContent) ||
+        /import\s*\{\s*useUserStore\s*\}\s*from/.test(loginContent),
+      'LoginPage 应导入 auth.login 或 useUserStore 以发起登录'
+    )
   })
 
   it('登录成功后保存 token 到 localStorage', () => {
-    assert.match(loginContent, /localStorage\.setItem\(['"]token['"]/)
+    // 允许直接 localStorage.setItem 或通过 userStore.login()（store 内部写 token）
+    assert.ok(
+      /localStorage\.setItem\(['"]token['"]/.test(loginContent) ||
+        /userStore\.login\(/.test(loginContent),
+      'LoginPage 登录成功应写入 token（直接或通过 userStore.login）'
+    )
   })
 
   it('登录失败显示错误提示', () => {

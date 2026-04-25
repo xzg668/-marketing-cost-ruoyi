@@ -95,6 +95,10 @@ export const request = async (path, { method = 'GET', params, body, dedupKey } =
 
       if (body !== undefined) {
         config.data = body
+        // T19：FormData 上传需让 axios/浏览器自动设置 multipart boundary —— 显式抹掉 JSON 默认头
+        if (typeof FormData !== 'undefined' && body instanceof FormData) {
+          config.headers = { ...(config.headers || {}), 'Content-Type': undefined }
+        }
       }
 
       const response = await instance(config)

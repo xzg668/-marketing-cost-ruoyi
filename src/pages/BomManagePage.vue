@@ -32,7 +32,16 @@
         </el-form>
         <div class="filter-actions">
           <el-button type="primary" @click="applyFilters">查询</el-button>
-          <el-button type="success" :loading="refreshing" @click="refreshCache">计算</el-button>
+          <el-tooltip
+            content="按 OA 号触发 BOM 计算：查该 OA 下所有产品，逐个拍平生成结算行"
+            placement="top"
+          >
+            <el-button
+              type="success"
+              :loading="refreshing"
+              @click="refreshCache"
+            >{{ refreshing ? progressText : '按 OA 计算 BOM 结算行' }}</el-button>
+          </el-tooltip>
           <el-button @click="resetFilters">重置</el-button>
         </div>
       </div>
@@ -110,8 +119,9 @@ import BasePagination from '../components/BasePagination.vue'
 import {
   fetchBomManageItemDetails,
   fetchBomManageItems,
-  refreshBomManageItems,
+  flattenBomForOa,
 } from '../api/bomManage'
+import { fetchOaFormDetail } from '../api/oaForms'
 
 const filters = ref({
   oaNo: '',
@@ -123,6 +133,8 @@ const tableRows = ref([])
 const total = ref(0)
 const loading = ref(false)
 const refreshing = ref(false)
+// 计算进度文案：多产品场景下动态更新
+const progressText = ref('计算中...')
 
 const currentPage = ref(1)
 const pageSize = ref(20)
@@ -204,27 +216,88 @@ const resetFilters = () => {
   applyFilters()
 }
 
+/**
+ * T7.5：按 OA 触发 BOM 计算（拍平 → 产出结算行）。
+ *
+ * 流程：
+ *   1. 校验 OA 号必填
+ *   2. 先查该 OA 下所有顶层产品（查 bom-manage 列表拿 parent rows 的 materialNo）
+ *   3. 对每个 materialNo 顺序调 flatten BY_OA（用 for await，不并发打爆后端）
+ *   4. 汇总：成功条数、失败产品、产出的结算行总数
+ *   5. 刷新列表让新 costing_row 显示
+ */
 const refreshCache = async () => {
-  if (!filters.value.oaNo.trim()) {
-    ElMessage.warning('请输入OA单号')
+  const oaNo = filters.value.oaNo.trim()
+  if (!oaNo) {
+    ElMessage.warning('请先输入 OA 单号')
     return
   }
+
   refreshing.value = true
+  progressText.value = '查询 OA 产品列表...'
   try {
-    const count = await refreshBomManageItems({
-      oaNo: filters.value.oaNo.trim() || undefined,
-      bomCode: filters.value.bomCode.trim() || undefined,
-    })
-    ElMessage.success(`已刷新${count || 0}条记录`)
+    // 1) 从 OA 单本身拿产品列表（`oa_form_item.material_no`），这是 OA→产品关系的权威源。
+    //    注：本页的 fetchBomManageItems 查的是 costing_row，第一次计算前是空的，
+    //    会导致鸡生蛋问题；所以这里必须走 oa_form 接口拿原始产品清单。
+    const detail = await fetchOaFormDetail(oaNo)
+    const items = Array.isArray(detail?.items) ? detail.items : []
+    const topCodes = Array.from(
+      new Set(
+        items
+          .map((it) => (it?.materialNo || '').toString().trim())
+          .filter(Boolean)
+      )
+    )
+
+    if (topCodes.length === 0) {
+      ElMessage.warning(`OA 单 ${oaNo} 下没有产品明细，无法计算（请确认 OA 单已录入产品）`)
+      return
+    }
+
+    // 2) 顺序触发 flatten；失败记一条继续下一个
+    let totalWritten = 0
+    let totalSubtree = 0
+    const failed = []
+    for (let i = 0; i < topCodes.length; i++) {
+      const code = topCodes[i]
+      progressText.value = `正在计算 ${i + 1}/${topCodes.length}：${code}`
+      try {
+        const data = await flattenBomForOa({
+          oaNo,
+          topProductCode: code,
+        })
+        totalWritten += data?.costingRowsWritten || 0
+        totalSubtree += data?.subtreeRequiredCount || 0
+      } catch (error) {
+        failed.push({ code, message: error?.message || '未知错误' })
+      }
+    }
+
+    // 3) 汇总结果 toast
+    if (failed.length === 0) {
+      ElMessage.success(
+        `已计算 ${topCodes.length} 个产品，产出 ${totalWritten} 条结算行` +
+          (totalSubtree > 0 ? `（含 ${totalSubtree} 条需子树合成）` : '')
+      )
+    } else {
+      ElMessage.warning(
+        `已计算 ${topCodes.length - failed.length}/${topCodes.length} 个产品，` +
+          `${failed.length} 个失败：` +
+          failed.map((f) => f.code).join(', ')
+      )
+    }
+
+    // 4) 刷新列表显示最新数据
     if (currentPage.value === 1) {
       fetchList()
     } else {
       currentPage.value = 1
     }
   } catch (error) {
-    ElMessage.error(error?.message || '刷新失败')
+    ElMessage.error(error?.message || '计算失败')
   } finally {
     refreshing.value = false
+    progressText.value = '计算中...'
   }
 }
 
