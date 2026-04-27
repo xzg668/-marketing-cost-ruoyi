@@ -226,6 +226,14 @@
                   placeholder="输入多个值（回车添加）"
                   style="flex: 1"
                 />
+                <!-- T11：IN_DICT op —— value 是字典 key（如 bom_leaf_rollup_codes），
+                  自由文本输入 + 占位提示 -->
+                <el-input
+                  v-else-if="clause.op === 'IN_DICT'"
+                  v-model="clause.value"
+                  placeholder="字典 key（例：bom_leaf_rollup_codes）"
+                  style="flex: 1"
+                />
                 <el-input
                   v-else
                   v-model="clause.value"
@@ -285,6 +293,14 @@
                   filterable
                   allow-create
                   placeholder="输入多个值（回车添加）"
+                  style="flex: 1"
+                />
+                <!-- T11：IN_DICT op —— value 是字典 key（如 bom_leaf_rollup_codes），
+                  自由文本输入 + 占位提示 -->
+                <el-input
+                  v-else-if="clause.op === 'IN_DICT'"
+                  v-model="clause.value"
+                  placeholder="字典 key（例：bom_leaf_rollup_codes）"
                   style="flex: 1"
                 />
                 <el-input
@@ -349,6 +365,14 @@
                   placeholder="输入多个值（回车添加）"
                   style="flex: 1"
                 />
+                <!-- T11：IN_DICT op —— value 是字典 key（如 bom_leaf_rollup_codes），
+                  自由文本输入 + 占位提示 -->
+                <el-input
+                  v-else-if="clause.op === 'IN_DICT'"
+                  v-model="clause.value"
+                  placeholder="字典 key（例：bom_leaf_rollup_codes）"
+                  style="flex: 1"
+                />
                 <el-input
                   v-else
                   v-model="clause.value"
@@ -372,6 +396,25 @@
               {{ opt.label }}
             </el-radio>
           </el-radio-group>
+          <!-- T11：选 LEAF_ROLLUP_TO_PARENT 时给业务一段提示文案 -->
+          <el-alert
+            v-if="form.drillAction === 'LEAF_ROLLUP_TO_PARENT'"
+            type="info"
+            :closable="false"
+            show-icon
+            style="margin-top: 8px"
+            title="LEAF_ROLLUP_TO_PARENT 使用提示"
+          >
+            <div style="line-height: 1.6">
+              本规则匹配<strong>叶子节点</strong>；命中后该叶子的<strong>直接父</strong>作结算行（subtree_cost_required=1），命中叶子写入 sub_ref。
+              父的<strong>非命中</strong>兄弟叶子继续作独立结算行。
+              <br />
+              建议 nodeConditions 用 <code>material_category_1 + IN_DICT(bom_leaf_rollup_codes)</code>
+              一个条件即可（算法侧自动按"编码 + 名称兜底"双路命中，业务只填字典 key）。
+              <br />
+              字典 key 由后台 V43 SQL 建好，业务在 /system/dict 的 <code>bom_leaf_rollup_codes</code> 类型下维护具体条目。
+            </div>
+          </el-alert>
         </el-form-item>
         <el-form-item label="标记子树需成本">
           <el-switch

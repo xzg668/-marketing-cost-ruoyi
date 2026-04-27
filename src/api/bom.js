@@ -191,6 +191,9 @@ export const CONDITION_OP_OPTIONS = [
   { value: 'EQ', label: 'EQ（等于，单值）' },
   { value: 'IN', label: 'IN（列表，多值）' },
   { value: 'LIKE', label: 'LIKE（包含子串，预留）' },
+  // T11：IN_DICT —— value 填字典 key（如 bom_leaf_rollup_codes），算法侧拉字典做 双路匹配
+  //   （编码 IN 命中 OR 名称 contains 命中），主要给 LEAF_ROLLUP_TO_PARENT 用
+  { value: 'IN_DICT', label: 'IN_DICT（按字典 key，编码 + 名称双路命中；用于 LEAF_ROLLUP）' },
 ]
 
 // ===== 字典查询（yudao 原生接口）=====
@@ -205,11 +208,22 @@ export const CONDITION_OP_OPTIONS = [
 export const fetchDictData = (dictType) =>
   request(`/api/v1/system/dict-data/type/${encodeURIComponent(dictType)}`)
 
-/** drill_action 下拉选项（T8 加 ROLLUP_TO_PARENT；REPLACE 暂不支持） */
+/**
+ * drill_action 下拉选项。
+ *
+ * 业务模型已经简化（2026-04-27 业务确认）：唯一推荐使用的动作是 LEAF_ROLLUP_TO_PARENT。
+ * 其他三种保留代码不删（已存历史规则可能引用），但 UI 标 "已废弃" 引导用户优先选新规则。
+ */
 export const DRILL_ACTION_OPTIONS = [
-  { value: 'STOP_AND_COST_ROW', label: 'STOP_AND_COST_ROW（停止下钻并成为结算行）' },
-  { value: 'EXCLUDE', label: 'EXCLUDE（整子树排除）' },
-  { value: 'ROLLUP_TO_PARENT', label: 'ROLLUP_TO_PARENT（T8：父节点作结算行，子件进 sub_ref）' },
+  // ⭐ 推荐：业务唯一在用的规则类型；只配 1 条 + 维护字典 bom_leaf_rollup_codes 即可
+  {
+    value: 'LEAF_ROLLUP_TO_PARENT',
+    label: '⭐ LEAF_ROLLUP_TO_PARENT（推荐：叶子上卷一层，命中叶子→直接父作结算）',
+  },
+  // 以下三种已废弃但保留代码，用于读取历史规则；新建规则不建议选
+  { value: 'STOP_AND_COST_ROW', label: 'STOP_AND_COST_ROW（已废弃：停止下钻并成为结算行）' },
+  { value: 'EXCLUDE', label: 'EXCLUDE（已废弃：整子树排除）' },
+  { value: 'ROLLUP_TO_PARENT', label: 'ROLLUP_TO_PARENT（已废弃：父节点作结算行，全部子件进 sub_ref）' },
 ]
 
 /** 构建层级 mode 选项 */
