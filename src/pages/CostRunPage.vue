@@ -97,23 +97,35 @@
           </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="100" fixed="right">
+        <el-table-column label="操作" width="170" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link @click="goTrial(row)">
               {{ getFormStatus(row) === '未核算' ? '试算' : '查看' }}
+            </el-button>
+            <!-- T13：查看明细 → 弹窗轻量预览部品 4 列 + 缺价红字 -->
+            <el-button type="primary" link @click="openDetail(row)">
+              查看明细
             </el-button>
           </template>
         </el-table-column>
       </el-table>
     </el-card>
+
+    <!-- T13：试算明细弹窗 -->
+    <CostRunPartDetailDialog
+      v-model="detailDialog.visible"
+      :oa-no="detailDialog.oaNo"
+      :product-code="detailDialog.productCode"
+    />
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { fetchOaForms } from '../api/oaForms'
+import CostRunPartDetailDialog from '../components/CostRunPartDetailDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -289,6 +301,19 @@ const goTrial = (row) => {
       formType: row?.formType || '',
     },
   })
+}
+
+// T13：弹窗状态。productCode 留空，弹窗自己拉 OA 详情解析多产品下拉
+const detailDialog = reactive({
+  visible: false,
+  oaNo: '',
+  productCode: '',
+})
+const openDetail = (row) => {
+  if (!row?.oaNo) return
+  detailDialog.oaNo = row.oaNo
+  detailDialog.productCode = row.productCode || ''
+  detailDialog.visible = true
 }
 
 const applyQuery = () => {

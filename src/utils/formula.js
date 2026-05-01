@@ -81,13 +81,18 @@ export const buildFormulaIndex = ({ variables = [], placeholders = [] } = {}) =>
         // 忽略坏 JSON，不影响其他变量
       }
     }
+    // V47+ 统一输出 [code] 包装：alias / variableName / 裸 code 三类输入
+    // 全部映射到 [code]，保证下游 evaluator 拿到的都是规范形式。
+    // 防御：toCodeExpr 用 word-boundary 正则避免 "Pcu" 里的 "Cu" 误伤、
+    // 已包装的 "[Cu]" 二次包装。
+    const bracketed = `[${code}]`
     for (const alias of aliases) {
       if (typeof alias === 'string' && alias.trim()) {
-        aliasToCode[alias] = code
+        aliasToCode[alias] = bracketed
       }
     }
-    // variableName 本身也作为反向别名（用户直接打显示名最常见）
-    if (name) aliasToCode[name] = code
+    if (name) aliasToCode[name] = bracketed
+    aliasToCode[code] = bracketed
   }
 
   // 行局部占位符：code 带两下划线前缀，反向映射**必须**包方括号——因为 __material 不在
@@ -156,10 +161,24 @@ export const toCodeExpr = (expr, variables = FALLBACK_VARIABLE_NAMES) => {
     }
   }
 
+  // 纯 ASCII 标识符（Cu/Ag/blank_weight…）：用前后向断言避免子串误伤和二次包装。
+  // 中文别名（电解铜/加工费）：保持全局替换，中文不存在子串歧义。
+  const isAsciiIdent = (s) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(s)
   const orderedNames = Object.keys(aliasToCode).sort((a, b) => b.length - a.length)
   orderedNames.forEach((name) => {
-    const pattern = new RegExp(escapeRegExp(name), 'g')
-    output = output.replace(pattern, aliasToCode[name])
+    const replacement = aliasToCode[name]
+    let pattern
+    if (isAsciiIdent(name)) {
+      // 前不能是字母/数字/下划线/[（防 "Pcu" 里的 "Cu"、"[Cu]" 里的 "Cu"）；
+      // 后不能是字母/数字/下划线/]（同理防尾部）。
+      pattern = new RegExp(
+        `(?<![A-Za-z0-9_\\[])${escapeRegExp(name)}(?![A-Za-z0-9_\\]])`,
+        'g',
+      )
+    } else {
+      pattern = new RegExp(escapeRegExp(name), 'g')
+    }
+    output = output.replace(pattern, replacement)
   })
   return output
 }

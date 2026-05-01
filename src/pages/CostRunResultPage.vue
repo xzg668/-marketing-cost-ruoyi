@@ -33,6 +33,12 @@
 
     <el-card v-if="running" shadow="never" class="progress-card">
       <div class="section-title">试算进度</div>
+      <!-- T17：排队中时进度条上方显示排队位置 -->
+      <div v-if="queuePos > 0" class="queue-tip">
+        <el-tag type="warning" effect="light">
+          前面有 {{ queuePos - 1 }} 个试算在排队，本次第 {{ queuePos }} 位，预计等约 {{ estimatedWaitSec }}s
+        </el-tag>
+      </div>
       <el-progress
         :percentage="progress"
         :status="progressStatus"
@@ -98,6 +104,14 @@ const startAt = ref(0)
 const lastDurationMs = ref(0)
 const elapsedMs = ref(0)
 const statusOverride = ref('')
+// T17：排队位置（0=正在跑/已结束，>0=排队中第 N 位）
+const queuePos = ref(0)
+// T17：单个试算预估时长（秒）；OA-GOLDEN-001 实测约 1s 内，保守按 5s × 队长估算
+const SINGLE_TRIAL_EST_SEC = 5
+// T18(a)：后端 status 镜像（IDLE/QUEUED/RUNNING/DONE/ERROR），驱动 progressStatus + 提示
+const trialStatus = ref('')
+// T18(d)：后端崩溃 30s 无响应 toast 阈值
+const POLL_TIMEOUT_MS = 30 * 1000
 
 const oaNo = computed(() => String(route.params.oaNo || route.query.oaNo || '').trim())
 const queryStatus = computed(() => String(route.query.status || '').trim())
@@ -148,7 +162,16 @@ const totalSupportQty = computed(() => {
   return hasValue ? sum : null
 })
 
-const progressStatus = computed(() => (progress.value >= 100 ? 'success' : ''))
+// T17：排队预计等候 = 前面 (queuePos-1) 个 × 单试算估时
+const estimatedWaitSec = computed(() => Math.max(0, (queuePos.value - 1) * SINGLE_TRIAL_EST_SEC))
+
+// T18(a)：进度条状态映射 — 出错时红色，完成时绿色，否则默认蓝色
+//   需要 trialStatus 这个 ref（在 polling 里同步 data.status）
+const progressStatus = computed(() => {
+  if (trialStatus.value === 'ERROR') return 'exception'
+  if (progress.value >= 100 || trialStatus.value === 'DONE') return 'success'
+  return ''
+})
 const progressTip = computed(() => {
   if (running.value) {
     const seconds = Math.max(0, Math.floor(elapsedMs.value / 1000))
@@ -250,6 +273,10 @@ const pollProgress = async () => {
     if (Number.isFinite(percent)) {
       progress.value = Math.max(0, Math.min(100, percent))
     }
+    // T17：同步排队位置
+    queuePos.value = Number(data.queuePos) || 0
+    // T18(a)：同步状态镜像，驱动进度条颜色 + 复原后 UI
+    trialStatus.value = data.status || ''
     if (data.status === 'ERROR') {
       ElMessage.error(data.message || '试算失败')
       stopProgressTimer()
@@ -260,28 +287,36 @@ const pollProgress = async () => {
 }
 
 const waitForCompletion = () => {
-  const MAX_POLL_MS = 5 * 60 * 1000 // 最多轮询 5 分钟
+  // T18(d)：原 5min 太长，后端崩溃用户要等到天荒地老。30s 内没拿到 DONE/ERROR → toast + 兜底
   const pollStart = Date.now()
+  let lastSuccessAt = Date.now()
   return new Promise((resolve) => {
     const check = async () => {
       if (!oaNo.value) {
         resolve('ERROR')
         return
       }
-      if (Date.now() - pollStart > MAX_POLL_MS) {
-        ElMessage.error('试算超时，请稍后刷新查看结果')
+      // T18(d)：30s 内没拿到任何 progress 响应 → 视为后端崩溃
+      if (Date.now() - lastSuccessAt > POLL_TIMEOUT_MS) {
+        ElMessage.error('后端长时间无响应（>30s），请检查后端是否崩溃；可刷新页面重试')
         resolve('ERROR')
         return
       }
       try {
         const data = await fetchCostRunProgress(oaNo.value)
         if (data) {
+          lastSuccessAt = Date.now()
           const percent = Number(data.percent)
           if (Number.isFinite(percent)) {
             progress.value = Math.max(0, Math.min(100, percent))
           }
+          // T17：同步排队位置
+          queuePos.value = Number(data.queuePos) || 0
+          // T18(a)：同步状态镜像
+          trialStatus.value = data.status || ''
           if (data.status === 'DONE') {
             progress.value = 100
+            queuePos.value = 0
             resolve('DONE')
             return
           }
@@ -329,6 +364,31 @@ const resetFlow = async () => {
   elapsedMs.value = 0
   lastDurationMs.value = 0
   statusOverride.value = ''
+
+  // T18(f)：进页面先查 live progress，后端还在跑 → 直接接管 polling，不重复 enqueue
+  try {
+    const live = await fetchCostRunProgress(oaNo.value)
+    if (live && (live.status === 'RUNNING' || live.status === 'QUEUED')) {
+      startProgress()
+      progress.value = Math.max(0, Math.min(100, Number(live.percent) || 0))
+      queuePos.value = Number(live.queuePos) || 0
+      trialStatus.value = live.status
+      const finalStatus = await waitForCompletion()
+      if (finalStatus === 'DONE') {
+        statusOverride.value = '已核算'
+      }
+      await loadResult()
+      lastDurationMs.value = Date.now() - startAt.value
+      elapsedMs.value = lastDurationMs.value
+      stopTimer()
+      stopProgressTimer()
+      running.value = false
+      return
+    }
+  } catch (e) {
+    // 查不到 progress 不影响后续流程
+  }
+
   await loadResult()
   if (displayStatus.value === '未核算') {
     startProgress()
@@ -443,5 +503,10 @@ onBeforeUnmount(() => {
   margin-top: 6px;
   color: #6b7280;
   font-size: 12px;
+}
+
+/* T17：排队提示 */
+.queue-tip {
+  margin-bottom: 8px;
 }
 </style>

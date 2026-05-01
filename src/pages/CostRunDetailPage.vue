@@ -86,7 +86,12 @@
             <td>价格来源</td>
             <td>备注（手填）</td>
           </tr>
-          <tr v-for="(item, index) in partRows" :key="`${item.partCode}-${index}`">
+          <!-- T13：NO_ROUTE / ERROR 整行红字，便于一眼锁定缺价 -->
+          <tr
+            v-for="(item, index) in partRows"
+            :key="`${item.partCode}-${index}`"
+            :class="{ 'row-miss': item.priceSource === 'NO_ROUTE' || item.priceSource === 'ERROR' }"
+          >
             <td>{{ item.partName }}</td>
             <td class="part-code">{{ item.partCode }}</td>
             <td>{{ item.drawingNo }}</td>
@@ -961,5 +966,11 @@ td.left-blue {
 
 .total-label {
   text-align: center;
+}
+
+/* T13：缺价行（NO_ROUTE / ERROR）整行红色背景 + 红字 */
+.row-miss td {
+  background: #fde2e2 !important;
+  color: #c0392b !important;
 }
 </style>

@@ -103,6 +103,14 @@
               {{ formatNum(traceData?.result) }}
             </el-descriptions-item>
             <el-descriptions-item label="模式">{{ traceData?.mode || '—' }}</el-descriptions-item>
+            <!-- V48 新增：联动价主表 Excel 金标 + 月份，用于业务对比是否同月一致 -->
+            <el-descriptions-item v-if="traceData?.manualPrice !== undefined" label="主表金标">
+              {{ formatNum(traceData?.manualPrice) }}
+            </el-descriptions-item>
+            <el-descriptions-item v-if="traceData?.manualPriceMonth" label="主表月份">
+              {{ traceData?.manualPriceMonth }}
+            </el-descriptions-item>
+            <!-- legacy/dual 灰度切换 dual→new 后这些字段不再写入；保留 v-if 兜底显示历史 trace -->
             <el-descriptions-item v-if="traceData?.legacyResult !== undefined" label="legacy 结果">
               {{ formatNum(traceData?.legacyResult) }}
             </el-descriptions-item>
@@ -161,6 +169,13 @@ const buildParams = () => ({
 })
 
 const fetchList = async () => {
+  // V48：必须输 OA 单号才查询。否则不带 OA 时后端会返回联动价主表 22 条料号
+  // (OA 单号 / 用量 / 单价 全空)，业务侧看着像 bug。强制 OA 必填，引导业务先输再查。
+  if (!filters.value.oaNo?.trim()) {
+    tableRows.value = []
+    total.value = 0
+    return
+  }
   loading.value = true
   try {
     const data = await fetchPriceLinkedCalc(buildParams())

@@ -16,7 +16,26 @@
           <el-button type="primary" @click="openCreate">新增</el-button>
         </div>
       </div>
+      <!-- V46：source_type tab 切换 + 结算期间 + 物料/供应商 筛选 -->
+      <el-tabs v-model="filters.sourceType" class="source-type-tabs" @tab-change="applyFilters">
+        <el-tab-pane
+          v-for="opt in SOURCE_TYPE_OPTIONS"
+          :key="opt.value"
+          :label="opt.label"
+          :name="opt.value"
+        />
+      </el-tabs>
       <el-form :inline="true" label-width="90px">
+        <el-form-item label="结算期间">
+          <el-date-picker
+            v-model="filters.pricingMonth"
+            type="month"
+            format="YYYY-MM"
+            value-format="YYYY-MM"
+            placeholder="2026-03"
+            style="width: 140px"
+          />
+        </el-form-item>
         <el-form-item label="物料代码">
           <el-input v-model="filters.materialCode" placeholder="1008000300944" />
         </el-form-item>
@@ -32,30 +51,37 @@
 
     <el-card shadow="never">
       <el-table :data="tableRows" stripe v-loading="loading">
-        <el-table-column prop="orgCode" label="组织" width="80" />
-        <el-table-column prop="sourceName" label="来源" width="100" />
-        <el-table-column prop="supplierName" label="供应商名称" width="160" />
-        <el-table-column prop="supplierCode" label="供应商代码" width="120" />
-        <el-table-column prop="purchaseClass" label="采购分类" width="120" />
+        <!-- V46 新加：来源类型 tag + 结算期间 -->
+        <el-table-column label="来源" width="90">
+          <template #default="{ row }">
+            <el-tag :type="sourceTagType(row.sourceType)" size="small">
+              {{ sourceLabel(row.sourceType) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="pricingMonth" label="结算期间" width="100" />
         <el-table-column prop="materialName" label="物料名称" min-width="140" />
         <el-table-column prop="materialCode" label="物料代码" width="160" />
         <el-table-column prop="specModel" label="规格型号" width="140" />
-        <el-table-column prop="unit" label="单位" width="80" />
-        <el-table-column prop="formulaExpr" label="联动公式" min-width="160" />
-        <el-table-column prop="blankWeight" label="下料重" width="100" />
-        <el-table-column prop="netWeight" label="净重" width="100" />
-        <el-table-column prop="processFee" label="加工费" width="100" />
-        <el-table-column prop="agentFee" label="代理费" width="100" />
+        <el-table-column prop="unit" label="单位" width="70" />
         <el-table-column prop="fixedPrice" label="单价" width="100" />
-        <el-table-column label="是否含税" width="100">
+        <el-table-column label="是否含税" width="80">
           <template #default="{ row }">
             {{ row.taxIncluded ? '含税' : '未税' }}
           </template>
         </el-table-column>
-        <el-table-column prop="effectiveFrom" label="生效日期" width="120" />
-        <el-table-column prop="effectiveTo" label="失效日期" width="120" />
-        <el-table-column prop="orderType" label="订单类型" width="120" />
-        <el-table-column prop="quota" label="配额" width="100" />
+        <!-- 采购件专属：供应商 + 流程编号 -->
+        <el-table-column prop="supplierName" label="供应商名称" min-width="140" />
+        <el-table-column prop="processNo" label="流程编号" width="180" />
+        <!-- 自制件专属：下料重 / 净重 -->
+        <el-table-column prop="blankWeight" label="下料重" width="100" />
+        <el-table-column prop="netWeight" label="净重" width="100" />
+        <!-- 结算价专属：计划价 + 上浮比例 + V47 双口径 -->
+        <el-table-column prop="plannedPrice" label="计划价" width="100" />
+        <el-table-column prop="markupRatio" label="上浮比例" width="90" />
+        <el-table-column prop="baseSettlePrice" label="基准结算价" width="110" />
+        <el-table-column prop="linkedSettlePrice" label="联动结算价" width="110" />
+        <el-table-column prop="remark" label="备注" min-width="120" />
         <el-table-column prop="updatedAt" label="更新时间" width="160" />
         <el-table-column label="操作" width="140" fixed="right">
           <template #default="{ row }">
@@ -78,8 +104,20 @@
       />
     </el-card>
 
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="560px">
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="640px">
       <el-form :model="formModel" label-width="90px">
+        <!-- V46 新字段优先放前面：来源类型 + 结算期间是核心维度 -->
+        <el-form-item label="来源类型" required>
+          <el-select v-model="formModel.sourceType" style="width: 100%">
+            <el-option v-for="opt in SOURCE_TYPE_OPTIONS" :key="opt.value"
+                       :label="opt.label" :value="opt.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="结算期间" required>
+          <el-date-picker v-model="formModel.pricingMonth" type="month"
+                          format="YYYY-MM" value-format="YYYY-MM" placeholder="2026-03"
+                          style="width: 100%" />
+        </el-form-item>
         <el-form-item label="组织">
           <el-input v-model="formModel.orgCode" />
         </el-form-item>
@@ -153,6 +191,19 @@
         <el-form-item label="配额">
           <el-input v-model="formModel.quota" />
         </el-form-item>
+        <!-- V46 新字段：根据 sourceType 隐式分组 -->
+        <el-form-item v-if="formModel.sourceType === 'PURCHASE'" label="流程编号">
+          <el-input v-model="formModel.processNo" placeholder="SC-SC-001-20260227-001" />
+        </el-form-item>
+        <el-form-item v-if="formModel.sourceType === 'SETTLE'" label="计划价">
+          <el-input v-model="formModel.plannedPrice" placeholder="0.4202" />
+        </el-form-item>
+        <el-form-item v-if="formModel.sourceType === 'SETTLE'" label="上浮比例">
+          <el-input v-model="formModel.markupRatio" placeholder="1.2000" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="formModel.remark" type="textarea" :rows="2" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -179,7 +230,20 @@ const importing = ref(false)
 const dialogVisible = ref(false)
 const editingId = ref(null)
 
+// V46/V48：source_type 仅保留 PURCHASE/SETTLE 两类（自制件归 lp_make_part_spec、废料归 lp_price_scrap，
+// 各自独立页面，不再在固定价 tab 里展示）
+const SOURCE_TYPE_OPTIONS = [
+  { value: 'PURCHASE', label: '采购件', tag: 'primary' },
+  { value: 'SETTLE',   label: '结算价', tag: 'warning' },
+]
+const sourceLabel = (v) =>
+  SOURCE_TYPE_OPTIONS.find((o) => o.value === v)?.label || v || '-'
+const sourceTagType = (v) =>
+  SOURCE_TYPE_OPTIONS.find((o) => o.value === v)?.tag || ''
+
 const filters = ref({
+  sourceType: 'PURCHASE',
+  pricingMonth: '2026-03',
   materialCode: '',
   supplierCode: '',
 })
@@ -205,6 +269,13 @@ const formModel = ref({
   effectiveTo: '',
   orderType: '',
   quota: '',
+  // V46 新字段
+  sourceType: 'PURCHASE',
+  pricingMonth: '2026-03',
+  processNo: '',
+  plannedPrice: '',
+  markupRatio: '',
+  remark: '',
 })
 
 const tableRows = ref([])
@@ -217,6 +288,8 @@ const dialogTitle = computed(() =>
 )
 
 const buildParams = () => ({
+  sourceType: filters.value.sourceType || undefined,    // V46：tab 切换
+  pricingMonth: filters.value.pricingMonth || undefined,// V46：月份选择器
   materialCode: filters.value.materialCode.trim(),
   supplierCode: filters.value.supplierCode.trim(),
   page: currentPage.value,
@@ -260,6 +333,8 @@ const applyFilters = () => {
 
 const resetFilters = () => {
   filters.value = {
+    sourceType: 'PURCHASE',
+    pricingMonth: '2026-03',
     materialCode: '',
     supplierCode: '',
   }
@@ -316,6 +391,13 @@ const openEdit = (row) => {
     effectiveTo: row.effectiveTo ?? '',
     orderType: row.orderType ?? '',
     quota: row.quota ?? '',
+    // V46 新字段
+    sourceType: row.sourceType ?? 'PURCHASE',
+    pricingMonth: row.pricingMonth ?? '2026-03',
+    processNo: row.processNo ?? '',
+    plannedPrice: row.plannedPrice ?? '',
+    markupRatio: row.markupRatio ?? '',
+    remark: row.remark ?? '',
   }
   dialogVisible.value = true
 }
@@ -393,6 +475,13 @@ const submitRow = async () => {
     effectiveTo: formModel.value.effectiveTo || null,
     orderType: formModel.value.orderType,
     quota: parseNumber(formModel.value.quota),
+    // V46 新字段
+    sourceType: formModel.value.sourceType,
+    pricingMonth: formModel.value.pricingMonth,
+    processNo: formModel.value.processNo,
+    plannedPrice: parseNumber(formModel.value.plannedPrice),
+    markupRatio: parseNumber(formModel.value.markupRatio),
+    remark: formModel.value.remark,
   }
   try {
     if (editingId.value) {
@@ -455,24 +544,34 @@ const handleFileChange = async (uploadFile) => {
     const headerAliases = {
       orgCode: ['组织'],
       sourceName: ['来源'],
-      supplierName: ['供应商名称'],
+      supplierName: ['供应商名称', '现供方名称'],         // V46：固定采购价 sheet 用"现供方名称"
       supplierCode: ['供应商代码'],
       purchaseClass: ['采购分类'],
-      materialName: ['物料名称'],
-      materialCode: ['物料代码', '物料编码'],
-      specModel: ['规格型号'],
+      materialName: ['物料名称', '料品名称'],           // V46：家用结算价 sheet 用"料品名称"
+      materialCode: ['物料代码', '物料编码', '料号'],    // V46：自制件/家用结算价用"料号"
+      specModel: ['规格型号', '型号', '图号'],           // V46：自制件 sheet 用"图号"
       unit: ['单位'],
       formulaExpr: ['联动公式'],
-      blankWeight: ['下料重', '下料量'],
+      blankWeight: ['下料重', '下料量', '下料重量'],     // V46：自制件 sheet 用"下料重量"
       netWeight: ['净重'],
       processFee: ['加工费'],
       agentFee: ['代理费'],
-      fixedPrice: ['单价', '固定价'],
+      // 注意：'基准结算价' / '联动结算价' **故意不放在这里**，否则会在 SETTLE sheet 跟
+      //   baseSettlePrice/linkedSettlePrice 抢 alias，导致 fixedPrice 误命中 C5。
+      //   SETTLE sheet 的真实取价列是"铜价（90000元/吨）"，由下方 settle 分支专门处理
+      fixedPrice: ['单价', '固定价', '现不含税价格', '零件价格'],  // V46 3 个非 SETTLE sheet 的价格列
       taxIncluded: ['是否含税'],
       effectiveFrom: ['生效日期'],
       effectiveTo: ['失效日期'],
       orderType: ['订单类型'],
       quota: ['配额'],
+      // V46 新字段
+      processNo: ['流程编号'],                          // 来自固定采购价5
+      plannedPrice: ['计划价'],                         // 来自家用结算价9 C3
+      markupRatio: ['上浮比例'],                        // 来自家用结算价9 C4
+      baseSettlePrice: ['基准结算价'],                  // V47：家用结算价9 C5
+      linkedSettlePrice: ['联动结算价'],                // V47：家用结算价9 C6
+      remark: ['备注'],
     }
     const headerMap = Object.entries(headerAliases).reduce((acc, [key, values]) => {
       values.forEach((value) => {
@@ -523,10 +622,34 @@ const handleFileChange = async (uploadFile) => {
         fieldIndex[field] = index
       }
     })
+    // V47 + A 方案：当用户在 SETTLE tab 上传家用结算价 sheet 时，
+    //   fixedPrice 不从通用 alias 取，而是按"含'铜价' 关键字" 找列（VLOOKUP 公式真正命中的列）
+    //   同时把"基准结算价" / "联动结算价" 列识别为 baseSettlePrice / linkedSettlePrice
+    if (filters.value.sourceType === 'SETTLE') {
+      const findHeaderIdx = (kw) => {
+        const i = headerRow.findIndex((c) => normalizeHeader(c).includes(kw))
+        return i >= 0 ? i : nextHeaderRow.findIndex((c) => normalizeHeader(c).includes(kw))
+      }
+      // SETTLE 真取价列：表头含"铜价"（家用结算价9 C8 = "铜价（90000元/吨...）"）
+      const settlePriceIdx = findHeaderIdx('铜价')
+      if (settlePriceIdx >= 0) {
+        fieldIndex.fixedPrice = settlePriceIdx
+      }
+      // 顺手把基准 / 联动结算价识别出来
+      const baseIdx = findHeaderIdx('基准结算价')
+      if (baseIdx >= 0 && fieldIndex.baseSettlePrice === undefined) {
+        fieldIndex.baseSettlePrice = baseIdx
+      }
+      const linkedIdx = findHeaderIdx('联动结算价')
+      if (linkedIdx >= 0 && fieldIndex.linkedSettlePrice === undefined) {
+        fieldIndex.linkedSettlePrice = linkedIdx
+      }
+    }
+
     const requiredFields = ['materialCode', 'fixedPrice']
     const requiredLabels = {
       materialCode: '物料代码',
-      fixedPrice: '单价',
+      fixedPrice: filters.value.sourceType === 'SETTLE' ? '铜价（取价列）' : '单价',
     }
     const missing = requiredFields.filter((field) => fieldIndex[field] === undefined)
     if (missing.length > 0) {
@@ -557,6 +680,15 @@ const handleFileChange = async (uploadFile) => {
         effectiveTo: normalizeDate(row[fieldIndex.effectiveTo]) || null,
         orderType: String(row[fieldIndex.orderType] || '').trim(),
         quota: parseNumber(row[fieldIndex.quota]),
+        // V46：源类型 / 月份从 filter tab 取（用户在哪个 tab 上传就归到哪类）
+        sourceType: filters.value.sourceType,
+        pricingMonth: filters.value.pricingMonth || '2026-03',
+        processNo: String(row[fieldIndex.processNo] || '').trim(),
+        plannedPrice: parseNumber(row[fieldIndex.plannedPrice]),
+        markupRatio: parseNumber(row[fieldIndex.markupRatio]),
+        baseSettlePrice: parseNumber(row[fieldIndex.baseSettlePrice]),
+        linkedSettlePrice: parseNumber(row[fieldIndex.linkedSettlePrice]),
+        remark: String(row[fieldIndex.remark] || '').trim(),
       }))
       .filter((row) => row.materialCode && row.fixedPrice !== null)
     if (dataRows.length === 0) {
@@ -608,5 +740,13 @@ onMounted(fetchList)
 .filter-actions {
   display: flex;
   gap: 8px;
+}
+
+/* V46：source_type tabs 上移嵌入 filter-card */
+.source-type-tabs {
+  margin-bottom: 8px;
+}
+.source-type-tabs :deep(.el-tabs__nav-wrap)::after {
+  height: 1px;
 }
 </style>
