@@ -304,6 +304,7 @@ const handleFileChange = async (uploadFile) => {
       parentModel: ['父件型号'],
       period: ['期间'],
       productAttr: ['产品属性'],
+      coefficient: ['系数', '产品属性系数'],
     }
     const headerMap = Object.entries(headerAliases).reduce((acc, [key, values]) => {
       values.forEach((value) => {
@@ -368,6 +369,13 @@ const handleFileChange = async (uploadFile) => {
       ElMessage.error(`缺少表头：${names.join('、')}`)
       return
     }
+    const parseCoefficient = (raw) => {
+      if (raw === undefined || raw === null) return null
+      const text = String(raw).trim()
+      if (!text) return null
+      const num = Number(text)
+      return Number.isFinite(num) ? num : null
+    }
     const dataRows = rows
       .slice(headerIndex + 1)
       .map((row) => ({
@@ -379,6 +387,11 @@ const handleFileChange = async (uploadFile) => {
         parentModel: String(row[fieldIndex.parentModel] || '').trim(),
         period: formatPeriod(row[fieldIndex.period]),
         productAttr: String(row[fieldIndex.productAttr] || '').trim(),
+        // 系数列可选；空 → null → 后端落库走 schema DEFAULT 1.0000
+        coefficient:
+          fieldIndex.coefficient === undefined
+            ? null
+            : parseCoefficient(row[fieldIndex.coefficient]),
       }))
       .filter(
         (row) =>

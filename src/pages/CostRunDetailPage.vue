@@ -2,6 +2,14 @@
   <div class="cost-run-detail">
     <div class="tool-row">
       <el-button @click="goBack">返回</el-button>
+      <!-- 财务可改"部品价格"列；改完点确认锁定 → 导出以确认值为准 -->
+      <el-button
+        :type="dirtyCount > 0 ? 'warning' : 'success'"
+        :disabled="dirtyCount === 0 && !confirmedAt"
+        @click="confirmEdits"
+      >
+        {{ dirtyCount > 0 ? `确认修改 (${dirtyCount})` : (confirmedAt ? '已确认' : '确认修改') }}
+      </el-button>
       <el-button type="primary" @click="exportSheet">导出</el-button>
     </div>
 
@@ -97,7 +105,19 @@
             <td>{{ item.drawingNo }}</td>
             <td>{{ item.unitPrice }}</td>
             <td>{{ item.qty }}</td>
-            <td>{{ item.amount }}</td>
+            <!-- 部品价格列可编辑：dirty 黄底 / confirmed 绿底 -->
+            <td
+              :class="{
+                'amount-dirty': isAmountDirty(index),
+                'amount-confirmed': confirmedAt && !isAmountDirty(index) && originalAmounts[index] !== item.amount,
+              }"
+            >
+              <input
+                v-model="item.amount"
+                class="amount-input"
+                @input="markAmountTouched"
+              />
+            </td>
             <td>{{ item.material }}</td>
             <td>{{ item.shape }}</td>
             <td>{{ item.priceSource }}</td>
@@ -231,6 +251,18 @@
             <td></td>
             <td></td>
           </tr>
+          <tr class="left-blue">
+            <td class="row-label">产品属性</td>
+            <td>{{ productAttr }}</td>
+            <td class="rate">{{ getCostCoefficient('ADJUSTED_MANUFACTURE_COST') }}</td>
+            <td class="formula"></td>
+            <td></td>
+            <td class="amount">{{ getCostAmount('ADJUSTED_MANUFACTURE_COST') }}</td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+          </tr>
           <tr>
             <td class="left-blue" rowspan="3">三项费用</td>
             <td>管理费用</td>
@@ -265,29 +297,41 @@
             <td></td>
             <td></td>
           </tr>
+          <!-- 见机表 r58/r59/r60 顺序：运费 / 模具费 / 认证费 —— 固定占位行，
+               值从 cost_item 拿（运费=OTHER_EXP_FREIGHT；模具费/认证费按 costName 在
+               OTHER_EXP_<id> 系列里 lookup），未配数据显示 '-'。
+               注意：包装费已经计入材料费 (T24 见机表口径)，**不在这里展示**避免双重 -->
           <tr class="attr-row">
-            <td class="left-label">产品属性</td>
-            <td></td>
-            <td>{{ productAttr }}</td>
+            <td class="left-label">运费</td>
             <td></td>
             <td></td>
             <td></td>
+            <td></td>
+            <td class="formula">{{ getCostAmount('OTHER_EXP_FREIGHT') || '-' }}</td>
             <td></td>
             <td></td>
             <td></td>
             <td></td>
           </tr>
-          <tr
-            v-for="(item, index) in otherExpenseItems"
-            :key="`${item.costCode}-${index}`"
-            class="attr-row"
-          >
-            <td class="left-label attr-warn">{{ item.costName || '其他费用' }}</td>
+          <tr class="attr-row">
+            <td class="left-label">模具费</td>
             <td></td>
             <td></td>
             <td></td>
             <td></td>
-            <td class="formula">{{ formatAmount(item.amount) }}</td>
+            <td class="formula">{{ getOtherExpenseByName('模具费') || '-' }}</td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+          </tr>
+          <tr class="attr-row">
+            <td class="left-label">认证费</td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td class="formula">{{ getOtherExpenseByName('认证费') || '-' }}</td>
             <td></td>
             <td></td>
             <td></td>
@@ -324,7 +368,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { fetchCostRunDetail } from '../api/costRunDetail'
 
 const route = useRoute()
@@ -338,7 +382,8 @@ const meta = computed(() => ({
   productCode: String(route.query.materialCode || ''),
   series: String(route.query.series || ''),
   customerDrawing: String(route.query.customerDrawing || ''),
-  owner: '报价员',
+  // 见机表 r2 col 4 是空给业务方手填；OA 表当前没 owner 字段，留空
+  owner: '',
   currency: 'CNY',
 }))
 
@@ -351,6 +396,40 @@ const productName = ref('')
 const productModel = ref('')
 const copperPrice = ref('')
 const zincPrice = ref('')
+
+// 部品价格可编辑：originalAmounts 是 loadDetail 时备份的原始 amount，用来识别 dirty
+// confirmedAt 是用户点"确认修改"按钮时的时间戳（null=未确认）
+const originalAmounts = ref([])
+const confirmedAt = ref(null)
+const isAmountDirty = (index) => {
+  const orig = originalAmounts.value[index]
+  const cur = partItems.value[index]?.amount
+  return orig !== undefined && String(orig) !== String(cur)
+}
+const dirtyCount = computed(() =>
+  partItems.value.reduce(
+    (n, _item, i) => (isAmountDirty(i) && !confirmedAt.value ? n + 1 : n),
+    0,
+  ),
+)
+const markAmountTouched = () => {
+  // 用户改了任何一格 → 重置 confirmedAt（需要重新确认）
+  if (confirmedAt.value) confirmedAt.value = null
+}
+const confirmEdits = async () => {
+  if (dirtyCount.value === 0 && !confirmedAt.value) {
+    ElMessage.info('暂无修改可确认')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确认 ${dirtyCount.value} 处部品价格修改？确认后导出 Excel 将使用新值。`,
+      '确认修改', { type: 'warning' },
+    )
+  } catch (_) { return }
+  confirmedAt.value = Date.now()
+  ElMessage.success(`已确认 ${dirtyCount.value} 处部品价格修改`)
+}
 
 const partRows = computed(() => [...partItems.value])
 const costMap = computed(() => {
@@ -386,8 +465,29 @@ const formatRate = (value) => {
   return `${(number * 100).toFixed(2)}%`
 }
 
+// 产品属性系数语义是倍数（1.00=标准品，1.20=非标加价 20%），直接 2 位小数显示，不转百分比
+const formatCoefficient = (value) => {
+  const number = Number(value)
+  if (!Number.isFinite(number)) {
+    return ''
+  }
+  return number.toFixed(2)
+}
+
 const getCostAmount = (code) => formatAmount(costMap.value?.[code]?.amount)
 const getCostRate = (code) => formatRate(costMap.value?.[code]?.rate)
+const getCostCoefficient = (code) => formatCoefficient(costMap.value?.[code]?.rate)
+// 在 lp_other_expense_rate 派生的 OTHER_EXP_<id> 行里按 costName lookup
+// （模具费/认证费等占位行用），找不到返空字符串
+const getOtherExpenseByName = (name) => {
+  const item = otherExpenseItems.value.find((i) => i.costName === name)
+  return item ? formatAmount(item.amount) : ''
+}
+// 派生 OTHER_EXP_<id> amount（按 costName）— 导出 Excel 时用
+const getOtherExpenseValueByName = (name) => {
+  const item = otherExpenseItems.value.find((i) => i.costName === name)
+  return item ? item.amount : null
+}
 const getAuxCode = (value) => String(value || '').replace(/^AUX_/, '')
 
 const TEMPLATE_URL = new URL(
@@ -442,6 +542,9 @@ const loadDetail = async () => {
       priceSource: toText(item.priceSource),
       remark: toText(item.remark),
     }))
+    // 备份原始 amount 用于 dirty 比对；每次 reload 都重置确认状态
+    originalAmounts.value = partItems.value.map((p) => p.amount)
+    confirmedAt.value = null
     costItems.value = costs
   } catch (error) {
     ElMessage.error(error?.message || '试算结果加载失败')
@@ -593,28 +696,14 @@ const exportSheet = () => {
       return row
     }
 
-    let otherExpenseDelta = 0
-    if (otherExpenseCount > OTHER_EXP_TEMPLATE_ROWS) {
-      const insertCount = otherExpenseCount - OTHER_EXP_TEMPLATE_ROWS
-      const insertRow = rowIndexAfterGap(OTHER_EXP_INSERT_BASE)
-      sheet.spliceRows(insertRow, 0, ...Array(insertCount).fill([]))
-      const styleRow = sheet.getRow(rowIndexAfterGap(OTHER_EXP_START))
-      for (let i = 0; i < insertCount; i += 1) {
-        const targetRow = sheet.getRow(insertRow + i)
-        targetRow.height = styleRow.height
-        for (let col = 1; col <= 10; col += 1) {
-          const sourceCell = styleRow.getCell(col)
-          const targetCell = targetRow.getCell(col)
-          targetCell.style = { ...sourceCell.style }
-        }
-      }
-      otherExpenseDelta = insertCount
-    } else if (otherExpenseCount < OTHER_EXP_TEMPLATE_ROWS) {
-      const removeCount = OTHER_EXP_TEMPLATE_ROWS - otherExpenseCount
-      const deleteRow = rowIndexAfterGap(OTHER_EXP_START) + otherExpenseCount
-      sheet.spliceRows(deleteRow, removeCount)
-      otherExpenseDelta = -removeCount
-    }
+    // 模板已固定 3 个其他费用槽（r40 运费 / r41 模具费 / r42 认证费）
+    // 不再按 otherExpenseItems 数量动态插删行 —— 三行始终展示，无值留空
+    // 保留 otherExpenseDelta=0 让 rowIndexFinal 行为不变（调用方仍按基础行号取）
+    // eslint-disable-next-line no-unused-vars
+    const otherExpenseDelta = 0
+    void otherExpenseCount  // 仅为了避免 lint 未使用变量警告
+    void OTHER_EXP_TEMPLATE_ROWS
+    void OTHER_EXP_INSERT_BASE
 
     const rowIndexFinal = (base) => {
       let row = rowIndexAfterGap(base)
@@ -663,7 +752,8 @@ const exportSheet = () => {
       applyMergedRange(rowIndexFinal(1), 1, rowIndexFinal(1), 10)
       applyMergedRange(rowIndexFinal(30), 1, rowIndexFinal(30), 3)
       applyMergedRange(rowIndexFinal(35), 1, rowIndexFinal(35), 3)
-      applyMergedRange(rowIndexFinal(36), 1, rowIndexFinal(38), 1)
+      // 三项费用大标签 rowspan：模板调整后挪到 r37-r39（产品属性占用 r36）
+      applyMergedRange(rowIndexFinal(37), 1, rowIndexFinal(39), 1)
       applyMergedRange(totalRow, 1, totalRow, 3)
 
       const totalLabelCell = sheet.getCell(totalRow, 1)
@@ -732,20 +822,26 @@ const exportSheet = () => {
     setCellValue(rowIndexFinal(34), 3, formatRate(getCostRateValue('MANUFACTURE')))
     setCellValue(rowIndexFinal(34), 6, toNumber(getCostAmountValue('MANUFACTURE')))
     setCellValue(rowIndexFinal(35), 6, toNumber(getCostAmountValue('MANUFACTURE_COST')))
-    setCellValue(rowIndexFinal(36), 3, formatRate(getCostRateValue('MGMT_EXP')))
-    setCellValue(rowIndexFinal(36), 6, toNumber(getCostAmountValue('MGMT_EXP')))
-    setCellValue(rowIndexFinal(37), 3, formatRate(getCostRateValue('SALES_EXP')))
-    setCellValue(rowIndexFinal(37), 6, toNumber(getCostAmountValue('SALES_EXP')))
-    setCellValue(rowIndexFinal(38), 3, formatRate(getCostRateValue('FIN_EXP')))
-    setCellValue(rowIndexFinal(38), 6, toNumber(getCostAmountValue('FIN_EXP')))
-    setCellValue(rowIndexFinal(39), 3, productAttr.value || '')
-    const otherExpenseStartRow = rowIndexAfterGap(OTHER_EXP_START)
-    otherExpenseItems.value.forEach((item, index) => {
-      const row = otherExpenseStartRow + index
-      setCellValue(row, 1, item.costName || '其他费用')
-      setCellValue(row, 6, toNumber(item.amount) ?? item.amount)
-    })
-    const totalRow = rowIndexFinal(42)
+    // 模板已调整：r36=产品属性 → r37/38/39=三项费用（与见机表 r54/r55-57 顺序一致）
+    setCellValue(rowIndexFinal(36), 2, productAttr.value || '')
+    setCellValue(
+        rowIndexFinal(36), 3,
+        formatCoefficient(getCostRateValue('ADJUSTED_MANUFACTURE_COST')))
+    setCellValue(
+        rowIndexFinal(36), 6,
+        toNumber(getCostAmountValue('ADJUSTED_MANUFACTURE_COST')))
+    setCellValue(rowIndexFinal(37), 3, formatRate(getCostRateValue('MGMT_EXP')))
+    setCellValue(rowIndexFinal(37), 6, toNumber(getCostAmountValue('MGMT_EXP')))
+    setCellValue(rowIndexFinal(38), 3, formatRate(getCostRateValue('SALES_EXP')))
+    setCellValue(rowIndexFinal(38), 6, toNumber(getCostAmountValue('SALES_EXP')))
+    setCellValue(rowIndexFinal(39), 3, formatRate(getCostRateValue('FIN_EXP')))
+    setCellValue(rowIndexFinal(39), 6, toNumber(getCostAmountValue('FIN_EXP')))
+    // 模板 r40/r41/r42 是固定标签（运费/模具费/认证费，对齐见机表 r58/r59/r60）
+    // 仅填 col6 金额；包装费已在材料费里（T24）不在这里展示
+    setCellValue(rowIndexFinal(40), 6, toNumber(getCostAmountValue('OTHER_EXP_FREIGHT')))
+    setCellValue(rowIndexFinal(41), 6, toNumber(getOtherExpenseValueByName('模具费')))
+    setCellValue(rowIndexFinal(42), 6, toNumber(getOtherExpenseValueByName('认证费')))
+    const totalRow = rowIndexFinal(43)
     setCellValue(totalRow, 6, toNumber(getCostAmountValue('TOTAL')))
     setCellValue(totalRow, 2, null)
     setCellValue(totalRow, 3, null)
@@ -777,8 +873,11 @@ const exportSheet = () => {
     link.click()
     URL.revokeObjectURL(url)
   }
-  run().catch(() => {
-    ElMessage.error('导出失败')
+  run().catch((err) => {
+    // 暴露真实错误到 console + toast，方便定位（比单纯"导出失败"友好）
+    // eslint-disable-next-line no-console
+    console.error('[exportSheet] failed:', err)
+    ElMessage.error('导出失败：' + (err?.message || String(err)))
   })
 }
 
@@ -788,6 +887,24 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* 部品价格列可编辑 input —— 平时跟普通文本无视觉差异，hover/focus 才提示 */
+.amount-input {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  outline: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  box-sizing: border-box;
+}
+.amount-input:hover { background: rgba(64, 158, 255, 0.06); }
+.amount-input:focus { background: #fff; box-shadow: inset 0 0 0 1px #409eff; }
+.amount-dirty { background: #fff8e1; }       /* 未确认黄底提示 */
+.amount-confirmed { background: #e8f5e9; }   /* 已确认绿底标记 */
+
 .cost-run-detail {
   display: flex;
   flex-direction: column;
