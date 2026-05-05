@@ -39,7 +39,7 @@ const componentAliasMap = {
   'rate/quality-loss-rate/index':    'views:base/quantityLoss/index',
   'rate/department-fund-rate/index': 'views:base/fixed/index',
   'rate/other-expense-rate/index':   'views:base/other/index',
-  'rate/aux-rate/index':             'views:base/aux/subject/index',
+  'rate/aux-rate/index':             'views:base/auxiliary/subject/index',
   'rate/finance-base-price/index':   'pages:PriceLinkedFinanceBasePage',
   // 价格管理
   'price/price-variable/index':      'pages:PriceVariableAdminPage',
