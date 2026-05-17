@@ -49,7 +49,33 @@
         <el-table-column prop="auxSubjectCode" label="辅料科目编码" width="120" />
         <el-table-column prop="auxSubjectName" label="辅料科目名称" min-width="140" />
         <el-table-column prop="unitPrice" label="单价" width="100" />
-        <el-table-column prop="period" label="期间" width="100" />
+        <el-table-column prop="period" label="首次期间" width="100">
+          <template #default="{ row }">{{ displayNullable(row.period) }}</template>
+        </el-table-column>
+        <el-table-column prop="source" label="来源" width="100">
+          <template #default="{ row }">
+            <el-tag :type="cmsSourceTagType(row.source)" size="small">
+              {{ displayCmsSource(row.source) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="amountCalcMode" label="金额模式" width="110">
+          <template #default="{ row }">
+            <el-tag :type="cmsAmountCalcModeTagType(row.amountCalcMode, row.source)" size="small">
+              {{ displayCmsAmountCalcMode(row.amountCalcMode, row.source) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="lockStatus" label="锁定状态" width="110">
+          <template #default="{ row }">
+            <el-tag :type="cmsLockStatusTagType(row.lockStatus, row.source)" size="small">
+              {{ displayCmsLockStatus(row.lockStatus, row.source) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="sourceImportBatchId" label="来源批次ID" width="120">
+          <template #default="{ row }">{{ displayNullable(row.sourceImportBatchId) }}</template>
+        </el-table-column>
         <el-table-column prop="updatedAt" label="更新时间" width="160" />
         <el-table-column label="操作" width="140" fixed="right">
           <template #default="{ row }">
@@ -131,6 +157,15 @@ import {
   deleteAuxSubject,
   fetchAuxSubjectQuote,
 } from '../api/auxSubjects'
+import {
+  cmsAmountCalcModeTagType,
+  cmsLockStatusTagType,
+  cmsSourceTagType,
+  displayCmsAmountCalcMode,
+  displayCmsLockStatus,
+  displayCmsSource,
+  displayNullable,
+} from '../utils/cmsCostSourceDisplay'
 
 const filters = ref({
   materialCode: '',

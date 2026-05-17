@@ -41,6 +41,14 @@ describe('importLinkedItemsExcel (T18)', () => {
     assert.match(content, /append\(['"]file['"]\s*,\s*file\)/)
     assert.match(content, /append\(['"]pricingMonth['"]\s*,\s*pricingMonth\)/)
   })
+  it('支持传递业务单元和覆盖人工绑定开关', () => {
+    assert.match(content, /append\(['"]businessUnitType['"]\s*,\s*options\.businessUnitType\)/)
+    assert.match(content, /append\(['"]overwriteManual['"]\s*,\s*String\(\s*!!options\.overwriteManual\s*\)\)/)
+  })
+  it('V5-10：支持传递 effectiveStrategy 处理方式', () => {
+    assert.match(content, /options\.effectiveStrategy/)
+    assert.match(content, /append\(['"]effectiveStrategy['"]\s*,\s*options\.effectiveStrategy\)/)
+  })
   it('POST 到 /items/import-excel', () => {
     assert.match(content, /\/items\/import-excel/)
   })

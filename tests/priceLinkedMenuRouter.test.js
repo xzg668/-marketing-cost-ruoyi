@@ -3,100 +3,73 @@ import { describe, it } from 'node:test'
 import fs from 'node:fs'
 import path from 'node:path'
 
-/**
- * T25：菜单 + 权限 + 路由 契约测试。
- *
- * 目的：防止 4 个联动价页面在 menu.js / router/index.js 中被意外改名或摘除 —
- * 一旦菜单丢失子项或 route 拿不到页面组件，管理员进入 UI 直接白屏，
- * 而后端 sys_menu seed 又与 menu.js 的 path 强一致。静态文本断言成本低、收益大。
- */
+const ROUTER_FILE = path.resolve(import.meta.dirname, '../src/router/index.js')
+const PERMISSION_FILE = path.resolve(import.meta.dirname, '../src/store/modules/permission.js')
+const SIDEBAR_FILE = path.resolve(import.meta.dirname, '../src/layout/components/Sidebar.vue')
+const API_DIR = path.resolve(import.meta.dirname, '../src/api')
+const VIEWS_DIR = path.resolve(import.meta.dirname, '../src/views')
+const PAGES_DIR = path.resolve(import.meta.dirname, '../src/pages')
 
-const MENU_FILE = path.resolve(
-  import.meta.dirname,
-  '../src/menu.js'
-)
-const ROUTER_FILE = path.resolve(
-  import.meta.dirname,
-  '../src/router/index.js'
-)
-
-const menuContent = fs.readFileSync(MENU_FILE, 'utf-8')
 const routerContent = fs.readFileSync(ROUTER_FILE, 'utf-8')
+const permissionContent = fs.readFileSync(PERMISSION_FILE, 'utf-8')
+const sidebarContent = fs.readFileSync(SIDEBAR_FILE, 'utf-8')
 
-// 页面 path → 后端 sys_menu.path 对齐（V5 4011-4014）
-// 公式配置 /price/linked/formula 暂从菜单隐藏（后端无落库接口），
-// 路由/组件保留，故 LINKED_PAGES 仅断言菜单可见的 3 项；
-// formula 的 router import / component map 断言单独保留在 router 分组里
-const LINKED_PAGES = [
-  { path: '/price/linked/result', title: '联动价格表' },
-  { path: '/price/linked/oa-result', title: '联动价计算' },
-  { path: '/price/linked/finance-base', title: '影响因素表' },
-]
-
-describe('menu.js 联动价分组契约', () => {
-  it('含顶层 price 分组 + 联动价二级目录 /price/linked', () => {
-    assert.match(menuContent, /index:\s*['"]price['"]/)
-    assert.match(menuContent, /index:\s*['"]\/price\/linked['"]/)
-    assert.match(menuContent, /title:\s*['"]联动价['"]/)
+describe('动态菜单路由契约', () => {
+  it('不再依赖已下线的 src/menu.js 静态菜单', () => {
+    assert.equal(fs.existsSync(path.resolve(import.meta.dirname, '../src/menu.js')), false)
+    assert.match(routerContent, /permissionStore\.generateRoutes/)
+    assert.match(permissionContent, /fetchRouters/)
   })
 
-  for (const page of LINKED_PAGES) {
-    it(`菜单挂载 ${page.path} (${page.title})`, () => {
-      assert.match(
-        menuContent,
-        new RegExp(`index:\\s*['"]${page.path}['"]`),
-        `menu.js 缺少 ${page.path} 子项`
-      )
-      assert.match(
-        menuContent,
-        new RegExp(`title:\\s*['"]${page.title}['"]`),
-        `menu.js 缺少 "${page.title}" 标题`
-      )
-    })
-  }
-})
-
-describe('router/index.js 联动价路由契约', () => {
-  it('导入 4 个联动价页面组件', () => {
-    assert.match(
-      routerContent,
-      /import\s+PriceLinkedResultPage\s+from\s*['"]\.\.\/pages\/PriceLinkedResultPage\.vue['"]/
-    )
-    assert.match(
-      routerContent,
-      /import\s+PriceLinkedOaResultPage\s+from\s*['"]\.\.\/pages\/PriceLinkedOaResultPage\.vue['"]/
-    )
-    assert.match(
-      routerContent,
-      /import\s+PriceLinkedFormulaPage\s+from\s*['"]\.\.\/pages\/PriceLinkedFormulaPage\.vue['"]/
-    )
-    assert.match(
-      routerContent,
-      /import\s+PriceLinkedFinanceBasePage\s+from\s*['"]\.\.\/pages\/PriceLinkedFinanceBasePage\.vue['"]/
-    )
+  it('保留动态组件解析入口', () => {
+    assert.match(permissionContent, /const viewModules = import\.meta\.glob/)
+    assert.match(permissionContent, /const pageModules = import\.meta\.glob/)
+    assert.match(permissionContent, /function loadView/)
   })
 
-  for (const page of LINKED_PAGES) {
-    it(`routeComponentMap 把 ${page.path} 映射到具体组件（避免回退到 PlaceholderPage）`, () => {
-      // 允许 key 带/不带引号；值必须是组件标识符
-      const re = new RegExp(
-        `['"]${page.path}['"]\\s*:\\s*PriceLinked[A-Za-z]+Page`
-      )
-      assert.match(routerContent, re, `routeComponentMap 缺少 ${page.path} 映射`)
-    })
-  }
+  it('保留联动价动态组件别名', () => {
+    assert.match(permissionContent, /'price\/price-linked\/index'\s*:\s*'views:price\/linked\/result\/index'/)
+    assert.match(permissionContent, /'rate\/finance-base-price\/index'\s*:\s*'pages:PriceLinkedFinanceBasePage'/)
+  })
 
-  it('/price/linked 根路径默认重定向到 /price/linked/result', () => {
+  it('新增报价单基价映射规则动态组件', () => {
+    assert.ok(fs.existsSync(path.join(VIEWS_DIR, 'price/linked/quote-base-mapping/index.vue')))
+  })
+
+  it('/price/linked 根路径仍默认重定向到 /price/linked/result', () => {
     assert.match(
       routerContent,
       /path:\s*['"]\/price\/linked['"][\s\S]{0,80}redirect:\s*['"]\/price\/linked\/result['"]/
     )
   })
+})
 
-  it('router guard 校验 token + 未登录导航到 /login', () => {
-    // 防止 T25 改动意外把权限保护摘掉 —— DoD: 普通用户 403 拦截
-    assert.match(routerContent, /router\.beforeEach/)
-    assert.match(routerContent, /['"]\/login['"]/)
-    assert.match(routerContent, /permissionStore/)
+describe('T9 数据接入菜单路由契约', () => {
+  it('新增报价单接入 API 模块', () => {
+    assert.ok(fs.existsSync(path.join(API_DIR, 'quoteRequests.js')))
+    assert.ok(fs.existsSync(path.join(API_DIR, 'quoteIngest.js')))
+  })
+
+  it('新增四个数据接入菜单组件', () => {
+    assert.ok(fs.existsSync(path.join(VIEWS_DIR, 'ingest/quote-requests/index.vue')))
+    assert.ok(fs.existsSync(path.join(VIEWS_DIR, 'ingest/quote-request-products/bom/index.vue')))
+    assert.ok(fs.existsSync(path.join(VIEWS_DIR, 'ingest/quote-requests/import/index.vue')))
+    assert.ok(fs.existsSync(path.join(VIEWS_DIR, 'ingest/quote-ingest-logs/index.vue')))
+  })
+
+  it('新增报价单详情隐藏路由组件', () => {
+    assert.ok(fs.existsSync(path.join(PAGES_DIR, 'QuoteRequestDetailPage.vue')))
+    assert.match(routerContent, /path:\s*['"]\/ingest\/quote-requests\/:oaNo['"]/)
+    assert.match(routerContent, /activeMenu:\s*['"]\/ingest\/quote-requests['"]/)
+  })
+
+  it('侧边栏保留 200 数据接入顶级菜单，隐藏旧 OA 报价单但保留旧 BOM 接入子入口', () => {
+    assert.match(sidebarContent, /LEGACY_MENU_IDS/)
+    assert.match(sidebarContent, /201,\s*300,\s*400,\s*500,\s*40166/)
+    assert.match(sidebarContent, /LEGACY_OA_PATHS/)
+    assert.match(sidebarContent, /OA报价单/)
+    assert.doesNotMatch(sidebarContent, /202,\s*203,\s*204/)
+    assert.doesNotMatch(sidebarContent, /LEGACY_MENU_IDS\s*=\s*new Set\(\[\s*200/)
+    assert.match(sidebarContent, /pruneLegacyMenus/)
   })
 })

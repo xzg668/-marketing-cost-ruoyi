@@ -82,6 +82,137 @@ describe('PriceLinkedResultPage.vue T24 契约', () => {
   })
 })
 
+describe('PriceLinkedResultPage.vue V2-14 月度导入和结果页契约', () => {
+  it('主导入按钮文案为“导入月度联动价与影响因素 Excel”', () => {
+    assert.match(content, /导入月度联动价与影响因素 Excel/)
+  })
+
+  it('V4-08：主导入、导入历史和行操作按钮有清晰权限控制', () => {
+    assert.match(
+      content,
+      /v-hasPermi="\['price:linked-item:import'\]"[\s\S]{0,180}导入月度联动价与影响因素 Excel/
+    )
+    assert.match(
+      content,
+      /v-hasPermi="\['price:linked-item:import-history:list'\]"[\s\S]{0,180}导入历史和日志/
+    )
+    assert.match(content, /v-hasPermi="\['price:linked-item:add'\]"/)
+    assert.match(content, /v-hasPermi="\['price:linked-item:edit'\]"/)
+    assert.match(content, /v-hasPermi="\['price:linked-item:remove'\]"/)
+    assert.match(content, /v-hasPermi="\['price:linked:binding:view'\]"/)
+    assert.match(content, /v-hasPermi="\['price:linked:binding:admin'\]"/)
+  })
+
+  it('导入入口走 importLinkedItemsExcel multipart，不再走 importLinkedItems JSON', () => {
+    assert.match(content, /\bimportLinkedItemsExcel\b/)
+    assert.doesNotMatch(
+      content,
+      /import\s*\{[\s\S]*\bimportLinkedItems\b[\s\S]*\}\s*from\s*['"]\.\.\/api\/priceLinkedItems['"]/
+    )
+  })
+
+  it('导入弹窗包含月份、业务单元、处理方式和 Excel 文件校验', () => {
+    assert.match(content, /v-model="importForm\.pricingMonth"/)
+    assert.match(content, /v-model="importForm\.businessUnitType"/)
+    assert.match(content, /v-model="importForm\.effectiveStrategy"/)
+    assert.match(content, /APPEND_ONLY/)
+    assert.match(content, /OVERRIDE_EFFECTIVE/)
+    assert.match(content, /accept="\.xlsx,\.xls"/)
+    assert.match(content, /isExcelFile/)
+  })
+
+  it('V5-10：默认仅新增，并向 importLinkedItemsExcel 传 effectiveStrategy', () => {
+    assert.match(content, /effectiveStrategy:\s*'APPEND_ONLY'/)
+    assert.match(content, /effectiveStrategy:\s*importForm\.value\.effectiveStrategy/)
+    assert.match(content, /仅新增：只新增系统没有的料号/)
+    assert.match(content, /覆盖生效：本次 Excel 涉及的料号/)
+  })
+
+  it('导入结果区展示新增、覆盖、跳过、自动绑定、冲突和失败数量', () => {
+    for (const key of [
+      'linkedCreatedCount',
+      'linkedUpdatedCount',
+      'linkedSkippedCount',
+      'monthlyPriceSkippedCount',
+      'autoBindingCount',
+      'consistentHistoryBindingCount',
+      'conflictBindingCount',
+      'manualSkippedCount',
+      'bindingErrorCount',
+    ]) {
+      assert.match(content, new RegExp(key))
+    }
+  })
+
+  it('页面包含影响因素预览、冲突处理、失败明细、导入历史入口', () => {
+    assert.match(content, /本次影响因素预览/)
+    assert.match(content, /冲突处理/)
+    assert.match(content, /失败明细/)
+    assert.match(content, /导入历史和日志/)
+  })
+
+  it('V3-09：导入结果展示公共基价识别统计和明细', () => {
+    assert.match(content, /公共基价识别/)
+    assert.match(content, /quoteBaseRecognizedCount/)
+    assert.match(content, /quoteBaseConflictCount/)
+    assert.match(content, /quoteBaseUnrecognizedCount/)
+    assert.match(content, /quoteBaseDetectRows/)
+    assert.match(content, /label="影响因素简称"/)
+    assert.match(content, /label="影响因素名称"/)
+    assert.match(content, /label="命中报价单字段"/)
+    assert.match(content, /label="命中关键词"/)
+    assert.match(content, /label="识别来源"/)
+    assert.match(content, /quoteBaseStatusText/)
+  })
+
+  it('V3-09：导入后不让历史详情覆盖本次公共基价识别结果', () => {
+    assert.match(content, /const\s+fetchList\s*=\s*async\s*\(\{\s*loadLatestImport\s*=\s*true\s*\}\s*=\s*\{\}\)/)
+    assert.match(content, /fetchList\(\{\s*loadLatestImport:\s*false\s*\}\)/)
+    assert.match(content, /loadImportHistory\(\{\s*loadLatest:\s*false\s*\}\)/)
+  })
+
+  it('V4-04：导入结果区提示这里只核对本次导入，不做长期维护', () => {
+    assert.match(content, /本区只用于核对本次导入和自动绑定结果/)
+    assert.match(content, /影响因素长期维护请进入影响因素表/)
+  })
+
+  it('V4-04：提供跳转到影响因素表本月汇总的入口', () => {
+    assert.match(content, /去影响因素表查看本月汇总/)
+    assert.match(content, /goFactorMonthlySummary/)
+    assert.match(content, /path:\s*['"]\/price\/linked\/finance-base['"]/)
+    assert.match(content, /priceMonth:\s*filters\.value\.pricingMonth/)
+    assert.match(content, /businessUnitType:\s*filters\.value\.businessUnitType/)
+  })
+
+  it('V4-10：支持 URL query 直接打开历史月份和业务单元', () => {
+    assert.match(content, /useRoute/)
+    assert.match(content, /const\s+route\s*=\s*useRoute\(\)/)
+    assert.match(content, /queryString\('pricingMonth',\s*currentMonthText\(\)\)/)
+    assert.match(content, /queryString\('businessUnitType',\s*userStore\.businessUnitType\s*\|\|\s*''\)/)
+    assert.match(content, /queryString\('materialCode',\s*''\)/)
+  })
+
+  it('V4-04：本次影响因素预览补齐上传人和上传时间，只读展示', () => {
+    assert.match(content, /prop="uploadedBy"\s+label="上传人"/)
+    assert.match(content, /prop="uploadedAt"\s+label="上传时间"/)
+    assert.match(content, /uploadedBy:\s*row\?\.uploadedBy/)
+    assert.match(content, /uploadedAt:\s*row\?\.uploadedAt/)
+  })
+
+  it('V4-05：导入历史默认最近 10 条，并支持查看更多到最多 50 条', () => {
+    assert.match(content, /const\s+importHistoryLimit\s*=\s*ref\(10\)/)
+    assert.match(content, /limit:\s*importHistoryLimit\.value/)
+    assert.match(content, /loadMoreImportHistory/)
+    assert.match(content, /Math\.min\(importHistoryLimit\.value\s*\+\s*10,\s*50\)/)
+    assert.match(content, /普通用户只看自己的记录/)
+  })
+
+  it('冲突和失败行可进入现有人工绑定抽屉', () => {
+    assert.match(content, /openBindingByMaterial/)
+    assert.match(content, /openBinding\(target\)/)
+  })
+})
+
 // ============================ DIFF_THRESHOLD ============================
 describe('DIFF_THRESHOLD', () => {
   it('阈值为 0.01（DoD 要求）', () => {

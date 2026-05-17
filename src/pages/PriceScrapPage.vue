@@ -3,7 +3,10 @@
     <!-- 顶部筛选 + 操作 -->
     <el-card shadow="never" class="filter-card">
       <div class="filter-header">
-        <div class="filter-title">废料回收价</div>
+        <div>
+          <div class="filter-title">CMS 回收废料当前价</div>
+          <div class="filter-desc">按 CMS 回收废料料号维护当前价；原材料对应关系在 CMS 成本数据里维护。</div>
+        </div>
         <div class="filter-actions">
           <el-upload
             class="upload-btn"
@@ -17,19 +20,26 @@
           <el-button type="primary" @click="openCreate">新增</el-button>
         </div>
       </div>
+      <el-alert
+        class="price-scrap-alert"
+        type="info"
+        :closable="false"
+        show-icon
+        title="自制件废料取价只按 CMS 回收料号取当前有效价；来源月份仅用于导入来源追溯，不参与报价期间匹配。"
+      />
       <el-form :inline="true" label-width="90px">
-        <el-form-item label="结算期间">
+        <el-form-item label="来源月份">
           <el-date-picker
             v-model="filters.pricingMonth"
             type="month"
             format="YYYY-MM"
             value-format="YYYY-MM"
-            placeholder="2026-03"
+            placeholder="仅筛选来源"
             style="width: 140px"
           />
         </el-form-item>
-        <el-form-item label="废料代号">
-          <el-input v-model="filters.scrapCode" placeholder="废紫铜" />
+        <el-form-item label="CMS回收料号">
+          <el-input v-model="filters.scrapCode" placeholder="301990317" />
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="applyFilters">查询</el-button>
@@ -41,11 +51,11 @@
     <!-- 数据表格 -->
     <el-card shadow="never">
       <el-table :data="tableRows" stripe v-loading="loading">
-        <el-table-column prop="scrapCode" label="废料代号" width="160" />
-        <el-table-column prop="scrapName" label="名称" width="180" />
+        <el-table-column prop="scrapCode" label="CMS回收料号" width="160" />
+        <el-table-column prop="scrapName" label="回收废料名称" width="180" />
         <el-table-column prop="specModel" label="规格" width="160" />
         <el-table-column prop="unit" label="单位" width="80" />
-        <el-table-column prop="recyclePrice" label="回收单价" width="120">
+        <el-table-column prop="recyclePrice" label="当前回收单价" width="130">
           <template #default="{ row }">{{ row.recyclePrice ?? '-' }}</template>
         </el-table-column>
         <el-table-column label="含税" width="80">
@@ -55,7 +65,7 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="pricingMonth" label="结算期间" width="110" />
+        <el-table-column prop="pricingMonth" label="来源月份" width="110" />
         <el-table-column prop="effectiveFrom" label="生效" width="110" />
         <el-table-column prop="effectiveTo" label="失效" width="110" />
         <el-table-column prop="remark" label="备注" min-width="160" show-overflow-tooltip />
@@ -81,20 +91,20 @@
     <!-- 编辑/新增对话框 -->
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="640px">
       <el-form :model="formModel" label-width="100px">
-        <el-form-item label="结算期间" required>
+        <el-form-item label="来源月份">
           <el-date-picker
             v-model="formModel.pricingMonth"
             type="month"
             format="YYYY-MM"
             value-format="YYYY-MM"
-            placeholder="2026-03"
+            placeholder="可选，仅追溯"
             style="width: 100%"
           />
         </el-form-item>
-        <el-form-item label="废料代号" required>
-          <el-input v-model="formModel.scrapCode" placeholder="废紫铜" />
+        <el-form-item label="CMS回收料号" required>
+          <el-input v-model="formModel.scrapCode" placeholder="301990317" />
         </el-form-item>
-        <el-form-item label="名称">
+        <el-form-item label="回收废料名称">
           <el-input v-model="formModel.scrapName" />
         </el-form-item>
         <el-form-item label="规格">
@@ -103,7 +113,7 @@
         <el-form-item label="单位">
           <el-input v-model="formModel.unit" placeholder="kg" />
         </el-form-item>
-        <el-form-item label="回收单价" required>
+        <el-form-item label="当前回收单价" required>
           <el-input-number
             v-model="formModel.recyclePrice"
             :precision="6"
@@ -159,12 +169,6 @@ import {
   importScrapItems,
 } from '../api/priceScrap'
 
-// 当前月份默认值（YYYY-MM）
-const getCurrentMonth = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-}
-
 const filters = ref({
   scrapCode: '',
   pricingMonth: '',
@@ -176,13 +180,13 @@ const total = ref(0)
 const loading = ref(false)
 
 const dialogVisible = ref(false)
-const dialogTitle = ref('新增废料价')
+const dialogTitle = ref('新增 CMS 回收废料当前价')
 const editingId = ref(null)
 const saving = ref(false)
 const importing = ref(false)
 
 const emptyForm = () => ({
-  pricingMonth: getCurrentMonth(),
+  pricingMonth: '',
   scrapCode: '',
   scrapName: '',
   specModel: '',
@@ -227,16 +231,16 @@ const resetFilters = () => {
 
 const openCreate = () => {
   editingId.value = null
-  dialogTitle.value = '新增废料价'
+  dialogTitle.value = '新增 CMS 回收废料当前价'
   formModel.value = emptyForm()
   dialogVisible.value = true
 }
 
 const openEdit = (row) => {
   editingId.value = row.id
-  dialogTitle.value = `编辑废料价 #${row.id}`
+  dialogTitle.value = `编辑 CMS 回收废料当前价 #${row.id}`
   formModel.value = {
-    pricingMonth: row.pricingMonth || getCurrentMonth(),
+    pricingMonth: row.pricingMonth || '',
     scrapCode: row.scrapCode || '',
     scrapName: row.scrapName || '',
     specModel: row.specModel || '',
@@ -252,7 +256,7 @@ const openEdit = (row) => {
 
 const onSave = async () => {
   if (!formModel.value.scrapCode) {
-    ElMessage.warning('废料代号必填')
+    ElMessage.warning('CMS回收料号必填')
     return
   }
   if (formModel.value.recyclePrice == null) {
@@ -267,7 +271,7 @@ const onSave = async () => {
       ElMessage.success('修改成功')
     } else {
       await createScrapItem(body)
-      ElMessage.success('新增成功')
+      ElMessage.success('当前价已保存；相同 CMS 回收料号会更新当前价')
     }
     dialogVisible.value = false
     fetchList()
@@ -279,7 +283,7 @@ const onSave = async () => {
 }
 
 const onDelete = (row) => {
-  ElMessageBox.confirm(`确定删除废料 [${row.scrapCode}]?`, '确认', {
+  ElMessageBox.confirm(`确定删除 CMS 回收料号 [${row.scrapCode}] 的当前价?`, '确认', {
     type: 'warning',
   })
     .then(async () => {
@@ -308,17 +312,21 @@ const handleFileChange = async (uploadFile) => {
     const workbook = XLSX.read(buffer, { type: 'array', cellDates: true })
     const sheet = workbook.Sheets[workbook.SheetNames[0]]
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' })
-    // 表头映射：中文表头 → 字段名
+    // T9：导入只维护 CMS 回收料号当前价，月份字段仅作为来源月份追溯。
     const headerMap = {
+      来源月份: 'pricingMonth',
+      导入月份: 'pricingMonth',
       结算期间: 'pricingMonth',
       价格月份: 'pricingMonth',
-      废料代号: 'scrapCode',
-      代号: 'scrapCode',
-      废料名称: 'scrapName',
+      CMS回收料号: 'scrapCode',
+      CMS回收废料料号: 'scrapCode',
+      回收废料料号: 'scrapCode',
+      回收废料名称: 'scrapName',
       名称: 'scrapName',
       规格型号: 'specModel',
       规格: 'specModel',
       单位: 'unit',
+      当前回收单价: 'recyclePrice',
       回收单价: 'recyclePrice',
       单价: 'recyclePrice',
       是否含税: 'taxIncluded',
@@ -340,11 +348,10 @@ const handleFileChange = async (uploadFile) => {
       const f = headerMap[String(cell).trim()]
       if (f) fieldIndex[f] = i
     })
-    const fallbackMonth = filters.value.pricingMonth || getCurrentMonth()
     const dataRows = rows
       .slice(headerIndex + 1)
       .map((r) => ({
-        pricingMonth: String(r[fieldIndex.pricingMonth] || '').trim() || fallbackMonth,
+        pricingMonth: String(r[fieldIndex.pricingMonth] || '').trim(),
         scrapCode: String(r[fieldIndex.scrapCode] || '').trim(),
         scrapName: String(r[fieldIndex.scrapName] || '').trim(),
         specModel: String(r[fieldIndex.specModel] || '').trim(),
@@ -361,7 +368,7 @@ const handleFileChange = async (uploadFile) => {
       return
     }
     await importScrapItems({ rows: dataRows })
-    ElMessage.success(`已导入 ${dataRows.length} 条`)
+    ElMessage.success(`已导入/更新 ${dataRows.length} 条 CMS 回收料号当前价`)
     fetchList()
   } catch (e) {
     ElMessage.error(e?.message || '导入失败')

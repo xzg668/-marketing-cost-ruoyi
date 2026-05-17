@@ -45,13 +45,34 @@ const route = useRoute()
 const appStore = useAppStore()
 const permissionStore = usePermissionStore()
 
-// 过渡期（T04~T08）：后端 sys_menu 中仍然残留老业务顶级 200/300/400/500（cost-trial/base-data/rate/price），
-// 它们跟前端目录命名不对应。T08 会物理删除，在那之前这里主动过滤，避免侧边栏出现新旧两套业务菜单。
-// T08 完成后 permissionStore 自然不再返回它们，此过滤不生效但无害，可在后续维护时删除。
-const LEGACY_TOP_MENU_IDS = new Set([200, 300, 400, 500])
+// T9/V61：200 是新的“数据接入”顶级菜单；旧 BOM 入口已收敛到“BOM 数据管理”。
+// 旧 OA 报价单入口由“报价单接入”替代，按常见旧 ID 和路径双重兜底隐藏。
+const LEGACY_MENU_IDS = new Set([201, 300, 400, 500, 40166])
+const LEGACY_OA_PATHS = new Set(['/ingest/oa-form', 'ingest/oa-form', 'oa-form'])
+const CMS_RAW_DETAIL_MENU_IDS = new Set([40233, 40234, 40235])
+
+function isLegacyOaMenu(route) {
+  const title = String(route?.meta?.title || '').replace(/\s/g, '')
+  return LEGACY_OA_PATHS.has(route?.path) || title === 'OA报价单'
+}
+
+function pruneLegacyMenus(route) {
+  if (
+    !route ||
+    LEGACY_MENU_IDS.has(route.meta?.menuId) ||
+    CMS_RAW_DETAIL_MENU_IDS.has(route.meta?.menuId) ||
+    isLegacyOaMenu(route)
+  ) {
+    return null
+  }
+  const children = Array.isArray(route.children)
+    ? route.children.map(pruneLegacyMenus).filter(Boolean)
+    : undefined
+  return children ? { ...route, children } : route
+}
 
 const displayRoutes = computed(() =>
-  permissionStore.routes.filter((r) => !LEGACY_TOP_MENU_IDS.has(r.meta?.menuId))
+  permissionStore.routes.map(pruneLegacyMenus).filter(Boolean)
 )
 
 const activeMenu = computed(() => route.meta?.activeMenu || route.path)

@@ -130,10 +130,13 @@
 <script setup>
 // BomTreeViewerPage —— 一次性全量加载一棵树（后端已做 purpose/asOfDate 过滤）
 // 后续若大树性能问题严重，可改 lazy + 按需拉子节点；目前先走全量方便调试。
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import BomNodeDetailDrawer from '../components/BomNodeDetailDrawer.vue'
 import { getBomHierarchy } from '../api/bom'
+
+const route = useRoute()
 
 const query = reactive({
   topProductCode: '',
@@ -214,6 +217,42 @@ function collapseAll() {
     if (nd) nd.expanded = false
   })
 }
+
+function applyRouteQuery() {
+  query.topProductCode = normalizeQueryString(route.query.topProductCode)
+  query.bomPurpose = normalizeQueryString(route.query.bomPurpose)
+  query.asOfDate = normalizeQueryString(route.query.asOfDate)
+  query.sourceType = normalizeSourceType(route.query.sourceType)
+}
+
+function normalizeQueryString(value) {
+  if (Array.isArray(value)) return String(value[0] || '').trim()
+  return String(value || '').trim()
+}
+
+function normalizeSourceType(value) {
+  const sourceType = normalizeQueryString(value)
+  return ['U9', 'MANUAL', 'E_DRAWING'].includes(sourceType) ? sourceType : 'U9'
+}
+
+onMounted(() => {
+  applyRouteQuery()
+  if (query.topProductCode) {
+    loadTree()
+  }
+})
+
+watch(
+  () => route.query,
+  () => {
+    applyRouteQuery()
+    if (query.topProductCode) {
+      loadTree()
+    } else {
+      tree.value = null
+    }
+  },
+)
 </script>
 
 <style scoped>

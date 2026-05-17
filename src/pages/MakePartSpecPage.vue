@@ -55,10 +55,37 @@
           <el-table-column prop="rawMaterialSpec" label="规格" width="160" show-overflow-tooltip />
           <el-table-column prop="rawUnitPrice" label="单价" width="110" />
         </el-table-column>
-        <el-table-column label="废料 (回收)" align="center">
-          <el-table-column prop="recycleCode" label="代号" width="120" />
-          <el-table-column prop="recycleUnitPrice" label="单价" width="110" />
-          <el-table-column prop="recycleRatio" label="比例" width="100" />
+        <el-table-column label="CMS 回收废料" align="center">
+          <el-table-column prop="cmsMappingStatus" label="映射状态" width="130">
+            <template #default="{ row }">
+              <el-tag :type="cmsStatusTag(row.cmsMappingStatus)" effect="plain">
+                {{ cmsStatusText(row.cmsMappingStatus) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="CMS回收料号 / 名称" min-width="260">
+            <template #default="{ row }">
+              <div v-if="row.cmsScraps?.length" class="cms-scrap-list">
+                <div v-for="scrap in row.cmsScraps" :key="scrap.scrapCode" class="cms-scrap-line">
+                  <span class="cms-scrap-code">{{ scrap.scrapCode }}</span>
+                  <span class="cms-scrap-name">{{ scrap.scrapName || '-' }}</span>
+                </div>
+              </div>
+              <span v-else>-</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="当前废料价" width="150">
+            <template #default="{ row }">
+              <div v-if="row.cmsScraps?.length" class="cms-scrap-list">
+                <div v-for="scrap in row.cmsScraps" :key="scrap.scrapCode" class="cms-scrap-line">
+                  <span :class="{ 'missing-price': scrap.status === 'MISSING_PRICE' }">
+                    {{ formatCurrentScrapPrice(scrap) }}
+                  </span>
+                </div>
+              </div>
+              <span v-else>-</span>
+            </template>
+          </el-table-column>
         </el-table-column>
         <el-table-column label="费用" align="center">
           <el-table-column prop="processFee" label="加工费" width="100" />
@@ -130,15 +157,21 @@
           <el-input-number v-model="formModel.rawUnitPrice" :precision="8" :step="0.01" style="width: 100%" />
         </el-form-item>
 
-        <el-divider content-position="left">废料 (回收)</el-divider>
-        <el-form-item label="废料代号">
-          <el-input v-model="formModel.recycleCode" placeholder="对应 lp_price_scrap.scrap_code" />
+        <el-divider content-position="left">CMS 回收废料</el-divider>
+        <el-form-item label="映射状态">
+          <el-tag :type="cmsStatusTag(formModel.cmsMappingStatus)" effect="plain">
+            {{ cmsStatusText(formModel.cmsMappingStatus) }}
+          </el-tag>
         </el-form-item>
-        <el-form-item label="废料单价">
-          <el-input-number v-model="formModel.recycleUnitPrice" :precision="8" :step="0.01" style="width: 100%" />
-        </el-form-item>
-        <el-form-item label="废料比例">
-          <el-input-number v-model="formModel.recycleRatio" :precision="6" :step="0.01" style="width: 100%" />
+        <el-form-item label="回收明细">
+          <div v-if="formModel.cmsScraps?.length" class="dialog-cms-scraps">
+            <div v-for="scrap in formModel.cmsScraps" :key="scrap.scrapCode" class="dialog-cms-scrap">
+              <span class="cms-scrap-code">{{ scrap.scrapCode }}</span>
+              <span>{{ scrap.scrapName || '-' }}</span>
+              <span>{{ formatCurrentScrapPrice(scrap) }}</span>
+            </div>
+          </div>
+          <span v-else>-</span>
         </el-form-item>
 
         <el-divider content-position="left">费用 / 公式</el-divider>
@@ -214,9 +247,8 @@ const emptyForm = () => ({
   rawMaterialCode: '',
   rawMaterialSpec: '',
   rawUnitPrice: null,
-  recycleCode: '',
-  recycleUnitPrice: null,
-  recycleRatio: null,
+  cmsMappingStatus: 'NO_RAW_MATERIAL',
+  cmsScraps: [],
   processFee: null,
   outsourceFee: null,
   formulaId: null,
@@ -277,9 +309,8 @@ const openEdit = (row) => {
     rawMaterialCode: row.rawMaterialCode || '',
     rawMaterialSpec: row.rawMaterialSpec || '',
     rawUnitPrice: row.rawUnitPrice ?? null,
-    recycleCode: row.recycleCode || '',
-    recycleUnitPrice: row.recycleUnitPrice ?? null,
-    recycleRatio: row.recycleRatio ?? null,
+    cmsMappingStatus: row.cmsMappingStatus || 'NO_RAW_MATERIAL',
+    cmsScraps: row.cmsScraps || [],
     processFee: row.processFee ?? null,
     outsourceFee: row.outsourceFee ?? null,
     formulaId: row.formulaId ?? null,
@@ -297,7 +328,7 @@ const onSave = async () => {
   }
   saving.value = true
   try {
-    const body = { ...formModel.value }
+    const body = toSavePayload(formModel.value)
     if (editingId.value) {
       await updateMakeSpec(editingId.value, body)
       ElMessage.success('修改成功')
@@ -361,12 +392,6 @@ const handleFileChange = async (uploadFile) => {
       原料规格: 'rawMaterialSpec',
       原料单价: 'rawUnitPrice',
       原材料单价: 'rawUnitPrice',
-      废料代号: 'recycleCode',
-      回收代号: 'recycleCode',
-      废料单价: 'recycleUnitPrice',
-      回收单价: 'recycleUnitPrice',
-      废料比例: 'recycleRatio',
-      回收比例: 'recycleRatio',
       加工费: 'processFee',
       外发费: 'outsourceFee',
       外协费: 'outsourceFee',
@@ -402,9 +427,6 @@ const handleFileChange = async (uploadFile) => {
         rawMaterialCode: String(r[fieldIndex.rawMaterialCode] || '').trim(),
         rawMaterialSpec: String(r[fieldIndex.rawMaterialSpec] || '').trim(),
         rawUnitPrice: parseFloat(r[fieldIndex.rawUnitPrice]) || null,
-        recycleCode: String(r[fieldIndex.recycleCode] || '').trim(),
-        recycleUnitPrice: parseFloat(r[fieldIndex.recycleUnitPrice]) || null,
-        recycleRatio: parseFloat(r[fieldIndex.recycleRatio]) || null,
         processFee: parseFloat(r[fieldIndex.processFee]) || null,
         outsourceFee: parseFloat(r[fieldIndex.outsourceFee]) || null,
         formulaId: parseInt(r[fieldIndex.formulaId]) || null,
@@ -433,6 +455,44 @@ const parseDate = (v) => {
   const s = String(v).trim()
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10)
   return null
+}
+
+const toSavePayload = (model) => {
+  const payload = { ...model }
+  delete payload.cmsMappingStatus
+  delete payload.cmsScraps
+  delete payload.recycleCode
+  delete payload.recycleUnitPrice
+  delete payload.recycleRatio
+  return payload
+}
+
+const cmsStatusText = (status) => {
+  const value = String(status || '')
+  if (value === 'MAPPED') return '已映射'
+  if (value === 'MULTI_SCRAP') return '多废料'
+  if (value === 'MISSING_PRICE') return '缺当前价'
+  if (value === 'MULTI_SCRAP_MISSING_PRICE') return '多废料缺价'
+  if (value === 'MISSING_MAPPING') return '缺映射'
+  if (value === 'NO_RAW_MATERIAL') return '无原材料'
+  return '未匹配'
+}
+
+const cmsStatusTag = (status) => {
+  const value = String(status || '')
+  if (value === 'MAPPED') return 'success'
+  if (value === 'MULTI_SCRAP') return 'warning'
+  if (value === 'MISSING_PRICE' || value === 'MULTI_SCRAP_MISSING_PRICE') return 'danger'
+  if (value === 'MISSING_MAPPING' || value === 'NO_RAW_MATERIAL') return 'info'
+  return 'info'
+}
+
+const formatCurrentScrapPrice = (scrap) => {
+  if (!scrap || scrap.status === 'MISSING_PRICE' || scrap.currentRecyclePrice == null) {
+    return '缺当前价'
+  }
+  const unit = scrap.currentPriceUnit || scrap.scrapUnit || ''
+  return unit ? `${scrap.currentRecyclePrice} / ${unit}` : String(scrap.currentRecyclePrice)
 }
 
 onMounted(fetchList)
@@ -464,6 +524,45 @@ onMounted(fetchList)
 }
 .upload-btn {
   display: inline-block;
+}
+.cms-scrap-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cms-scrap-line {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 22px;
+}
+.cms-scrap-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: #1f2a37;
+  white-space: nowrap;
+}
+.cms-scrap-name {
+  color: #4b5563;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.missing-price {
+  color: #c45656;
+}
+.dialog-cms-scraps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+.dialog-cms-scrap {
+  display: grid;
+  grid-template-columns: 120px 1fr 120px;
+  gap: 10px;
+  align-items: center;
+  min-height: 28px;
+  color: #4b5563;
 }
 .pagination {
   margin-top: 12px;

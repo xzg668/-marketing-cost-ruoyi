@@ -24,17 +24,16 @@
           </el-tag>
         </div>
         <div class="filter-actions">
-          <el-upload
-            class="upload-btn"
-            :show-file-list="false"
-            :auto-upload="false"
-            accept=".xlsx,.xls,.csv"
-            :on-change="handleFileChange"
+          <el-button
+            v-hasPermi="['price:linked-item:import']"
+            :loading="importing"
+            @click="openMonthlyImport"
           >
-            <el-button :loading="importing">导入</el-button>
-          </el-upload>
+            导入月度联动价与影响因素 Excel
+          </el-button>
           <!-- T6：绑定 CSV 导入 —— 与联动价导入分开，字段契约不同 -->
           <el-upload
+            v-hasPermi="['price:linked:binding:admin']"
             class="upload-btn"
             :show-file-list="false"
             :auto-upload="false"
@@ -43,10 +42,23 @@
           >
             <el-button :loading="bindingImporting">绑定 CSV</el-button>
           </el-upload>
-          <el-button type="primary" @click="openCreate">新增</el-button>
+          <el-button
+            v-hasPermi="['price:linked-item:add']"
+            type="primary"
+            @click="openCreate"
+          >
+            新增
+          </el-button>
         </div>
       </div>
       <el-form :inline="true" label-width="90px">
+        <el-form-item label="业务单元">
+          <el-input
+            v-model="filters.businessUnitType"
+            placeholder="COMMERCIAL"
+            style="width: 180px"
+          />
+        </el-form-item>
         <el-form-item label="价格月份">
           <el-date-picker
             v-model="filters.pricingMonth"
@@ -59,6 +71,34 @@
         <el-form-item label="物料代码">
           <el-input v-model="filters.materialCode" placeholder="MAT-1001" />
         </el-form-item>
+        <el-form-item label="导入状态">
+          <el-select
+            v-model="filters.importStatus"
+            placeholder="全部"
+            clearable
+            style="width: 150px"
+          >
+            <el-option label="全部" value="" />
+            <el-option label="成功" value="SUCCESS" />
+            <el-option label="冲突" value="CONFLICT" />
+            <el-option label="失败" value="FAILED" />
+            <el-option label="人工跳过" value="MANUAL_SKIPPED" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="绑定状态">
+          <el-select
+            v-model="filters.bindingStatus"
+            placeholder="全部"
+            clearable
+            style="width: 160px"
+          >
+            <el-option label="全部" value="" />
+            <el-option label="已自动绑定" value="AUTO" />
+            <el-option label="冲突" value="CONFLICT" />
+            <el-option label="失败" value="FAILED" />
+            <el-option label="人工绑定" value="MANUAL" />
+          </el-select>
+        </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="fetchList">查询</el-button>
           <el-button @click="resetFilters">重置</el-button>
@@ -66,8 +106,280 @@
       </el-form>
     </el-card>
 
+    <el-card shadow="never" class="monthly-import-card">
+      <div class="section-header">
+        <div>
+          <div class="section-title">月度导入结果</div>
+          <div class="section-subtitle">
+            {{ lastImportMetaText }}
+          </div>
+          <div class="section-subtitle">
+            本区只用于核对本次导入和自动绑定结果；影响因素长期维护请进入影响因素表。
+          </div>
+        </div>
+        <div class="section-actions">
+          <el-button link type="primary" @click="goFactorMonthlySummary">
+            去影响因素表查看本月汇总
+          </el-button>
+          <el-button link type="primary" @click="toggleFactorPreview">
+            {{ showFactorPreview ? '收起本次影响因素' : '本次影响因素预览' }}
+          </el-button>
+          <el-button
+            v-hasPermi="['price:linked-item:import-history:list']"
+            link
+            type="primary"
+            @click="toggleImportLogs"
+          >
+            {{ showImportLogs ? '收起日志' : '导入历史和日志' }}
+          </el-button>
+        </div>
+      </div>
+
+      <div class="summary-grid">
+        <div
+          v-for="item in importSummaryItems"
+          :key="item.key"
+          class="summary-item"
+        >
+          <div class="summary-label">{{ item.label }}</div>
+          <div class="summary-value">
+            <el-tag v-if="item.tag" :type="item.tag" effect="light">
+              {{ item.value }}
+            </el-tag>
+            <span v-else>{{ item.value }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="hasQuoteBaseDetectData" class="quote-base-panel">
+        <div class="quote-base-header">
+          <div>
+            <div class="section-title">公共基价识别</div>
+            <div class="section-subtitle">
+              只用于核对本次导入里哪些影响因素可被 OA 报价单铜/锌/铝基价覆盖。
+            </div>
+          </div>
+          <div class="quote-base-stats">
+            <el-tag type="success" effect="light">
+              已识别 {{ quoteBaseRecognizedCount }} 条
+            </el-tag>
+            <el-tag :type="quoteBaseConflictCount ? 'danger' : 'info'" effect="light">
+              冲突 {{ quoteBaseConflictCount }} 条
+            </el-tag>
+            <el-tag type="info" effect="light">
+              未识别 {{ quoteBaseUnrecognizedCount }} 条
+            </el-tag>
+          </div>
+        </div>
+        <el-table
+          :data="quoteBaseDetectRows"
+          class="result-table"
+          size="small"
+          border
+          empty-text="暂无公共基价识别明细"
+        >
+          <el-table-column prop="shortName" label="影响因素简称" width="130" />
+          <el-table-column prop="factorName" label="影响因素名称" min-width="170" />
+          <el-table-column prop="quoteBaseQuoteFieldName" label="命中报价单字段" width="150" />
+          <el-table-column prop="quoteBaseVariableCode" label="变量编码" width="100" />
+          <el-table-column prop="quoteBaseMatchedKeyword" label="命中关键词" width="130" />
+          <el-table-column prop="quoteBaseMatchSource" label="识别来源" width="100" />
+          <el-table-column label="状态" width="110">
+            <template #default="{ row }">
+              <el-tag :type="quoteBaseStatusTag(row.quoteBaseDetectStatus)" effect="light">
+                {{ quoteBaseStatusText(row.quoteBaseDetectStatus) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="quoteBaseDetectMessage" label="说明" min-width="190" />
+        </el-table>
+      </div>
+
+      <el-table
+        v-if="showFactorPreview"
+        :data="factorPreviewRows"
+        class="result-table"
+        size="small"
+        border
+        empty-text="暂无影响因素明细"
+      >
+        <el-table-column prop="seqNo" label="序号" width="80" />
+        <el-table-column prop="factorName" label="价表影响因素名称" min-width="160" />
+        <el-table-column prop="shortName" label="简称" width="120" />
+        <el-table-column prop="priceSource" label="取价来源" width="120" />
+        <el-table-column prop="newPrice" label="本月价格" width="120" />
+        <el-table-column prop="oldPrice" label="原价格" width="120" />
+        <el-table-column prop="unit" label="单位" width="80" />
+        <el-table-column prop="uploadedBy" label="上传人" width="100" />
+        <el-table-column prop="uploadedAt" label="上传时间" width="160" />
+        <el-table-column prop="action" label="状态" width="100">
+          <template #default="{ row }">
+            <el-tag :type="monthlyActionTag(row.action)" effect="light">
+              {{ monthlyActionText(row.action) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="sourceSheetName" label="来源 sheet" min-width="140" />
+        <el-table-column prop="sourceRowNumber" label="来源行号" width="100" />
+      </el-table>
+
+      <el-tabs v-if="hasImportDetails" v-model="importDetailTab" class="result-tabs">
+        <el-tab-pane label="冲突处理" name="conflicts">
+          <el-table
+            :data="conflictRows"
+            size="small"
+            border
+            empty-text="本次没有冲突项"
+          >
+            <el-table-column prop="materialCode" label="料号" width="140" />
+            <el-table-column prop="tokenName" label="token" width="150" />
+            <el-table-column prop="existingFactorIdentity" label="历史绑定影响因素" width="160" />
+            <el-table-column prop="newFactorIdentity" label="本次公式识别影响因素" width="170" />
+            <el-table-column prop="refText" label="引用位置" width="160" />
+            <el-table-column prop="formula" label="本次公式" min-width="240" />
+            <el-table-column prop="reason" label="冲突原因" min-width="220" />
+            <el-table-column label="操作" width="220" fixed="right">
+              <template #default="{ row }">
+                <el-button
+                  v-hasPermi="['price:linked:binding:admin']"
+                  link
+                  type="primary"
+                  @click="openBindingByMaterial(row)"
+                >
+                  进入人工绑定
+                </el-button>
+                <el-button
+                  v-hasPermi="['price:linked:binding:admin']"
+                  link
+                  type="info"
+                  @click="keepManualBinding(row)"
+                >
+                  保持人工绑定
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+        <el-tab-pane label="失败明细" name="failures">
+          <el-table
+            :data="failedRows"
+            size="small"
+            border
+            empty-text="本次没有失败明细"
+          >
+            <el-table-column prop="rowNumber" label="Excel 行号" width="110" />
+            <el-table-column prop="materialCode" label="料号" width="140" />
+            <el-table-column prop="refText" label="影响因素引用" width="160" />
+            <el-table-column prop="formula" label="公式原文" min-width="260" />
+            <el-table-column prop="message" label="失败原因" min-width="240" />
+            <el-table-column label="操作" width="180" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="copyFormula(row.formula)">
+                  查看公式原文
+                </el-button>
+                <el-button
+                  v-hasPermi="['price:linked:binding:admin']"
+                  link
+                  type="primary"
+                  @click="openBindingByMaterial(row)"
+                >
+                  人工绑定
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+      </el-tabs>
+
+      <el-form
+        v-if="showImportLogs"
+        :inline="true"
+        class="history-filter"
+        label-width="80px"
+      >
+        <el-form-item label="历史范围">
+          <el-select
+            v-model="importHistoryFilter.scope"
+            style="width: 160px"
+            @change="onImportHistoryScopeChange"
+          >
+            <el-option label="我的导入" value="mine" />
+            <el-option
+              v-if="canViewAllUploaders"
+              label="全部上传人"
+              value="all"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="canViewAllUploaders" label="上传人">
+          <el-input
+            v-model="importHistoryFilter.uploadedBy"
+            placeholder="为空表示全部"
+            clearable
+            style="width: 180px"
+          />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" @click="loadImportHistory({ loadLatest: true })">
+            查询历史
+          </el-button>
+          <el-button
+            v-if="importHistoryLimit < 50"
+            @click="loadMoreImportHistory"
+          >
+            查看更多
+          </el-button>
+        </el-form-item>
+      </el-form>
+      <div v-if="showImportLogs" class="history-hint">
+        默认显示当前月份、当前业务单元下最近 {{ importHistoryLimit }} 条导入记录；普通用户只看自己的记录。
+      </div>
+
+      <el-table
+        v-if="showImportLogs"
+        :data="importHistoryRows"
+        class="result-table"
+        size="small"
+        border
+        v-loading="importHistoryLoading"
+        empty-text="暂无导入历史"
+      >
+        <el-table-column prop="batchId" label="上传批次ID" width="180" />
+        <el-table-column prop="fileName" label="文件名" min-width="180" />
+        <el-table-column prop="pricingMonth" label="月份" width="100" />
+        <el-table-column prop="businessUnitType" label="业务单元" width="120" />
+        <el-table-column prop="uploadedBy" label="上传人" width="120" />
+        <el-table-column prop="uploadedAt" label="上传时间" width="170" />
+        <el-table-column prop="summary" label="结果摘要" min-width="260" />
+        <el-table-column label="操作" width="120" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="loadImportBatchDetail(row.batchId)">
+              查看
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <el-table
+        v-if="showImportLogs && bindingLogRows.length"
+        :data="bindingLogRows"
+        class="result-table"
+        size="small"
+        border
+      >
+        <el-table-column prop="createdAt" label="时间" width="170" />
+        <el-table-column prop="materialCode" label="料号" width="140" />
+        <el-table-column prop="tokenName" label="变量" width="130" />
+        <el-table-column prop="action" label="动作" width="130" />
+        <el-table-column prop="status" label="状态" width="100" />
+        <el-table-column prop="factorIdentityId" label="影响因素ID" width="120" />
+        <el-table-column prop="sourceText" label="来源" min-width="180" />
+        <el-table-column prop="message" label="日志" min-width="260" />
+      </el-table>
+    </el-card>
+
     <el-card shadow="never">
-      <el-table :data="derivedRows" stripe v-loading="loading">
+      <el-table :data="visibleRows" stripe v-loading="loading">
         <el-table-column prop="orgCode" label="组织" width="90" />
         <el-table-column prop="sourceName" label="来源" width="120" />
         <el-table-column prop="supplierName" label="供应商名称" min-width="140" />
@@ -142,10 +454,20 @@
         <el-table-column prop="updatedAt" label="更新时间" width="160" />
         <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" link @click="openEditRow(row)">
+            <el-button
+              v-hasPermi="['price:linked-item:edit']"
+              type="primary"
+              link
+              @click="openEditRow(row)"
+            >
               编辑
             </el-button>
-            <el-button type="primary" link @click="openFormulaEditor(row)">
+            <el-button
+              v-hasPermi="['price:linked-item:edit']"
+              type="primary"
+              link
+              @click="openFormulaEditor(row)"
+            >
               公式
             </el-button>
             <!-- T24：查看 trace —— 打开右侧抽屉展示计算追踪 -->
@@ -153,7 +475,12 @@
               查看 Trace
             </el-button>
             <!-- T6：行局部变量绑定 —— 打开抽屉管理 B 组 token → 影响因素 的映射 -->
-            <el-button type="primary" link @click="openBinding(row)">
+            <el-button
+              v-hasPermi="['price:linked:binding:view']"
+              type="primary"
+              link
+              @click="openBinding(row)"
+            >
               变量绑定
               <el-badge
                 v-if="row.unbound"
@@ -162,13 +489,84 @@
                 type="danger"
               />
             </el-button>
-            <el-button type="danger" link @click="removeRow(row)">
+            <el-button
+              v-hasPermi="['price:linked-item:remove']"
+              type="danger"
+              link
+              @click="removeRow(row)"
+            >
               删除
             </el-button>
           </template>
         </el-table-column>
       </el-table>
     </el-card>
+
+    <el-dialog
+      v-model="importDialogVisible"
+      title="导入月度联动价与影响因素 Excel"
+      width="720px"
+    >
+      <el-form :model="importForm" label-width="120px">
+        <el-form-item label="导入月份" required>
+          <el-date-picker
+            v-model="importForm.pricingMonth"
+            type="month"
+            format="YYYY-MM"
+            value-format="YYYY-MM"
+            placeholder="选择月份"
+          />
+        </el-form-item>
+        <el-form-item label="业务单元" required>
+          <el-input v-model="importForm.businessUnitType" placeholder="COMMERCIAL" />
+        </el-form-item>
+        <el-form-item label="处理方式" required>
+          <el-radio-group v-model="importForm.effectiveStrategy">
+            <el-radio-button label="APPEND_ONLY">仅新增</el-radio-button>
+            <el-radio-button label="OVERRIDE_EFFECTIVE">覆盖生效</el-radio-button>
+          </el-radio-group>
+          <div class="strategy-help">
+            <div>仅新增：只新增系统没有的料号、影响因素和绑定，已有料号不覆盖。</div>
+            <div>覆盖生效：本次 Excel 涉及的料号后续按新公式、新绑定、新影响因素价格计算。</div>
+          </div>
+        </el-form-item>
+        <el-form-item label="Excel 文件" required>
+          <el-upload
+            class="monthly-upload"
+            drag
+            :limit="1"
+            :show-file-list="true"
+            :auto-upload="false"
+            accept=".xlsx,.xls"
+            :on-change="handleMonthlyImportFileChange"
+            :on-remove="clearMonthlyImportFile"
+          >
+            <div class="upload-placeholder">
+              <div class="upload-title">请上传同时包含影响因素 sheet 和联动公式 sheet 的 Excel</div>
+              <div class="upload-hint">系统会读取原始公式并生成行级变量绑定</div>
+            </div>
+          </el-upload>
+        </el-form-item>
+      </el-form>
+      <el-steps
+        v-if="importing"
+        :active="importProgressActiveStep"
+        finish-status="success"
+        simple
+      >
+        <el-step
+          v-for="step in importStepList"
+          :key="step"
+          :title="step"
+        />
+      </el-steps>
+      <template #footer>
+        <el-button @click="importDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="importing" @click="submitMonthlyImport">
+          开始导入
+        </el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="640px">
       <el-form :model="formModel" label-width="90px">
@@ -444,13 +842,17 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useUserStore } from '../store/modules/user'
 import {
   fetchLinkedItems,
   createLinkedItem,
   updateLinkedItem,
   deleteLinkedItem,
-  importLinkedItems,
+  importLinkedItemsExcel,
+  fetchLinkedImportHistory,
+  fetchLinkedImportBatchDetail,
   fetchTrace,
   previewFormula,
 } from '../api/priceLinkedItems'
@@ -470,6 +872,8 @@ import {
   parseTraceJson,
 } from './priceLinkedResultUtils'
 
+const router = useRouter()
+const route = useRoute()
 const loading = ref(false)
 const tableRows = ref([])
 // 系统结果来自后端 /items/{id}/trace —— key=row.id，value={calcPrice, error, variables}
@@ -479,6 +883,16 @@ const rowTraceMap = ref({})
 const rowTraceLoading = ref(false)
 const dialogVisible = ref(false)
 const importing = ref(false)
+const importDialogVisible = ref(false)
+const selectedImportFile = ref(null)
+const lastImportResult = ref(null)
+const showFactorPreview = ref(false)
+const showImportLogs = ref(false)
+const importDetailTab = ref('conflicts')
+const importHistoryRows = ref([])
+const bindingLogRows = ref([])
+const importHistoryLoading = ref(false)
+const importProgressActiveStep = ref(0)
 const editingId = ref(null)
 const formulaDialogVisible = ref(false)
 const formulaEditingId = ref(null)
@@ -505,6 +919,45 @@ const pendingLoaded = ref(false)
 const bindingImporting = ref(false)
 const bindingDrawerVisible = ref(false)
 const bindingRow = ref(null)
+const userStore = useUserStore()
+
+const currentMonthText = () => {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  return `${year}-${month}`
+}
+
+// V4-10 历史兼容回归：支持从 URL query 直接打开历史月份，避免刷新或分享
+// /price/linked/result?pricingMonth=2026-02 时又回到当前月份。
+const queryString = (key, fallback = '') => {
+  const value = route.query?.[key]
+  if (Array.isArray(value)) {
+    return value[0] || fallback
+  }
+  return value || fallback
+}
+
+const importStepList = [
+  '上传中',
+  '解析影响因素中',
+  '汇总月度价格中',
+  '解析联动公式中',
+  '写入行级绑定中',
+]
+
+const importForm = ref({
+  pricingMonth: queryString('pricingMonth', currentMonthText()),
+  businessUnitType: queryString('businessUnitType', userStore.businessUnitType || ''),
+  overwriteManual: false,
+  effectiveStrategy: 'APPEND_ONLY',
+})
+
+const importHistoryFilter = ref({
+  scope: 'mine',
+  uploadedBy: '',
+})
+const importHistoryLimit = ref(10)
 
 const formModel = ref({
   pricingMonth: '',
@@ -581,9 +1034,27 @@ const formulaConvertWarning = computed(() => {
     : ''
 })
 
+const currentUsername = computed(() => userStore.username || '')
+
+const canViewAllUploaders = computed(() => {
+  const roles = Array.isArray(userStore.roles) ? userStore.roles : []
+  const permissions = Array.isArray(userStore.permissions)
+    ? userStore.permissions
+    : []
+  return (
+    roles.some((role) => String(role).toLowerCase() === 'admin') ||
+    permissions.includes('*:*:*') ||
+    permissions.includes('price:linked-item:import-history:all') ||
+    permissions.includes('price:linked-item:admin')
+  )
+})
+
 const filters = ref({
-  pricingMonth: '',
-  materialCode: '',
+  businessUnitType: queryString('businessUnitType', userStore.businessUnitType || ''),
+  pricingMonth: queryString('pricingMonth', currentMonthText()),
+  materialCode: queryString('materialCode', ''),
+  importStatus: '',
+  bindingStatus: '',
 })
 
 const buildParams = () => ({
@@ -591,7 +1062,7 @@ const buildParams = () => ({
   materialCode: filters.value.materialCode?.trim(),
 })
 
-const fetchList = async () => {
+const fetchList = async ({ loadLatestImport = true } = {}) => {
   loading.value = true
   try {
     const data = await fetchLinkedItems(buildParams())
@@ -606,6 +1077,9 @@ const fetchList = async () => {
   }
   // 列表刷完后异步批量拉 trace —— 不阻塞主表渲染，后端算好再填"系统结果"列
   loadRowTraces()
+  if (loadLatestImport) {
+    loadImportHistory({ loadLatest: true })
+  }
 }
 
 /**
@@ -680,8 +1154,11 @@ const fetchVariables = async () => {
 
 const resetFilters = () => {
   filters.value = {
-    pricingMonth: '',
+    businessUnitType: userStore.businessUnitType || '',
+    pricingMonth: currentMonthText(),
     materialCode: '',
+    importStatus: '',
+    bindingStatus: '',
   }
   fetchList()
 }
@@ -1104,6 +1581,356 @@ const derivedRows = computed(() =>
   }),
 )
 
+const visibleRows = computed(() => {
+  const status = filters.value.bindingStatus
+  if (!status) {
+    return derivedRows.value
+  }
+  return derivedRows.value.filter((row) => {
+    if (status === 'AUTO') {
+      return !!row.formulaExpr && !row.unbound && !row.formulaIssue
+    }
+    if (status === 'FAILED') {
+      return !!row.formulaIssue || row.unbound
+    }
+    if (status === 'CONFLICT') {
+      return conflictRows.value.some((it) => it.materialCode === row.materialCode)
+    }
+    if (status === 'MANUAL') {
+      return String(row.bindingSource || row.source || '').toUpperCase() === 'MANUAL'
+    }
+    return true
+  })
+})
+
+const formatCount = (value) =>
+  value === null || value === undefined || value === '' ? '-' : value
+
+const resultValue = (...keys) => {
+  const result = lastImportResult.value || {}
+  for (const key of keys) {
+    if (result[key] !== undefined && result[key] !== null) {
+      return result[key]
+    }
+  }
+  return null
+}
+
+const effectiveStrategyText = (value) => {
+  if (value === 'APPEND_ONLY') return '仅新增'
+  if (value === 'OVERRIDE_EFFECTIVE') return '覆盖生效'
+  return value || '-'
+}
+
+const normalizeFactorPreviewRow = (row) => ({
+  seqNo: row?.seqNo || row?.factorSeqNo || row?.sequenceNo || '-',
+  factorName: row?.factorName || row?.priceFactorName || '-',
+  shortName: row?.shortName || row?.factorShortName || '-',
+  priceSource: row?.priceSource || row?.source || '-',
+  newPrice: row?.newPrice ?? row?.price ?? row?.currentPrice ?? '-',
+  oldPrice: row?.originalPrice ?? row?.oldPrice ?? '-',
+  unit: row?.unit || '-',
+  uploadedBy: row?.uploadedBy || '-',
+  uploadedAt: row?.uploadedAt || '-',
+  action: row?.monthlyPriceAction || row?.action || row?.status || '',
+  sourceSheetName: row?.sourceSheetName || row?.sheetName || '-',
+  sourceRowNumber: row?.sourceRowNumber || row?.rowNumber || '-',
+  quoteBaseDetectStatus: row?.quoteBaseDetectStatus || '',
+  quoteBaseQuoteFieldCode: row?.quoteBaseQuoteFieldCode || '',
+  quoteBaseQuoteFieldName: row?.quoteBaseQuoteFieldName || '',
+  quoteBaseVariableCode: row?.quoteBaseVariableCode || '',
+  quoteBaseMatchedKeyword: row?.quoteBaseMatchedKeyword || '',
+  quoteBaseMatchSource: row?.quoteBaseMatchSource || row?.quoteBaseMatchSourceText || 'AUTO',
+  quoteBaseDetectMessage: row?.quoteBaseDetectMessage || '',
+})
+
+const factorPreviewRows = computed(() => {
+  const result = lastImportResult.value || {}
+  const rows =
+    result.factorRows ||
+    result.factorPreviewRows ||
+    result.monthlyPriceRows ||
+    result.factorMonthlyPriceRows ||
+    result.upsertRows ||
+    []
+  return Array.isArray(rows) ? rows.map(normalizeFactorPreviewRow) : []
+})
+
+const quoteBaseRowsWithStatus = computed(() =>
+  factorPreviewRows.value.filter((row) => row.quoteBaseDetectStatus),
+)
+
+const countQuoteBaseRows = (status) =>
+  quoteBaseRowsWithStatus.value.filter(
+    (row) => String(row.quoteBaseDetectStatus).toUpperCase() === status,
+  ).length
+
+const quoteBaseRecognizedCount = computed(() =>
+  resultValue('quoteBaseRecognizedCount') ?? countQuoteBaseRows('RECOGNIZED'),
+)
+
+const quoteBaseConflictCount = computed(() =>
+  resultValue('quoteBaseConflictCount') ?? countQuoteBaseRows('CONFLICT'),
+)
+
+const quoteBaseUnrecognizedCount = computed(() =>
+  resultValue('quoteBaseUnrecognizedCount') ?? countQuoteBaseRows('UNRECOGNIZED'),
+)
+
+const hasQuoteBaseDetectData = computed(() =>
+  quoteBaseRowsWithStatus.value.length > 0 ||
+  quoteBaseRecognizedCount.value > 0 ||
+  quoteBaseConflictCount.value > 0 ||
+  quoteBaseUnrecognizedCount.value > 0,
+)
+
+const quoteBaseDetectRows = computed(() => {
+  const rows = quoteBaseRowsWithStatus.value
+  if (rows.length === 0) {
+    return []
+  }
+  const priority = { CONFLICT: 1, RECOGNIZED: 2, UNRECOGNIZED: 3 }
+  // V3-09：普通未识别只是信息，不进入失败明细；这里按冲突、已识别、未识别排序便于核对。
+  return [...rows].sort((a, b) =>
+    (priority[String(a.quoteBaseDetectStatus).toUpperCase()] || 9) -
+    (priority[String(b.quoteBaseDetectStatus).toUpperCase()] || 9),
+  )
+})
+
+const normalizeBindingError = (row) => ({
+  rowNumber: row?.excelRowNumber ?? row?.rowNumber ?? '-',
+  materialCode: row?.materialCode || '-',
+  tokenName: row?.tokenName || row?.token || '-',
+  formula: row?.formula || row?.formulaExpr || '',
+  refSheet: row?.refSheet || row?.sourceRefSheet || '',
+  refRow: row?.refRow || row?.sourceRefRow || '',
+  refText: row?.refSheet || row?.refRow ? `${row?.refSheet || '-'}!${row?.refRow || '-'}` : '-',
+  existingFactorIdentity: row?.existingFactorIdentity ?? row?.oldFactorIdentityId ?? '-',
+  newFactorIdentity: row?.newFactorIdentity ?? row?.newFactorIdentityId ?? '-',
+  reason: row?.reason || row?.message || '',
+  message: row?.reason || row?.message || '',
+})
+
+const bindingErrorRows = computed(() => {
+  const rows = lastImportResult.value?.bindingErrors || []
+  return Array.isArray(rows) ? rows.map(normalizeBindingError) : []
+})
+
+const conflictRows = computed(() =>
+  bindingErrorRows.value.filter((row) => {
+    const reason = String(row.reason || '')
+    return (
+      reason.includes('冲突') ||
+      (row.existingFactorIdentity !== '-' &&
+        row.newFactorIdentity !== '-' &&
+        row.existingFactorIdentity !== row.newFactorIdentity)
+    )
+  }),
+)
+
+const failedRows = computed(() => {
+  const regularErrors = Array.isArray(lastImportResult.value?.errors)
+    ? lastImportResult.value.errors.map((row) => ({
+        rowNumber: row?.rowNumber ?? '-',
+        materialCode: row?.materialCode || '-',
+        refText: '-',
+        formula: row?.formula || '',
+        message: row?.message || '',
+      }))
+    : []
+  return [
+    ...bindingErrorRows.value.filter(
+      (row) => !conflictRows.value.some((it) => it === row),
+    ),
+    ...regularErrors,
+  ]
+})
+
+const hasImportDetails = computed(
+  () => conflictRows.value.length > 0 || failedRows.value.length > 0,
+)
+
+const importSummaryItems = computed(() => [
+  { key: 'batch', label: '上传批次ID', value: formatCount(resultValue('batchId', 'factorUploadBatchId')) },
+  { key: 'strategy', label: '处理方式', value: effectiveStrategyText(resultValue('effectiveStrategy')) },
+  { key: 'factor', label: '影响因素识别条数', value: formatCount(resultValue('factorRecognizedCount', 'factorRowCount', 'validFactorRowCount') ?? factorPreviewRows.value.length) },
+  { key: 'quoteBaseRecognized', label: '公共基价已识别', value: formatCount(quoteBaseRecognizedCount.value), tag: 'success' },
+  { key: 'quoteBaseConflict', label: '公共基价冲突', value: formatCount(quoteBaseConflictCount.value), tag: quoteBaseConflictCount.value ? 'danger' : 'info' },
+  { key: 'quoteBaseUnrecognized', label: '公共基价未识别', value: formatCount(quoteBaseUnrecognizedCount.value), tag: 'info' },
+  { key: 'created', label: '月度价格新增', value: formatCount(resultValue('monthlyPriceCreatedCount')) },
+  { key: 'updated', label: '月度价格更新', value: formatCount(resultValue('monthlyPriceUpdatedCount')) },
+  { key: 'unchanged', label: '月度价格重复跳过', value: formatCount(resultValue('monthlyPriceUnchangedCount')) },
+  { key: 'monthlySkipped', label: '月度价格策略跳过', value: formatCount(resultValue('monthlyPriceSkippedCount')), tag: resultValue('monthlyPriceSkippedCount') ? 'warning' : 'info' },
+  { key: 'linked', label: '联动价导入条数', value: formatCount(resultValue('linkedCount')) },
+  { key: 'linkedCreated', label: '联动价新增', value: formatCount(resultValue('linkedCreatedCount')), tag: 'success' },
+  { key: 'linkedUpdated', label: '联动价覆盖', value: formatCount(resultValue('linkedUpdatedCount')), tag: resultValue('linkedUpdatedCount') ? 'warning' : 'info' },
+  { key: 'linkedSkipped', label: '联动价跳过', value: formatCount(resultValue('linkedSkippedCount')), tag: resultValue('linkedSkippedCount') ? 'warning' : 'info' },
+  { key: 'auto', label: '自动绑定成功', value: formatCount(resultValue('autoBindingCount')), tag: 'success' },
+  { key: 'consistent', label: '历史关系一致', value: formatCount(resultValue('consistentHistoryBindingCount')), tag: 'success' },
+  { key: 'conflict', label: '历史关系冲突', value: formatCount(resultValue('conflictBindingCount') ?? conflictRows.value.length), tag: conflictRows.value.length ? 'danger' : 'info' },
+  { key: 'manual', label: '人工绑定跳过', value: formatCount(resultValue('manualSkippedCount')), tag: resultValue('manualSkippedCount') ? 'warning' : 'info' },
+  { key: 'failed', label: '失败条数', value: formatCount(resultValue('bindingErrorCount') ?? failedRows.value.length), tag: failedRows.value.length ? 'danger' : 'info' },
+])
+
+const lastImportMetaText = computed(() => {
+  const row = importHistoryRows.value[0]
+  if (!row) {
+    return `当前上下文：${filters.value.businessUnitType || '-'} / ${filters.value.pricingMonth || '-'}`
+  }
+  return `${row.fileName || '-'} · ${row.uploadedBy || '-'} · ${row.uploadedAt || '-'}`
+})
+
+const monthlyActionText = (action) => {
+  const text = String(action || '').toUpperCase()
+  if (text === 'CREATE' || text === 'NEW') return '新增'
+  if (text === 'UPDATE') return '更新'
+  if (text === 'UNCHANGED' || text === 'SKIP') return '重复'
+  return action || '-'
+}
+
+const monthlyActionTag = (action) => {
+  const text = String(action || '').toUpperCase()
+  if (text === 'CREATE' || text === 'NEW') return 'success'
+  if (text === 'UPDATE') return 'warning'
+  if (text === 'UNCHANGED' || text === 'SKIP' || text === 'IMPORTED') return 'info'
+  return 'info'
+}
+
+const quoteBaseStatusText = (status) => {
+  const text = String(status || '').toUpperCase()
+  if (text === 'RECOGNIZED') return '已识别'
+  if (text === 'CONFLICT') return '冲突'
+  if (text === 'UNRECOGNIZED') return '未识别'
+  return status || '-'
+}
+
+const quoteBaseStatusTag = (status) => {
+  const text = String(status || '').toUpperCase()
+  if (text === 'RECOGNIZED') return 'success'
+  if (text === 'CONFLICT') return 'danger'
+  return 'info'
+}
+
+const normalizeImportHistoryRow = (row) => ({
+  batchId: row?.id || row?.batchId || '-',
+  batchNo: row?.batchNo || '-',
+  fileName: row?.fileName || '-',
+  pricingMonth: row?.priceMonth || row?.pricingMonth || '-',
+  businessUnitType: row?.businessUnitType || '-',
+  uploadedBy: row?.uploadedBy || '-',
+  uploadedAt: row?.finishedAt || row?.startedAt || '-',
+  summary:
+    `影响因素 ${row?.factorRowCount ?? '-'}，` +
+    `联动价 ${row?.linkedRowCount ?? '-'}，` +
+    `自动绑定 ${row?.autoBindingCount ?? '-'}，` +
+    `告警 ${row?.warningCount ?? '-'}，` +
+    `失败 ${row?.errorCount ?? '-'}`,
+})
+
+const normalizeBindingLogRow = (row) => ({
+  ...row,
+  sourceText: [
+    row?.sourceWorkbookName,
+    row?.sourceSheetName,
+    row?.sourceCellRef,
+  ].filter(Boolean).join(' / ') || '-',
+})
+
+const buildImportHistoryParams = () => {
+  const scope = importHistoryFilter.value.scope
+  const includeAllUploaders = canViewAllUploaders.value && scope === 'all'
+  return {
+    pricingMonth: filters.value.pricingMonth,
+    businessUnitType: filters.value.businessUnitType,
+    uploadedBy: includeAllUploaders
+      ? importHistoryFilter.value.uploadedBy?.trim()
+      : currentUsername.value,
+    includeAllUploaders,
+    limit: importHistoryLimit.value,
+  }
+}
+
+const loadImportHistory = async ({ loadLatest = false } = {}) => {
+  importHistoryLoading.value = true
+  try {
+    const rows = await fetchLinkedImportHistory(buildImportHistoryParams())
+    importHistoryRows.value = Array.isArray(rows)
+      ? rows.map(normalizeImportHistoryRow)
+      : []
+    if (loadLatest && importHistoryRows.value.length > 0) {
+      await loadImportBatchDetail(importHistoryRows.value[0].batchId, { silent: true })
+    }
+  } catch (error) {
+    importHistoryRows.value = []
+    if (!error?.message?.includes('canceled')) {
+      ElMessage.warning(error?.message || '获取导入历史失败')
+    }
+  } finally {
+    importHistoryLoading.value = false
+  }
+}
+
+const onImportHistoryScopeChange = () => {
+  if (importHistoryFilter.value.scope === 'mine') {
+    importHistoryFilter.value.uploadedBy = ''
+  }
+  importHistoryLimit.value = 10
+  loadImportHistory({ loadLatest: true })
+}
+
+const loadMoreImportHistory = () => {
+  importHistoryLimit.value = Math.min(importHistoryLimit.value + 10, 50)
+  loadImportHistory({ loadLatest: false })
+}
+
+const loadImportBatchDetail = async (batchId, { silent = false } = {}) => {
+  if (!batchId || batchId === '-') {
+    return
+  }
+  try {
+    const detail = await fetchLinkedImportBatchDetail(batchId)
+    lastImportResult.value = detail || {}
+    bindingLogRows.value = Array.isArray(detail?.bindingLogs)
+      ? detail.bindingLogs.map(normalizeBindingLogRow)
+      : []
+    if (!silent) {
+      ElMessage.success('已加载该批次导入明细')
+    }
+  } catch (error) {
+    if (!silent) {
+      ElMessage.error(error?.message || '加载导入批次明细失败')
+    }
+  }
+}
+
+const toggleFactorPreview = async () => {
+  showFactorPreview.value = !showFactorPreview.value
+  if (showFactorPreview.value && factorPreviewRows.value.length === 0) {
+    await loadImportHistory({ loadLatest: true })
+  }
+}
+
+const toggleImportLogs = async () => {
+  showImportLogs.value = !showImportLogs.value
+  if (showImportLogs.value) {
+    await loadImportHistory({ loadLatest: true })
+  }
+}
+
+/**
+ * 联动价格表只保留本次导入核对能力。
+ * 长期汇总、调价、来源追溯统一跳到影响因素表页面处理。
+ */
+const goFactorMonthlySummary = () => {
+  router.push({
+    path: '/price/linked/finance-base',
+    query: {
+      priceMonth: filters.value.pricingMonth || '',
+      businessUnitType: filters.value.businessUnitType || '',
+    },
+  })
+}
+
 /**
  * T24：打开 trace 抽屉 —— 拉取后端结构化计算追踪并扁平化为时间轴。
  * 历史数据 traceJson 可能为 null / 解析失败，降级为"暂无追踪"。
@@ -1223,118 +2050,127 @@ const handleBindingCsvChange = async (uploadFile) => {
   }
 }
 
-const handleFileChange = async (uploadFile) => {
-  const rawFile = uploadFile.raw
+const openMonthlyImport = () => {
+  importForm.value = {
+    pricingMonth: filters.value.pricingMonth || currentMonthText(),
+    businessUnitType:
+      filters.value.businessUnitType || userStore.businessUnitType || '',
+    overwriteManual: false,
+    effectiveStrategy: 'APPEND_ONLY',
+  }
+  selectedImportFile.value = null
+  importProgressActiveStep.value = 0
+  importDialogVisible.value = true
+}
+
+const handleMonthlyImportFileChange = (uploadFile) => {
+  selectedImportFile.value = uploadFile?.raw || null
+}
+
+const clearMonthlyImportFile = () => {
+  selectedImportFile.value = null
+}
+
+const isExcelFile = (file) => {
+  const name = String(file?.name || '').toLowerCase()
+  return name.endsWith('.xlsx') || name.endsWith('.xls')
+}
+
+const submitMonthlyImport = async () => {
+  const rawFile = selectedImportFile.value
+  if (!importForm.value.pricingMonth) {
+    ElMessage.warning('导入月份必填')
+    return
+  }
+  if (!importForm.value.businessUnitType) {
+    ElMessage.warning('业务单元必填')
+    return
+  }
   if (!rawFile) {
+    ElMessage.warning('请选择 Excel 文件')
+    return
+  }
+  if (!isExcelFile(rawFile)) {
+    ElMessage.warning('文件必须是 Excel 格式')
     return
   }
   importing.value = true
+  importProgressActiveStep.value = 0
   try {
-    if (!variableList.value.length) {
-      await fetchVariables()
-    }
-    let XLSX = null
-    try {
-      const mod = await import('xlsx')
-      XLSX = mod
-    } catch (error) {
-      ElMessage.error('未安装xlsx，请先运行 npm install xlsx')
-      return
-    }
-    const buffer = await rawFile.arrayBuffer()
-    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true })
-    const sheet = workbook.Sheets[workbook.SheetNames[0]]
-    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' })
-    const headerMap = {
-      价格月份: 'pricingMonth',
-      组织: 'orgCode',
-      来源: 'sourceName',
-      供应商名称: 'supplierName',
-      供应商代码: 'supplierCode',
-      采购分类: 'purchaseClass',
-      物料名称: 'materialName',
-      物料代码: 'materialCode',
-      规格型号: 'specModel',
-      单位: 'unit',
-      联动公式: 'formulaExpr',
-      下料重: 'blankWeight',
-      下料重量: 'blankWeight',
-      净重: 'netWeight',
-      加工费: 'processFee',
-      代理费: 'agentFee',
-      单价: 'manualPrice',
-      是否含税: 'taxIncluded',
-      生效日期: 'effectiveFrom',
-      失效日期: 'effectiveTo',
-      订单类型: 'orderType',
-      配额: 'quota',
-    }
-    const headerIndex = rows.findIndex((row) =>
-      row.some((cell) => headerMap[String(cell).trim()]),
-    )
-    if (headerIndex === -1) {
-      ElMessage.error('未找到表头，请确认Excel格式是否正确')
-      return
-    }
-    const headerRow = rows[headerIndex]
-    const fieldIndex = {}
-    headerRow.forEach((cell, index) => {
-      const field = headerMap[String(cell).trim()]
-      if (field) {
-        fieldIndex[field] = index
-      }
+    importProgressActiveStep.value = 1
+    const result = await importLinkedItemsExcel(rawFile, importForm.value.pricingMonth, {
+      businessUnitType: importForm.value.businessUnitType,
+      overwriteManual: importForm.value.overwriteManual,
+      effectiveStrategy: importForm.value.effectiveStrategy,
     })
-    const fallbackMonth = filters.value.pricingMonth || getCurrentMonth()
-    const dataRows = rows
-      .slice(headerIndex + 1)
-      .map((row) => {
-        const pricingMonth =
-          normalizeMonth(row[fieldIndex.pricingMonth]) || fallbackMonth
-        const formulaExprCn = String(row[fieldIndex.formulaExpr] || '').trim()
-        return {
-          pricingMonth,
-          orgCode: String(row[fieldIndex.orgCode] || '').trim(),
-          sourceName: String(row[fieldIndex.sourceName] || '').trim(),
-          supplierName: String(row[fieldIndex.supplierName] || '').trim(),
-          supplierCode: String(row[fieldIndex.supplierCode] || '').trim(),
-          purchaseClass: String(row[fieldIndex.purchaseClass] || '').trim(),
-          materialName: String(row[fieldIndex.materialName] || '').trim(),
-          materialCode: String(row[fieldIndex.materialCode] || '').trim(),
-          specModel: String(row[fieldIndex.specModel] || '').trim(),
-          unit: String(row[fieldIndex.unit] || '').trim(),
-          formulaExprCn,
-          formulaExpr: toCodeExpr(formulaExprCn, formulaIndex.value),
-          blankWeight: parseNumber(row[fieldIndex.blankWeight]),
-          netWeight: parseNumber(row[fieldIndex.netWeight]),
-          processFee: parseNumber(row[fieldIndex.processFee]),
-          agentFee: parseNumber(row[fieldIndex.agentFee]),
-          manualPrice: parseNumber(row[fieldIndex.manualPrice]),
-          taxIncluded: parseBoolean(row[fieldIndex.taxIncluded]),
-          effectiveFrom: normalizeDate(row[fieldIndex.effectiveFrom]) || null,
-          effectiveTo: normalizeDate(row[fieldIndex.effectiveTo]) || null,
-          orderType: String(row[fieldIndex.orderType] || '').trim(),
-          quota: parseNumber(row[fieldIndex.quota]),
-        }
-      })
-      .filter((row) => row.materialCode)
-    if (dataRows.length === 0) {
-      ElMessage.warning('未解析到有效数据')
-      return
+    importProgressActiveStep.value = importStepList.length
+    lastImportResult.value = result || {}
+    filters.value.pricingMonth = importForm.value.pricingMonth
+    filters.value.businessUnitType = importForm.value.businessUnitType
+    importDialogVisible.value = false
+    showFactorPreview.value = true
+    showImportLogs.value = true
+    importDetailTab.value = conflictRows.value.length ? 'conflicts' : 'failures'
+    const failed = result?.bindingErrorCount ?? failedRows.value.length
+    const conflicts = result?.conflictBindingCount ?? conflictRows.value.length
+    const created = result?.linkedCreatedCount ?? 0
+    const updated = result?.linkedUpdatedCount ?? 0
+    const skipped = result?.linkedSkippedCount ?? 0
+    if (failed || conflicts) {
+      ElMessage.warning(`导入完成：新增 ${created}，覆盖 ${updated}，跳过 ${skipped}，需处理 ${failed + conflicts} 条`)
+    } else {
+      ElMessage.success(`导入完成：新增 ${created}，覆盖 ${updated}，跳过 ${skipped}`)
     }
-    const importMonth = dataRows[0].pricingMonth || fallbackMonth
-    await importLinkedItems({
-      pricingMonth: importMonth,
-      rows: dataRows,
-    })
-    filters.value.pricingMonth = importMonth
-    ElMessage.success(`已导入${dataRows.length}条联动价`)
-    fetchList()
+    fetchList({ loadLatestImport: false })
+    await loadImportHistory({ loadLatest: false })
+    loadPending()
   } catch (error) {
     ElMessage.error(error?.message || '导入失败')
   } finally {
     importing.value = false
   }
 }
+
+const openBindingByMaterial = (row) => {
+  const target = tableRows.value.find((item) => item.materialCode === row?.materialCode)
+  if (!target) {
+    ElMessage.warning('当前列表未找到该料号，请先查询对应月份和料号')
+    return
+  }
+  openBinding(target)
+}
+
+const keepManualBinding = (row) => {
+  ElMessage.info(`已保持人工绑定：${row?.materialCode || '-'}`)
+}
+
+const copyFormula = async (formula) => {
+  if (!formula) {
+    ElMessage.info('该行没有公式原文')
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(formula)
+    ElMessage.success('公式原文已复制')
+  } catch (_) {
+    ElMessage.info(formula)
+  }
+}
+
+watch(
+  () => userStore.businessUnitType,
+  (value) => {
+    if (!value) {
+      return
+    }
+    if (!filters.value.businessUnitType) {
+      filters.value.businessUnitType = value
+    }
+    if (!importForm.value.businessUnitType) {
+      importForm.value.businessUnitType = value
+    }
+  },
+)
 
 onMounted(fetchList)
 onMounted(fetchVariables)
@@ -1431,6 +2267,126 @@ onMounted(loadPending)
 
 .upload-btn {
   margin-left: 8px;
+}
+
+.monthly-import-card {
+  overflow: hidden;
+}
+
+.section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2a37;
+}
+
+.section-subtitle {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.section-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.summary-item {
+  min-height: 58px;
+  padding: 10px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.summary-label {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.summary-value {
+  margin-top: 6px;
+  font-size: 18px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.quote-base-panel {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #f9fafb;
+}
+
+.quote-base-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.quote-base-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.result-table,
+.result-tabs {
+  margin-top: 14px;
+}
+
+.history-filter {
+  margin-top: 14px;
+}
+
+.history-hint {
+  margin: 4px 0 10px;
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.monthly-upload {
+  width: 100%;
+}
+
+.upload-placeholder {
+  padding: 12px 0;
+}
+
+.upload-title {
+  font-size: 14px;
+  color: #1f2a37;
+}
+
+.upload-hint {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.strategy-help {
+  margin-top: 8px;
+  line-height: 1.7;
+  font-size: 12px;
+  color: #6b7280;
 }
 
 /* T24：差异超阈值（> 0.01）红色高亮 */

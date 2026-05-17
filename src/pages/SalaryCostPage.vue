@@ -39,7 +39,29 @@
         <el-table-column prop="refMaterialCode" label="参考料号" width="140" />
         <el-table-column prop="directLaborCost" label="直接人工成本" width="140" />
         <el-table-column prop="indirectLaborCost" label="辅助人工成本" width="140" />
-        <el-table-column prop="source" label="来源" width="100" />
+        <el-table-column prop="period" label="首次期间" width="100">
+          <template #default="{ row }">{{ displayNullable(row.period) }}</template>
+        </el-table-column>
+        <el-table-column prop="source" label="来源" width="100">
+          <template #default="{ row }">
+            <el-tag :type="cmsSourceTagType(row.source)" size="small">
+              {{ displayCmsSource(row.source) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="lockStatus" label="锁定状态" width="110">
+          <template #default="{ row }">
+            <el-tag :type="cmsLockStatusTagType(row.lockStatus, row.source)" size="small">
+              {{ displayCmsLockStatus(row.lockStatus, row.source) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="sourceImportBatchId" label="来源批次ID" width="120">
+          <template #default="{ row }">{{ displayNullable(row.sourceImportBatchId) }}</template>
+        </el-table-column>
+        <el-table-column prop="lockReason" label="锁定说明" min-width="160" show-overflow-tooltip>
+          <template #default="{ row }">{{ displayNullable(row.lockReason) }}</template>
+        </el-table-column>
         <el-table-column prop="businessUnit" label="生产事业部" width="140" />
         <el-table-column prop="updatedAt" label="更新时间" width="160" />
         <el-table-column label="操作" width="140" fixed="right">
@@ -166,6 +188,13 @@ import {
   updateSalaryCost,
   deleteSalaryCost,
 } from '../api/salaryCosts'
+import {
+  cmsLockStatusTagType,
+  cmsSourceTagType,
+  displayCmsLockStatus,
+  displayCmsSource,
+  displayNullable,
+} from '../utils/cmsCostSourceDisplay'
 
 const loading = ref(false)
 const importing = ref(false)

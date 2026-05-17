@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { markRaw, ref } from 'vue'
 import { fetchRouters } from '../../api/auth'
 import MainLayout from '../../layout/index.vue'
 import ParentView from '../../layout/components/ParentView.vue'
@@ -97,7 +97,7 @@ function toRoute(node, isTop = true) {
 
   const route = {
     path: node.path || '',
-    component,
+    component: typeof component === 'object' ? markRaw(component) : component,
     meta: node.meta ? { ...node.meta } : {},
   }
   if (node.menuId != null) {

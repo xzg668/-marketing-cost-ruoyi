@@ -75,6 +75,18 @@ const staticRoutes = [
         meta: { title: 'OA表单详情', activeMenu: '/ingest/oa-form' },
       },
       {
+        path: '/ingest/quote-requests/import',
+        name: 'ingest-quote-request-import',
+        component: () => import('../views/ingest/quote-requests/import/index.vue'),
+        meta: { title: '报价单导入', activeMenu: '/ingest/quote-requests/import' },
+      },
+      {
+        path: '/ingest/quote-requests/:oaNo',
+        name: 'ingest-quote-request-detail',
+        component: () => import('../pages/QuoteRequestDetailPage.vue'),
+        meta: { title: '报价单详情', activeMenu: '/ingest/quote-requests' },
+      },
+      {
         path: '/price/linked',
         redirect: '/price/linked/result',
       },

@@ -6,9 +6,19 @@ import path from 'node:path'
 /**
  * T19：新建 financeBasePrice.js 的静态契约校验。
  *
- * 断言两个导出：
- *   list(params)                        → GET  /api/v1/base-prices
- *   importInfluenceFactors(file, month) → POST /api/v1/base-prices/import-excel (multipart)
+ * 断言旧兼容导出 + V4 影响因素事实源导出：
+ *   list(params)                         → GET /api/v1/base-prices
+ *   importInfluenceFactors(file, month)  → POST /api/v1/base-prices/import-excel
+ *   fetchFactorImportBatches(params)     → GET /api/v1/price-linked/factors/import-batches，404 时兼容旧 import-history
+ *   fetchFactorImportBatchDetail(id)     → GET /api/v1/price-linked/factors/import-batches/{id}，404 时兼容旧 import-history/{id}
+ *   adjustFactorMonthlyPrice(id, body)   → PATCH /api/v1/price-linked/factors/monthly-prices/{id}/adjust
+ *   fetchFactorMonthlyPriceChangeLogs(id)→ GET /api/v1/price-linked/factors/monthly-prices/{id}/change-logs
+ *   fetchFactorLinkedItems(id, params)   → GET /api/v1/factor-identities/{id}/linked-items
+ *   fetchFactorMonthlyPrices(params)     → GET /api/v1/price-linked/factor-adjust/monthly-prices
+ *   fetchFactorAdjustBatches(params)     → GET /api/v1/price-linked/factor-adjust/batches
+ *   fetchFactorAdjustPrices(params)      → GET /api/v1/price-linked/factor-adjust/prices
+ *   exportFactorAdjustTemplate(params)   → GET /api/v1/price-linked/factor-adjust/export-template
+ *   importFactorAdjustExcel(file, opts)  → POST /api/v1/price-linked/factor-adjust/import
  */
 const FILE = path.resolve(import.meta.dirname, '../src/api/financeBasePrice.js')
 const content = fs.readFileSync(FILE, 'utf-8')
@@ -32,6 +42,72 @@ describe('financeBasePrice.js', () => {
 
   it('POST 到 /api/v1/base-prices/import-excel', () => {
     assert.match(content, /\/api\/v1\/base-prices\/import-excel/)
+    assert.match(content, /method:\s*['"]POST['"]/)
+  })
+
+  it('导出 V4 影响因素导入批次列表接口', () => {
+    assert.match(content, /export\s+const\s+fetchFactorImportBatches\b/)
+    assert.match(content, /\/api\/v1\/price-linked\/factors\/import-batches/)
+    assert.match(content, /\/api\/v1\/price-linked\/items\/import-history/)
+  })
+
+  it('导出 V4 影响因素导入批次明细接口', () => {
+    assert.match(content, /export\s+const\s+fetchFactorImportBatchDetail\b/)
+    assert.match(
+      content,
+      /\/api\/v1\/price-linked\/factors\/import-batches\/\$\{batchId\}/
+    )
+    assert.match(
+      content,
+      /\/api\/v1\/price-linked\/items\/import-history\/\$\{batchId\}/
+    )
+  })
+
+  it('影响因素批次接口支持 404 时回退旧持久化接口', () => {
+    assert.match(content, /requestWithFactorEndpointFallback/)
+    assert.match(content, /资源不存在/)
+    assert.match(content, /isNotFound/)
+  })
+
+  it('导出 V4-06 影响因素调价和日志接口', () => {
+    assert.match(content, /export\s+const\s+adjustFactorMonthlyPrice\b/)
+    assert.match(content, /method:\s*['"]PATCH['"]/)
+    assert.match(
+      content,
+      /\/api\/v1\/price-linked\/factors\/monthly-prices\/\$\{factorMonthlyPriceId\}\/adjust/
+    )
+    assert.match(content, /export\s+const\s+fetchFactorMonthlyPriceChangeLogs\b/)
+    assert.match(
+      content,
+      /\/api\/v1\/price-linked\/factors\/monthly-prices\/\$\{factorMonthlyPriceId\}\/change-logs/
+    )
+  })
+
+  it('导出 V4-07 影响因素引用联动价反查接口', () => {
+    assert.match(content, /export\s+const\s+fetchFactorLinkedItems\b/)
+    assert.match(
+      content,
+      /\/api\/v1\/factor-identities\/\$\{factorIdentityId\}\/linked-items/
+    )
+    assert.match(content, /params/)
+  })
+
+  it('导出 V5-09 月度调价列表、批次和明细接口', () => {
+    assert.match(content, /export\s+const\s+fetchFactorMonthlyPrices\b/)
+    assert.match(content, /\/api\/v1\/price-linked\/factor-adjust\/monthly-prices/)
+    assert.match(content, /export\s+const\s+fetchFactorAdjustBatches\b/)
+    assert.match(content, /\/api\/v1\/price-linked\/factor-adjust\/batches/)
+    assert.match(content, /export\s+const\s+fetchFactorAdjustPrices\b/)
+    assert.match(content, /\/api\/v1\/price-linked\/factor-adjust\/prices/)
+  })
+
+  it('导出 V5-09 调价模板下载和调价 Excel 导入接口', () => {
+    assert.match(content, /export\s+const\s+exportFactorAdjustTemplate\b/)
+    assert.match(content, /content-disposition/)
+    assert.match(content, /factor-adjust-template-/)
+    assert.match(content, /export\s+const\s+importFactorAdjustExcel\b/)
+    assert.match(content, /append\(['"]usageScope['"]\s*,\s*options\.usageScope\)/)
+    assert.match(content, /\/api\/v1\/price-linked\/factor-adjust\/import/)
     assert.match(content, /method:\s*['"]POST['"]/)
   })
 })

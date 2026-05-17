@@ -26,16 +26,32 @@ export const previewFormula = (body) =>
  * T19：联动 + 固定 Excel 批量导入 —— 走 multipart/form-data（T18）。
  * @param {File|Blob} file   前端上传文件
  * @param {string}    pricingMonth 价期月（如 "2026-02"）
+ * @param {object}    options 月度影响因素自动绑定上下文
  */
-export const importLinkedItemsExcel = (file, pricingMonth) => {
+export const importLinkedItemsExcel = (file, pricingMonth, options = {}) => {
   const form = new FormData()
   form.append('file', file)
   form.append('pricingMonth', pricingMonth)
+  if (options.businessUnitType) {
+    form.append('businessUnitType', options.businessUnitType)
+  }
+  if (options.overwriteManual !== undefined) {
+    form.append('overwriteManual', String(!!options.overwriteManual))
+  }
+  if (options.effectiveStrategy) {
+    form.append('effectiveStrategy', options.effectiveStrategy)
+  }
   return request('/api/v1/price-linked/items/import-excel', {
     method: 'POST',
     body: form,
   })
 }
+
+export const fetchLinkedImportHistory = (params) =>
+  request('/api/v1/price-linked/items/import-history', { params })
+
+export const fetchLinkedImportBatchDetail = (batchId) =>
+  request(`/api/v1/price-linked/items/import-history/${batchId}`)
 
 /**
  * T19：查询单条联动计算结果的 trace JSON（T16）—— 404 的情况由 errorHandler 统一提示。

@@ -6,7 +6,12 @@
           <div class="header-title">成本试算结果</div>
           <div class="header-sub">OA 单号：{{ meta.oaNo || '-' }}</div>
         </div>
-        <el-button @click="goBack">返回列表</el-button>
+        <div class="header-actions">
+          <el-button :disabled="!meta.oaNo" @click="goLinkedCalc">
+            查看本单联动价计算记录
+          </el-button>
+          <el-button @click="goBack">返回列表</el-button>
+        </div>
       </div>
     </el-card>
 
@@ -421,6 +426,16 @@ const goBack = () => {
   router.push('/cost/run')
 }
 
+const goLinkedCalc = () => {
+  if (!meta.value.oaNo) {
+    return
+  }
+  router.push({
+    path: '/price/linked/oa-result',
+    query: { oaNo: meta.value.oaNo },
+  })
+}
+
 const goOaDetail = (row) => {
   if (!meta.value.oaNo) {
     return
@@ -474,6 +489,11 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .header-title {

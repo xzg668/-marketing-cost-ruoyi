@@ -1,4 +1,4 @@
-// 废料回收价 API（V48）
+// CMS 回收废料当前价 API：自制件新计算只按 scrapCode 取当前有效价，不按月份匹配。
 import { request } from './http'
 
 export const fetchScrapItems = (params) =>
@@ -15,3 +15,6 @@ export const deleteScrapItem = (id) =>
 
 export const importScrapItems = (body) =>
   request('/api/v1/price-scrap/items/import', { method: 'POST', body })
+
+export const fetchCurrentScrapItem = (scrapCode) =>
+  request('/api/v1/price-scrap/items/current', { params: { scrapCode } })
