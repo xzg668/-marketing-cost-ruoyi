@@ -1,5 +1,7 @@
 import { request } from './http'
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
+
 const encodePath = (value) => encodeURIComponent(String(value || '').trim())
 
 const toFileFormData = (file) => {
@@ -22,6 +24,32 @@ export const commitQuoteExcel = (file) =>
     method: 'POST',
     body: toFileFormData(file),
   })
+
+export const fetchQuoteExcelTemplates = () =>
+  request('/api/v1/quote-ingest/excel/templates')
+
+export const downloadQuoteExcelTemplate = async (templateType) => {
+  const encodedType = encodePath(templateType)
+  const headers = {}
+  const token = localStorage.getItem('token')
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/quote-ingest/excel/templates/${encodedType}/download`,
+    { headers },
+  )
+  if (!response.ok) {
+    throw new Error(await response.text() || '模板下载失败')
+  }
+  const disposition = response.headers.get('content-disposition') || ''
+  const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/)?.[1]
+  return {
+    blob: await response.blob(),
+    fileName: encodedName ? decodeURIComponent(encodedName) : `${templateType || 'quote-template'}.xlsx`,
+  }
+}
 
 export const fetchQuoteBomStatus = (oaNo) =>
   request('/api/v1/quote-ingest/bom-status', { params: { oaNo } })

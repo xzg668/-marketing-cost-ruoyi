@@ -17,8 +17,14 @@
         </div>
       </div>
       <el-form :inline="true" label-width="90px">
+        <el-form-item label="年度">
+          <el-input v-model="filters.rateYear" placeholder="2026" class="year-input" />
+        </el-form-item>
         <el-form-item label="事业部">
-          <el-input v-model="filters.businessUnit" placeholder="四通阀事业部" />
+          <el-input v-model="filters.businessUnit" placeholder="商用四通阀事业部" />
+        </el-form-item>
+        <el-form-item label="费用科目">
+          <el-input v-model="filters.expenseSubject" placeholder="水电费用" />
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="applyFilters">查询</el-button>
@@ -29,22 +35,24 @@
 
     <el-card shadow="never">
       <el-table :data="tableRows" stripe v-loading="loading">
-        <el-table-column prop="businessUnit" label="事业部" min-width="140" />
-        <el-table-column prop="overhaulRate" label="大修费" width="120" />
-        <el-table-column prop="toolingRepairRate" label="工装零星修理费" width="140" />
-        <el-table-column prop="waterPowerRate" label="水电费" width="120" />
-        <el-table-column prop="otherRate" label="其他费用" width="120" />
-        <el-table-column prop="upliftRate" label="上浮比率" width="120" />
+        <el-table-column type="index" label="序号" width="70" />
+        <el-table-column prop="businessDivision" label="事业部" min-width="150">
+          <template #default="{ row }">{{ row.businessDivision || row.businessUnit }}</template>
+        </el-table-column>
+        <el-table-column prop="expenseSubject" label="费用科目" min-width="140" />
+        <el-table-column prop="budgetAmount" label="预算费用" width="130" />
+        <el-table-column prop="totalWorkMinutes" label="总工时" width="130" />
+        <el-table-column prop="planRate" label="计划（元/分钟）" width="150" />
+        <el-table-column prop="upliftRatio" label="上浮比例" width="120" />
+        <el-table-column prop="quoteRatio" label="报价比例（元/分钟）" width="170" />
         <el-table-column prop="manhourRate" label="工时率" width="120" />
+        <el-table-column prop="rateYear" label="年度" width="90" />
+        <el-table-column prop="remark" label="备注" min-width="150" />
         <el-table-column prop="updatedAt" label="更新时间" width="160" />
         <el-table-column label="操作" width="140" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" link @click="openEdit(row)">
-              编辑
-            </el-button>
-            <el-button type="danger" link @click="removeRow(row)">
-              删除
-            </el-button>
+            <el-button type="primary" link @click="openEdit(row)">编辑</el-button>
+            <el-button type="danger" link @click="removeRow(row)">删除</el-button>
           </template>
         </el-table-column>
         <template #empty>
@@ -53,28 +61,37 @@
       </el-table>
     </el-card>
 
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="560px">
-      <el-form :model="formModel" label-width="120px">
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="640px">
+      <el-form :model="formModel" label-width="150px">
+        <el-form-item label="年度">
+          <el-input v-model="formModel.rateYear" />
+        </el-form-item>
         <el-form-item label="事业部">
-          <el-input v-model="formModel.businessUnit" />
+          <el-input v-model="formModel.businessDivision" />
         </el-form-item>
-        <el-form-item label="大修费">
-          <el-input v-model="formModel.overhaulRate" />
+        <el-form-item label="费用科目">
+          <el-input v-model="formModel.expenseSubject" />
         </el-form-item>
-        <el-form-item label="工装零星修理费">
-          <el-input v-model="formModel.toolingRepairRate" />
+        <el-form-item label="预算费用">
+          <el-input v-model="formModel.budgetAmount" />
         </el-form-item>
-        <el-form-item label="水电费">
-          <el-input v-model="formModel.waterPowerRate" />
+        <el-form-item label="总工时">
+          <el-input v-model="formModel.totalWorkMinutes" />
         </el-form-item>
-        <el-form-item label="其他费用">
-          <el-input v-model="formModel.otherRate" />
+        <el-form-item label="计划（元/分钟）">
+          <el-input v-model="formModel.planRate" />
         </el-form-item>
-        <el-form-item label="上浮比率">
-          <el-input v-model="formModel.upliftRate" />
+        <el-form-item label="上浮比例">
+          <el-input v-model="formModel.upliftRatio" />
+        </el-form-item>
+        <el-form-item label="报价比例（元/分钟）">
+          <el-input v-model="formModel.quoteRatio" />
         </el-form-item>
         <el-form-item label="工时率">
           <el-input v-model="formModel.manhourRate" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="formModel.remark" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -96,33 +113,56 @@ import {
   deleteDepartmentFundRate,
 } from '../api/departmentFundRates'
 
+const currentYear = new Date().getFullYear()
 const loading = ref(false)
 const importing = ref(false)
 const dialogVisible = ref(false)
 const editingId = ref(null)
 
 const filters = ref({
+  rateYear: String(currentYear),
   businessUnit: '',
+  expenseSubject: '',
 })
 
-const formModel = ref({
-  businessUnit: '',
-  overhaulRate: '',
-  toolingRepairRate: '',
-  waterPowerRate: '',
-  otherRate: '',
-  upliftRate: '',
+const blankForm = () => ({
+  rateYear: String(currentYear),
+  businessDivision: '',
+  expenseSubject: '',
+  budgetAmount: '',
+  totalWorkMinutes: '',
+  planRate: '',
+  upliftRatio: '',
+  quoteRatio: '',
   manhourRate: '',
+  remark: '',
 })
 
+const formModel = ref(blankForm())
 const tableRows = ref([])
 
 const dialogTitle = computed(() =>
   editingId.value ? '编辑部门经费率' : '新增部门经费率',
 )
 
+const parseNumber = (value) => {
+  const text = String(value ?? '').replace(/,/g, '').trim()
+  if (!text) {
+    return null
+  }
+  const parsed = Number(text)
+  return Number.isNaN(parsed) ? null : parsed
+}
+
+const parseYear = (value) => {
+  const parsed = parseNumber(value)
+  return parsed === null ? null : Math.trunc(parsed)
+}
+
 const buildParams = () => ({
+  rateYear: parseYear(filters.value.rateYear),
   businessUnit: filters.value.businessUnit.trim(),
+  expenseSubject: filters.value.expenseSubject.trim(),
 })
 
 const fetchList = async () => {
@@ -144,69 +184,58 @@ const applyFilters = () => {
 
 const resetFilters = () => {
   filters.value = {
+    rateYear: String(currentYear),
     businessUnit: '',
+    expenseSubject: '',
   }
   applyFilters()
 }
 
 const openCreate = () => {
   editingId.value = null
-  formModel.value = {
-    businessUnit: '',
-    overhaulRate: '',
-    toolingRepairRate: '',
-    waterPowerRate: '',
-    otherRate: '',
-    upliftRate: '',
-    manhourRate: '',
-  }
+  formModel.value = blankForm()
   dialogVisible.value = true
 }
 
 const openEdit = (row) => {
   editingId.value = row.id
   formModel.value = {
-    businessUnit: row.businessUnit ?? '',
-    overhaulRate: row.overhaulRate ?? '',
-    toolingRepairRate: row.toolingRepairRate ?? '',
-    waterPowerRate: row.waterPowerRate ?? '',
-    otherRate: row.otherRate ?? '',
-    upliftRate: row.upliftRate ?? '',
+    rateYear: row.rateYear ?? '',
+    businessDivision: row.businessDivision ?? row.businessUnit ?? '',
+    expenseSubject: row.expenseSubject ?? '',
+    budgetAmount: row.budgetAmount ?? '',
+    totalWorkMinutes: row.totalWorkMinutes ?? '',
+    planRate: row.planRate ?? '',
+    upliftRatio: row.upliftRatio ?? '',
+    quoteRatio: row.quoteRatio ?? '',
     manhourRate: row.manhourRate ?? '',
+    remark: row.remark ?? '',
   }
   dialogVisible.value = true
 }
 
-const parseNumber = (value) => {
-  const text = String(value ?? '').replace(/,/g, '').trim()
-  if (!text) {
-    return null
-  }
-  const parsed = Number(text)
-  return Number.isNaN(parsed) ? null : parsed
-}
-
 const submitRow = async () => {
   if (
-    !formModel.value.businessUnit ||
-    !String(formModel.value.overhaulRate).trim() ||
-    !String(formModel.value.toolingRepairRate).trim() ||
-    !String(formModel.value.waterPowerRate).trim() ||
-    !String(formModel.value.otherRate).trim() ||
-    !String(formModel.value.upliftRate).trim() ||
-    !String(formModel.value.manhourRate).trim()
+    !String(formModel.value.rateYear).trim() ||
+    !String(formModel.value.businessDivision).trim() ||
+    !String(formModel.value.expenseSubject).trim() ||
+    !String(formModel.value.quoteRatio).trim()
   ) {
-    ElMessage.warning('事业部和各项费率必填')
+    ElMessage.warning('年度、事业部、费用科目、报价比例必填')
     return
   }
   const payload = {
-    businessUnit: formModel.value.businessUnit,
-    overhaulRate: parseNumber(formModel.value.overhaulRate),
-    toolingRepairRate: parseNumber(formModel.value.toolingRepairRate),
-    waterPowerRate: parseNumber(formModel.value.waterPowerRate),
-    otherRate: parseNumber(formModel.value.otherRate),
-    upliftRate: parseNumber(formModel.value.upliftRate),
+    rateYear: parseYear(formModel.value.rateYear),
+    businessDivision: String(formModel.value.businessDivision).trim(),
+    businessUnit: String(formModel.value.businessDivision).trim(),
+    expenseSubject: String(formModel.value.expenseSubject).trim(),
+    budgetAmount: parseNumber(formModel.value.budgetAmount),
+    totalWorkMinutes: parseNumber(formModel.value.totalWorkMinutes),
+    planRate: parseNumber(formModel.value.planRate),
+    upliftRatio: parseNumber(formModel.value.upliftRatio),
+    quoteRatio: parseNumber(formModel.value.quoteRatio),
     manhourRate: parseNumber(formModel.value.manhourRate),
+    remark: String(formModel.value.remark || '').trim(),
   }
   try {
     if (editingId.value) {
@@ -244,8 +273,27 @@ const normalizeHeader = (value) =>
   String(value || '')
     .replace(/^\uFEFF/, '')
     .replace(/[：:]/g, '')
+    .replace(/[()（）]/g, '')
     .replace(/[\s\u3000]+/g, '')
     .trim()
+
+const normalizeCell = (value) => String(value ?? '').trim()
+
+const fillMergedCells = (sheet, XLSX) => {
+  const merges = sheet['!merges'] || []
+  merges.forEach((merge) => {
+    const firstAddress = XLSX.utils.encode_cell({ r: merge.s.r, c: merge.s.c })
+    const firstValue = sheet[firstAddress]?.v ?? sheet[firstAddress]?.w ?? ''
+    for (let row = merge.s.r; row <= merge.e.r; row += 1) {
+      for (let col = merge.s.c; col <= merge.e.c; col += 1) {
+        const address = XLSX.utils.encode_cell({ r: row, c: col })
+        if (!sheet[address]) {
+          sheet[address] = { t: 's', v: firstValue }
+        }
+      }
+    }
+  })
+}
 
 const handleFileChange = async (uploadFile) => {
   const rawFile = uploadFile.raw
@@ -265,15 +313,18 @@ const handleFileChange = async (uploadFile) => {
     const buffer = await rawFile.arrayBuffer()
     const workbook = XLSX.read(buffer, { type: 'array', cellDates: true })
     const sheet = workbook.Sheets[workbook.SheetNames[0]]
+    fillMergedCells(sheet, XLSX)
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false })
     const headerAliases = {
-      businessUnit: ['事业部'],
-      overhaulRate: ['大修费'],
-      toolingRepairRate: ['工装零星修理费'],
-      waterPowerRate: ['水电费'],
-      otherRate: ['其他费用'],
-      upliftRate: ['上浮比率'],
+      businessDivision: ['事业部'],
+      expenseSubject: ['费用科目'],
+      budgetAmount: ['预算费用'],
+      totalWorkMinutes: ['总工时'],
+      planRate: ['计划元/分钟', '计划'],
+      upliftRatio: ['上浮比例'],
+      quoteRatio: ['报价比例元/分钟', '报价比例'],
       manhourRate: ['工时率'],
+      remark: ['备注'],
     }
     const headerMap = Object.entries(headerAliases).reduce((acc, [key, values]) => {
       values.forEach((value) => {
@@ -298,10 +349,7 @@ const handleFileChange = async (uploadFile) => {
         const hitCount = row.reduce((count, cell) => {
           return resolveHeaderField(cell) ? count + 1 : count
         }, 0)
-        if (hitCount > best.count) {
-          return { index, count: hitCount }
-        }
-        return best
+        return hitCount > best.count ? { index, count: hitCount } : best
       },
       { index: -1, count: 0 },
     ).index
@@ -309,38 +357,18 @@ const handleFileChange = async (uploadFile) => {
       ElMessage.error('未找到表头，请确认Excel格式是否正确')
       return
     }
-    const headerRow = rows[headerIndex]
-    const nextHeaderRow = rows[headerIndex + 1] || []
     const fieldIndex = {}
-    headerRow.forEach((cell, index) => {
+    rows[headerIndex].forEach((cell, index) => {
       const field = resolveHeaderField(cell)
       if (field) {
         fieldIndex[field] = index
       }
     })
-    nextHeaderRow.forEach((cell, index) => {
-      const field = resolveHeaderField(cell)
-      if (field && fieldIndex[field] === undefined) {
-        fieldIndex[field] = index
-      }
-    })
-    const requiredFields = [
-      'businessUnit',
-      'overhaulRate',
-      'toolingRepairRate',
-      'waterPowerRate',
-      'otherRate',
-      'upliftRate',
-      'manhourRate',
-    ]
+    const requiredFields = ['businessDivision', 'expenseSubject', 'quoteRatio']
     const requiredLabels = {
-      businessUnit: '事业部',
-      overhaulRate: '大修费',
-      toolingRepairRate: '工装零星修理费',
-      waterPowerRate: '水电费',
-      otherRate: '其他费用',
-      upliftRate: '上浮比率',
-      manhourRate: '工时率',
+      businessDivision: '事业部',
+      expenseSubject: '费用科目',
+      quoteRatio: '报价比例（元/分钟）',
     }
     const missing = requiredFields.filter((field) => fieldIndex[field] === undefined)
     if (missing.length > 0) {
@@ -348,34 +376,61 @@ const handleFileChange = async (uploadFile) => {
       ElMessage.error(`缺少表头：${names.join('、')}`)
       return
     }
+    let lastBusinessDivision = ''
+    let lastTotalWorkMinutes = null
+    let lastManhourRate = null
     const dataRows = rows
       .slice(headerIndex + 1)
-      .map((row) => ({
-        businessUnit: String(row[fieldIndex.businessUnit] || '').trim(),
-        overhaulRate: parseNumber(row[fieldIndex.overhaulRate]),
-        toolingRepairRate: parseNumber(row[fieldIndex.toolingRepairRate]),
-        waterPowerRate: parseNumber(row[fieldIndex.waterPowerRate]),
-        otherRate: parseNumber(row[fieldIndex.otherRate]),
-        upliftRate: parseNumber(row[fieldIndex.upliftRate]),
-        manhourRate: parseNumber(row[fieldIndex.manhourRate]),
-      }))
-      .filter(
-        (row) =>
-          row.businessUnit &&
-          row.overhaulRate !== null &&
-          row.toolingRepairRate !== null &&
-          row.waterPowerRate !== null &&
-          row.otherRate !== null &&
-          row.upliftRate !== null &&
-          row.manhourRate !== null,
-      )
+      .map((row, index) => {
+        const businessDivision = normalizeCell(row[fieldIndex.businessDivision]) || lastBusinessDivision
+        const totalWorkMinutes =
+          fieldIndex.totalWorkMinutes === undefined
+            ? lastTotalWorkMinutes
+            : parseNumber(row[fieldIndex.totalWorkMinutes]) ?? lastTotalWorkMinutes
+        const manhourRate =
+          fieldIndex.manhourRate === undefined
+            ? lastManhourRate
+            : parseNumber(row[fieldIndex.manhourRate]) ?? lastManhourRate
+        if (businessDivision) {
+          lastBusinessDivision = businessDivision
+        }
+        if (totalWorkMinutes !== null) {
+          lastTotalWorkMinutes = totalWorkMinutes
+        }
+        if (manhourRate !== null) {
+          lastManhourRate = manhourRate
+        }
+        return {
+          rowNo: headerIndex + index + 2,
+          businessDivision,
+          businessUnit: businessDivision,
+          expenseSubject: normalizeCell(row[fieldIndex.expenseSubject]),
+          budgetAmount:
+            fieldIndex.budgetAmount === undefined ? null : parseNumber(row[fieldIndex.budgetAmount]),
+          totalWorkMinutes,
+          planRate: fieldIndex.planRate === undefined ? null : parseNumber(row[fieldIndex.planRate]),
+          upliftRatio:
+            fieldIndex.upliftRatio === undefined ? null : parseNumber(row[fieldIndex.upliftRatio]),
+          quoteRatio: parseNumber(row[fieldIndex.quoteRatio]),
+          manhourRate,
+          remark: fieldIndex.remark === undefined ? '' : normalizeCell(row[fieldIndex.remark]),
+        }
+      })
+      .filter((row) => row.businessDivision && row.expenseSubject && row.quoteRatio !== null)
     if (dataRows.length === 0) {
       ElMessage.warning('未解析到有效数据')
       return
     }
-    const result = await importDepartmentFundRates({ rows: dataRows })
-    const imported = Array.isArray(result) ? result.length : dataRows.length
-    ElMessage.success(`已导入${imported}条经费率`)
+    const result = await importDepartmentFundRates({
+      rateYear: parseYear(filters.value.rateYear) || currentYear,
+      rows: dataRows,
+    })
+    const imported = (result?.inserted || 0) + (result?.updated || 0)
+    if (result?.errors > 0) {
+      ElMessage.warning(`已导入${imported}条，失败${result.errors}条`)
+    } else {
+      ElMessage.success(`已导入${imported}条经费率`)
+    }
     fetchList()
   } catch (error) {
     ElMessage.error(error?.message || '导入失败')
@@ -414,5 +469,9 @@ onMounted(fetchList)
 .filter-actions {
   display: flex;
   gap: 8px;
+}
+
+.year-input {
+  width: 120px;
 }
 </style>

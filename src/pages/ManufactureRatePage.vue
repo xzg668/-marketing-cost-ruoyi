@@ -2,7 +2,7 @@
   <div class="base-page">
     <el-card shadow="never" class="filter-card">
       <div class="filter-header">
-        <div class="filter-title">制造费用率对照表</div>
+        <div class="filter-title">制造费用率配置表</div>
         <div class="filter-actions">
           <el-upload
             class="upload-btn"
@@ -18,7 +18,7 @@
       </div>
       <el-form :inline="true" label-width="90px">
         <el-form-item label="事业部">
-          <el-input v-model="filters.businessUnit" placeholder="四通阀事业部" />
+          <el-input v-model="filters.businessUnit" placeholder="事业部" />
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="applyFilters">查询</el-button>
@@ -29,15 +29,16 @@
 
     <el-card shadow="never">
       <el-table :data="tableRows" stripe v-loading="loading">
-        <el-table-column prop="company" label="公司" min-width="140" />
-        <el-table-column prop="businessUnit" label="生产事业部" min-width="140" />
-        <el-table-column prop="productCategory" label="产品大类" min-width="140" />
-        <el-table-column prop="productSubcategory" label="产品小类" min-width="140" />
-        <el-table-column prop="productSpec" label="产品规格" min-width="140" />
-        <el-table-column prop="productModel" label="产品型号" min-width="140" />
-        <el-table-column prop="feeRate" label="费用率" width="120" />
-        <el-table-column prop="period" label="期间" width="120" />
-        <el-table-column prop="updatedAt" label="更新时间" width="160" />
+        <el-table-column type="index" label="序号" width="70" />
+        <el-table-column prop="businessDivision" label="事业部" min-width="160" />
+        <el-table-column prop="productCode" label="料号" min-width="150" />
+        <el-table-column prop="productName" label="产品名称" min-width="160" />
+        <el-table-column prop="productModel" label="产品型号" min-width="160" />
+        <el-table-column prop="productSpec" label="产品规格" min-width="160" />
+        <el-table-column label="制造费用率" width="130">
+          <template #default="{ row }">{{ formatRate(row.feeRate) }}</template>
+        </el-table-column>
+        <el-table-column prop="remark" label="备注" min-width="180" />
         <el-table-column label="操作" width="140" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link @click="openEdit(row)">
@@ -54,31 +55,28 @@
       </el-table>
     </el-card>
 
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="560px">
-      <el-form :model="formModel" label-width="100px">
-        <el-form-item label="公司">
-          <el-input v-model="formModel.company" />
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="620px">
+      <el-form :model="formModel" label-width="110px">
+        <el-form-item label="事业部">
+          <el-input v-model="formModel.businessDivision" />
         </el-form-item>
-        <el-form-item label="生产事业部">
-          <el-input v-model="formModel.businessUnit" />
+        <el-form-item label="料号">
+          <el-input v-model="formModel.productCode" />
         </el-form-item>
-        <el-form-item label="产品大类">
-          <el-input v-model="formModel.productCategory" />
-        </el-form-item>
-        <el-form-item label="产品小类">
-          <el-input v-model="formModel.productSubcategory" />
-        </el-form-item>
-        <el-form-item label="产品规格">
-          <el-input v-model="formModel.productSpec" />
+        <el-form-item label="产品名称">
+          <el-input v-model="formModel.productName" />
         </el-form-item>
         <el-form-item label="产品型号">
           <el-input v-model="formModel.productModel" />
         </el-form-item>
-        <el-form-item label="费用率">
-          <el-input v-model="formModel.feeRate" />
+        <el-form-item label="产品规格">
+          <el-input v-model="formModel.productSpec" />
         </el-form-item>
-        <el-form-item label="期间">
-          <el-input v-model="formModel.period" />
+        <el-form-item label="制造费用率">
+          <el-input v-model="formModel.feeRate" placeholder="例如 5% 或 0.05" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="formModel.remark" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -105,21 +103,23 @@ const importing = ref(false)
 const dialogVisible = ref(false)
 const editingId = ref(null)
 
+const currentYear = new Date().getFullYear()
+
 const filters = ref({
   businessUnit: '',
 })
 
-const formModel = ref({
-  company: '',
-  businessUnit: '',
-  productCategory: '',
-  productSubcategory: '',
-  productSpec: '',
+const emptyForm = () => ({
+  businessDivision: '',
+  productCode: '',
+  productName: '',
   productModel: '',
+  productSpec: '',
   feeRate: '',
-  period: '',
+  remark: '',
 })
 
+const formModel = ref(emptyForm())
 const tableRows = ref([])
 
 const dialogTitle = computed(() =>
@@ -130,11 +130,16 @@ const buildParams = () => ({
   businessUnit: filters.value.businessUnit.trim(),
 })
 
+const normalizeRow = (row) => ({
+  ...row,
+  businessDivision: row.businessDivision || row.businessUnit || '',
+})
+
 const fetchList = async () => {
   loading.value = true
   try {
     const data = await fetchManufactureRates(buildParams())
-    tableRows.value = data?.list || []
+    tableRows.value = (data?.list || []).map(normalizeRow)
   } catch (error) {
     tableRows.value = []
     ElMessage.error(error?.message || '查询失败')
@@ -156,76 +161,70 @@ const resetFilters = () => {
 
 const openCreate = () => {
   editingId.value = null
-  formModel.value = {
-    company: '',
-    businessUnit: '',
-    productCategory: '',
-    productSubcategory: '',
-    productSpec: '',
-    productModel: '',
-    feeRate: '',
-    period: '',
-  }
+  formModel.value = emptyForm()
   dialogVisible.value = true
 }
 
 const openEdit = (row) => {
   editingId.value = row.id
   formModel.value = {
-    company: row.company ?? '',
-    businessUnit: row.businessUnit ?? '',
-    productCategory: row.productCategory ?? '',
-    productSubcategory: row.productSubcategory ?? '',
-    productSpec: row.productSpec ?? '',
+    businessDivision: row.businessDivision || row.businessUnit || '',
+    productCode: row.productCode ?? '',
+    productName: row.productName ?? '',
     productModel: row.productModel ?? '',
-    feeRate: row.feeRate ?? '',
-    period: row.period ?? '',
+    productSpec: row.productSpec ?? '',
+    feeRate: formatRate(row.feeRate),
+    remark: row.remark ?? '',
   }
   dialogVisible.value = true
 }
 
-const parseNumber = (value) => {
+const parseRate = (value) => {
   const text = String(value ?? '').replace(/,/g, '').trim()
   if (!text) {
     return null
+  }
+  if (text.endsWith('%')) {
+    const parsed = Number(text.slice(0, -1).trim())
+    return Number.isNaN(parsed) ? null : parsed / 100
   }
   const parsed = Number(text)
   return Number.isNaN(parsed) ? null : parsed
 }
 
-const formatPeriod = (value) => {
-  if (!value) {
+const formatRate = (value) => {
+  if (value === null || value === undefined || value === '') {
     return ''
   }
-  if (value instanceof Date) {
-    const year = value.getFullYear()
-    const month = String(value.getMonth() + 1).padStart(2, '0')
-    return `${year}-${month}`
-  }
-  return String(value).trim()
+  const parsed = Number(value)
+  return Number.isNaN(parsed) ? value : `${(parsed * 100).toFixed(2)}%`
 }
 
 const submitRow = async () => {
-  if (
-    !formModel.value.company ||
-    !formModel.value.businessUnit ||
-    !formModel.value.productCategory ||
-    !formModel.value.productSubcategory ||
-    !String(formModel.value.feeRate).trim() ||
-    !String(formModel.value.period).trim()
-  ) {
-    ElMessage.warning('公司、事业部、产品大类/小类、费用率、期间必填')
+  const feeRate = parseRate(formModel.value.feeRate)
+  const businessDivision = formModel.value.businessDivision.trim()
+  const productCode = formModel.value.productCode.trim()
+  const productName = formModel.value.productName.trim()
+  const productModel = formModel.value.productModel.trim()
+  if (feeRate === null) {
+    ElMessage.warning('制造费用率必填')
+    return
+  }
+  if (!productCode && !productModel && !(businessDivision && productName) && !businessDivision) {
+    ElMessage.warning('料号、产品型号、产品名称+事业部、事业部至少满足一个匹配条件')
     return
   }
   const payload = {
-    company: formModel.value.company,
-    businessUnit: formModel.value.businessUnit,
-    productCategory: formModel.value.productCategory,
-    productSubcategory: formModel.value.productSubcategory,
+    rateYear: currentYear,
+    period: `${currentYear}-01`,
+    businessDivision,
+    businessUnit: businessDivision,
+    productCode,
+    productName,
+    productModel,
     productSpec: formModel.value.productSpec,
-    productModel: formModel.value.productModel,
-    feeRate: parseNumber(formModel.value.feeRate),
-    period: String(formModel.value.period).trim(),
+    feeRate,
+    remark: formModel.value.remark,
   }
   try {
     if (editingId.value) {
@@ -286,14 +285,13 @@ const handleFileChange = async (uploadFile) => {
     const sheet = workbook.Sheets[workbook.SheetNames[0]]
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false })
     const headerAliases = {
-      company: ['公司'],
-      businessUnit: ['生产事业部', '事业部'],
-      productCategory: ['产品大类'],
-      productSubcategory: ['产品小类'],
-      productSpec: ['产品规格'],
-      productModel: ['产品型号'],
-      feeRate: ['费用率'],
-      period: ['期间'],
+      businessDivision: ['事业部', '生产事业部'],
+      productCode: ['料号', '产品料号'],
+      productName: ['产品名称', '品名'],
+      productModel: ['产品型号', '型号'],
+      productSpec: ['产品规格', '规格'],
+      feeRate: ['制造费用率', '费用率'],
+      remark: ['备注'],
     }
     const headerMap = Object.entries(headerAliases).reduce((acc, [key, values]) => {
       values.forEach((value) => {
@@ -313,7 +311,7 @@ const handleFileChange = async (uploadFile) => {
       const matched = headerKeys.find((key) => normalized.includes(key))
       return matched ? headerMap[matched] : null
     }
-    const headerIndex = rows.reduce(
+    const headerSearch = rows.reduce(
       (best, row, index) => {
         const hitCount = row.reduce((count, cell) => {
           return resolveHeaderField(cell) ? count + 1 : count
@@ -324,13 +322,12 @@ const handleFileChange = async (uploadFile) => {
         return best
       },
       { index: -1, count: 0 },
-    ).index
-    if (headerIndex === -1) {
+    )
+    if (headerSearch.index === -1 || headerSearch.count < 3) {
       ElMessage.error('未找到表头，请确认Excel格式是否正确')
       return
     }
-    const headerRow = rows[headerIndex]
-    const nextHeaderRow = rows[headerIndex + 1] || []
+    const headerRow = rows[headerSearch.index]
     const fieldIndex = {}
     headerRow.forEach((cell, index) => {
       const field = resolveHeaderField(cell)
@@ -338,62 +335,49 @@ const handleFileChange = async (uploadFile) => {
         fieldIndex[field] = index
       }
     })
-    nextHeaderRow.forEach((cell, index) => {
-      const field = resolveHeaderField(cell)
-      if (field && fieldIndex[field] === undefined) {
-        fieldIndex[field] = index
-      }
-    })
-    const requiredFields = [
-      'company',
-      'businessUnit',
-      'productCategory',
-      'productSubcategory',
-      'feeRate',
-      'period',
-    ]
-    const requiredLabels = {
-      company: '公司',
-      businessUnit: '生产事业部',
-      productCategory: '产品大类',
-      productSubcategory: '产品小类',
-      feeRate: '费用率',
-      period: '期间',
-    }
-    const missing = requiredFields.filter((field) => fieldIndex[field] === undefined)
-    if (missing.length > 0) {
-      const names = missing.map((field) => requiredLabels[field] || field)
-      ElMessage.error(`缺少表头：${names.join('、')}`)
+    if (fieldIndex.feeRate === undefined) {
+      ElMessage.error('缺少表头：制造费用率')
       return
     }
     const dataRows = rows
-      .slice(headerIndex + 1)
-      .map((row) => ({
-        company: String(row[fieldIndex.company] || '').trim(),
-        businessUnit: String(row[fieldIndex.businessUnit] || '').trim(),
-        productCategory: String(row[fieldIndex.productCategory] || '').trim(),
-        productSubcategory: String(row[fieldIndex.productSubcategory] || '').trim(),
-        productSpec: String(row[fieldIndex.productSpec] || '').trim(),
+      .slice(headerSearch.index + 1)
+      .map((row, index) => ({
+        rowNo: headerSearch.index + index + 2,
+        businessDivision: String(row[fieldIndex.businessDivision] || '').trim(),
+        businessUnit: String(row[fieldIndex.businessDivision] || '').trim(),
+        productCode: String(row[fieldIndex.productCode] || '').trim(),
+        productName: String(row[fieldIndex.productName] || '').trim(),
         productModel: String(row[fieldIndex.productModel] || '').trim(),
-        feeRate: parseNumber(row[fieldIndex.feeRate]),
-        period: formatPeriod(row[fieldIndex.period]),
+        productSpec: String(row[fieldIndex.productSpec] || '').trim(),
+        feeRate: parseRate(row[fieldIndex.feeRate]),
+        remark: String(row[fieldIndex.remark] || '').trim(),
+        rateYear: currentYear,
+        period: `${currentYear}-01`,
       }))
       .filter(
         (row) =>
-          row.company &&
-          row.businessUnit &&
-          row.productCategory &&
-          row.productSubcategory &&
-          row.feeRate !== null &&
-          row.period,
+          row.feeRate !== null ||
+          row.businessDivision ||
+          row.productCode ||
+          row.productName ||
+          row.productModel ||
+          row.productSpec ||
+          row.remark,
       )
     if (dataRows.length === 0) {
       ElMessage.warning('未解析到有效数据')
       return
     }
-    const result = await importManufactureRates({ rows: dataRows })
-    const imported = Array.isArray(result) ? result.length : dataRows.length
-    ElMessage.success(`已导入${imported}条制造费用率`)
+    const result = await importManufactureRates({
+      rateYear: currentYear,
+      rows: dataRows,
+    })
+    const imported = (result?.inserted || 0) + (result?.updated || 0)
+    if (result?.errors) {
+      ElMessage.warning(`已导入${imported}条，失败${result.errors}条：${result.errorMessages?.[0] || ''}`)
+    } else {
+      ElMessage.success(`已导入${imported}条制造费用率`)
+    }
     fetchList()
   } catch (error) {
     ElMessage.error(error?.message || '导入失败')

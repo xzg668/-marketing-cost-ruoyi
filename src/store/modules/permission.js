@@ -24,6 +24,7 @@ const pageModules = import.meta.glob('../../pages/**/*.vue')
 const componentAliasMap = {
   // 成本试算
   'cost-trial/oa-form/index':       'pages:OaFormListPage',
+  'cost/price-prepare/index':       'views:cost/price-prepare/index',
   'cost-trial/trial-run/index':     'pages:CostRunPage',
   'cost-trial/trial-result/index':  'pages:CostRunResultPage',
   'cost-trial/cost-detail/index':   'pages:CostRunDetailPage',

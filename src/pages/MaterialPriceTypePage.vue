@@ -17,29 +17,15 @@
         </div>
       </div>
       <el-form :inline="true" label-width="90px">
-        <el-form-item label="单据号">
-          <el-input v-model="filters.billNo" placeholder="JG202601010001" />
-        </el-form-item>
-        <el-form-item label="物料编码">
-          <el-input v-model="filters.materialCode" placeholder="1008000300944" />
+        <el-form-item label="物料代码">
+          <el-input v-model="filters.materialCode" placeholder="201800082" />
         </el-form-item>
         <el-form-item label="价格类型">
           <el-select v-model="filters.priceType" placeholder="全部">
             <el-option label="全部" value="" />
             <el-option label="联动价" value="联动价" />
             <el-option label="固定价" value="固定价" />
-            <el-option label="区间价" value="区间价" />
-            <el-option label="结算价" value="结算价" />
           </el-select>
-        </el-form-item>
-        <el-form-item label="期间">
-          <el-date-picker
-            v-model="filters.period"
-            type="month"
-            format="YYYY-MM"
-            value-format="YYYY-MM"
-            placeholder="选择月份"
-          />
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="applyFilters">查询</el-button>
@@ -51,14 +37,14 @@
     <el-card shadow="never">
       <el-table :data="tableRows" stripe v-loading="loading">
         <el-table-column prop="rowNo" label="行号" width="80" />
-        <el-table-column prop="billNo" label="单据号" width="160" />
-        <el-table-column prop="materialCode" label="物料编码" width="160" />
+        <el-table-column prop="materialCode" label="物料代码" width="150" />
         <el-table-column prop="materialName" label="物料名称" min-width="160" />
-        <el-table-column prop="materialSpec" label="规格" min-width="160" />
         <el-table-column prop="materialModel" label="型号" min-width="160" />
+        <el-table-column prop="unit" label="单位" width="80" />
         <el-table-column prop="materialShape" label="物料形态属性" width="120" />
+        <el-table-column prop="categoryCode" label="主分类编码" width="120" />
+        <el-table-column prop="categoryName" label="主分类名称" width="140" />
         <el-table-column prop="priceType" label="价格类型" width="120" />
-        <el-table-column prop="period" label="期间" width="100" />
         <el-table-column prop="updatedAt" label="更新时间" width="160" />
         <el-table-column label="操作" width="140" fixed="right">
           <template #default="{ row }">
@@ -86,43 +72,35 @@
         <el-form-item label="行号">
           <el-input v-model="formModel.rowNo" />
         </el-form-item>
-        <el-form-item label="单据号">
-          <el-input v-model="formModel.billNo" />
-        </el-form-item>
-        <el-form-item label="物料编码">
+        <el-form-item label="物料代码">
           <el-input v-model="formModel.materialCode" />
         </el-form-item>
         <el-form-item label="物料名称">
           <el-input v-model="formModel.materialName" />
         </el-form-item>
-        <el-form-item label="规格">
-          <el-input v-model="formModel.materialSpec" />
-        </el-form-item>
         <el-form-item label="型号">
           <el-input v-model="formModel.materialModel" />
         </el-form-item>
+        <el-form-item label="单位">
+          <el-input v-model="formModel.unit" />
+        </el-form-item>
         <el-form-item label="物料形态属性">
-          <el-select v-model="formModel.materialShape" placeholder="制造件">
-            <el-option label="制造件" value="制造件" />
+          <el-select v-model="formModel.materialShape" placeholder="采购件">
             <el-option label="采购件" value="采购件" />
+            <el-option label="制造件" value="制造件" />
           </el-select>
+        </el-form-item>
+        <el-form-item label="主分类编码">
+          <el-input v-model="formModel.categoryCode" />
+        </el-form-item>
+        <el-form-item label="主分类名称">
+          <el-input v-model="formModel.categoryName" />
         </el-form-item>
         <el-form-item label="价格类型">
           <el-select v-model="formModel.priceType" placeholder="联动价">
             <el-option label="联动价" value="联动价" />
             <el-option label="固定价" value="固定价" />
-            <el-option label="区间价" value="区间价" />
-            <el-option label="结算价" value="结算价" />
           </el-select>
-        </el-form-item>
-        <el-form-item label="期间">
-          <el-date-picker
-            v-model="formModel.period"
-            type="month"
-            format="YYYY-MM"
-            value-format="YYYY-MM"
-            placeholder="选择月份"
-          />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -151,22 +129,20 @@ const dialogVisible = ref(false)
 const editingId = ref(null)
 
 const filters = ref({
-  billNo: '',
   materialCode: '',
   priceType: '',
-  period: '',
 })
 
 const formModel = ref({
   rowNo: '',
-  billNo: '',
   materialCode: '',
   materialName: '',
-  materialSpec: '',
   materialModel: '',
-  materialShape: '制造件',
+  unit: '',
+  materialShape: '采购件',
+  categoryCode: '',
+  categoryName: '',
   priceType: '联动价',
-  period: '',
 })
 
 const tableRows = ref([])
@@ -179,10 +155,8 @@ const dialogTitle = computed(() =>
 )
 
 const buildParams = () => ({
-  billNo: filters.value.billNo.trim(),
   materialCode: filters.value.materialCode.trim(),
   priceType: filters.value.priceType,
-  period: filters.value.period,
   page: currentPage.value,
   pageSize: pageSize.value,
 })
@@ -224,10 +198,8 @@ const applyFilters = () => {
 
 const resetFilters = () => {
   filters.value = {
-    billNo: '',
     materialCode: '',
     priceType: '',
-    period: '',
   }
   applyFilters()
 }
@@ -236,14 +208,14 @@ const openCreate = () => {
   editingId.value = null
   formModel.value = {
     rowNo: '',
-    billNo: '',
     materialCode: '',
     materialName: '',
-    materialSpec: '',
     materialModel: '',
-    materialShape: '制造件',
+    unit: '',
+    materialShape: '采购件',
+    categoryCode: '',
+    categoryName: '',
     priceType: '联动价',
-    period: '',
   }
   dialogVisible.value = true
 }
@@ -252,14 +224,14 @@ const openEdit = (row) => {
   editingId.value = row.id
   formModel.value = {
     rowNo: row.rowNo ?? '',
-    billNo: row.billNo,
     materialCode: row.materialCode,
     materialName: row.materialName,
-    materialSpec: row.materialSpec,
     materialModel: row.materialModel,
+    unit: row.unit,
     materialShape: row.materialShape,
+    categoryCode: row.categoryCode,
+    categoryName: row.categoryName,
     priceType: row.priceType,
-    period: row.period,
   }
   dialogVisible.value = true
 }
@@ -275,24 +247,25 @@ const parseNumber = (value) => {
 
 const submitRow = async () => {
   if (
-    !formModel.value.billNo ||
     !formModel.value.materialCode ||
-    !formModel.value.priceType ||
-    !formModel.value.period
+    !formModel.value.materialName ||
+    !formModel.value.materialModel ||
+    !formModel.value.materialShape ||
+    !formModel.value.priceType
   ) {
-    ElMessage.warning('单据号、物料编码、价格类型、期间必填')
+    ElMessage.warning('物料代码、物料名称、型号、物料形态属性、价格类型必填')
     return
   }
   const payload = {
     rowNo: parseNumber(formModel.value.rowNo),
-    billNo: formModel.value.billNo,
     materialCode: formModel.value.materialCode,
     materialName: formModel.value.materialName,
-    materialSpec: formModel.value.materialSpec,
     materialModel: formModel.value.materialModel,
+    unit: formModel.value.unit,
     materialShape: formModel.value.materialShape,
+    categoryCode: formModel.value.categoryCode,
+    categoryName: formModel.value.categoryName,
     priceType: formModel.value.priceType,
-    period: formModel.value.period,
   }
   try {
     if (editingId.value) {
@@ -332,6 +305,9 @@ const normalizeHeader = (value) =>
     .replace(/[：:]/g, '')
     .replace(/[\s\u3000]+/g, '')
     .trim()
+
+const normalizeSheetName = (value) =>
+  normalizeHeader(value).replace(/[-_－—]/g, '')
 
 const formatPeriod = (value) => {
   if (!value) {
@@ -381,7 +357,10 @@ const handleFileChange = async (uploadFile) => {
     }
     const buffer = await rawFile.arrayBuffer()
     const workbook = XLSX.read(buffer, { type: 'array', cellDates: true })
-    const sheet = workbook.Sheets[workbook.SheetNames[0]]
+    const sheetName =
+      workbook.SheetNames.find((name) => normalizeSheetName(name) === '价格类型导入') ||
+      workbook.SheetNames[0]
+    const sheet = workbook.Sheets[sheetName]
     const rows = XLSX.utils.sheet_to_json(sheet, {
       header: 1,
       defval: '',
@@ -389,14 +368,15 @@ const handleFileChange = async (uploadFile) => {
     })
     const headerAliases = {
       rowNo: ['行号', '序号'],
-      billNo: ['单据号', '单据编号'],
-      materialCode: ['物料编码', '物料编号', '料号'],
+      materialCode: ['物料代码', '物料编码', '物料编号', '料号'],
       materialName: ['物料名称', '名称'],
-      materialSpec: ['规格'],
       materialModel: ['型号'],
+      unit: ['单位'],
       materialShape: ['物料形态属性', '形态属性'],
+      categoryCode: ['主分类编码', '主分类代码', '分类编码'],
+      categoryName: ['主分类名称', '分类名称'],
       priceType: ['价格类型', '价格类别'],
-      period: ['期间', '价格期间', '月份'],
+      period: ['期间', '账期', '月份'],
     }
     const headerMap = Object.entries(headerAliases).reduce((acc, [key, values]) => {
       values.forEach((value) => {
@@ -438,7 +418,12 @@ const handleFileChange = async (uploadFile) => {
     const nextHeaderRow = rows[headerIndex + 1] || []
     const fieldIndex = {}
     headerRow.forEach((cell, index) => {
-      const field = resolveHeaderField(cell)
+      const normalized = normalizeHeader(cell)
+      let field = resolveHeaderField(cell)
+      // 原 Excel 有两个同名"主分类"列：第一个是编码，第二个是名称。
+      if (normalized === '主分类') {
+        field = fieldIndex.categoryCode === undefined ? 'categoryCode' : 'categoryName'
+      }
       if (field) {
         fieldIndex[field] = index
       }
@@ -449,12 +434,14 @@ const handleFileChange = async (uploadFile) => {
         fieldIndex[field] = index
       }
     })
-    const requiredFields = ['billNo', 'materialCode', 'priceType', 'period']
+    const requiredFields = ['materialCode', 'materialName', 'materialModel', 'unit', 'materialShape', 'priceType']
     const requiredLabels = {
-      billNo: '单据号',
-      materialCode: '物料编码',
+      materialCode: '物料代码',
+      materialName: '物料名称',
+      materialModel: '型号',
+      unit: '单位',
+      materialShape: '物料形态属性',
       priceType: '价格类型',
-      period: '期间',
     }
     const missing = requiredFields.filter((field) => fieldIndex[field] === undefined)
     if (missing.length > 0) {
@@ -462,23 +449,44 @@ const handleFileChange = async (uploadFile) => {
       ElMessage.error(`缺少表头：${names.join('、')}`)
       return
     }
-    const dataRows = rows
+    const parsedRows = rows
       .slice(headerIndex + 1)
       .map((row) => {
-        const period = formatPeriod(row[fieldIndex.period])
         return {
           rowNo: parseNumber(row[fieldIndex.rowNo]),
-          billNo: String(row[fieldIndex.billNo] || '').trim(),
           materialCode: String(row[fieldIndex.materialCode] || '').trim(),
           materialName: String(row[fieldIndex.materialName] || '').trim(),
-          materialSpec: String(row[fieldIndex.materialSpec] || '').trim(),
           materialModel: String(row[fieldIndex.materialModel] || '').trim(),
+          unit: String(row[fieldIndex.unit] || '').trim(),
           materialShape: String(row[fieldIndex.materialShape] || '').trim(),
+          categoryCode: String(row[fieldIndex.categoryCode] || '').trim(),
+          categoryName: String(row[fieldIndex.categoryName] || '').trim(),
           priceType: String(row[fieldIndex.priceType] || '').trim(),
-          period,
+          period: formatPeriod(row[fieldIndex.period]),
         }
       })
-      .filter((row) => row.materialCode && row.billNo && row.priceType && row.period)
+      .filter(
+        (row) =>
+          row.materialCode &&
+          row.materialName &&
+          row.materialModel &&
+          row.unit &&
+          row.materialShape &&
+          row.priceType,
+      )
+    const dedupeMap = new Map()
+    parsedRows.forEach((row) => {
+      // 导入去重口径与后台保持一致：同一期间内同一物料路由只保留一条。
+      const key = [
+        row.materialCode,
+        row.materialModel,
+        row.materialShape,
+        row.priceType,
+        row.period || '',
+      ].join('\u0001')
+      dedupeMap.set(key, row)
+    })
+    const dataRows = Array.from(dedupeMap.values())
     if (dataRows.length === 0) {
       ElMessage.warning('未解析到有效数据')
       return

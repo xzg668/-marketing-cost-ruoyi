@@ -2,7 +2,7 @@
   <div class="base-page">
     <el-card shadow="never" class="filter-card">
       <div class="filter-header">
-        <div class="filter-title">质量损失率对照表</div>
+        <div class="filter-title">报价净损失率配置表</div>
         <div class="filter-actions">
           <el-upload
             class="upload-btn"
@@ -17,29 +17,26 @@
         </div>
       </div>
       <el-form :inline="true" label-width="90px">
-        <el-form-item label="公司">
-          <el-input v-model="filters.company" placeholder="浙江三花智联" />
+        <el-form-item label="年度">
+          <el-date-picker
+            v-model="filters.rateYear"
+            type="year"
+            format="YYYY"
+            value-format="YYYY"
+            placeholder="选择年度"
+          />
         </el-form-item>
         <el-form-item label="事业部">
-          <el-input v-model="filters.businessUnit" placeholder="四通阀事业部" />
+          <el-input v-model="filters.businessDivision" placeholder="四通阀事业部" />
+        </el-form-item>
+        <el-form-item label="产品料号">
+          <el-input v-model="filters.productCode" placeholder="产品料号" />
+        </el-form-item>
+        <el-form-item label="产品型号">
+          <el-input v-model="filters.productModel" placeholder="产品型号" />
         </el-form-item>
         <el-form-item label="产品大类">
-          <el-input v-model="filters.productCategory" placeholder="热力膨胀阀" />
-        </el-form-item>
-        <el-form-item label="产品小类">
-          <el-input v-model="filters.productSubcategory" placeholder="RFGF/RFGK" />
-        </el-form-item>
-        <el-form-item label="客户">
-          <el-input v-model="filters.customer" placeholder="客户名称" />
-        </el-form-item>
-        <el-form-item label="期间">
-          <el-date-picker
-            v-model="filters.period"
-            type="month"
-            format="YYYY-MM"
-            value-format="YYYY-MM"
-            placeholder="选择月份"
-          />
+          <el-input v-model="filters.productCategory" placeholder="产品大类" />
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="applyFilters">查询</el-button>
@@ -50,15 +47,17 @@
 
     <el-card shadow="never">
       <el-table :data="tableRows" stripe v-loading="loading">
-        <el-table-column prop="company" label="公司" min-width="140" />
-        <el-table-column prop="businessUnit" label="生产事业部" min-width="140" />
+        <el-table-column type="index" label="序号" width="70" />
+        <el-table-column prop="businessDivision" label="事业部" min-width="140" />
         <el-table-column prop="productCategory" label="产品大类" min-width="140" />
-        <el-table-column prop="productSubcategory" label="产品小类" min-width="140" />
-        <el-table-column prop="lossRate" label="质量损失率" width="120" />
-        <el-table-column prop="customer" label="客户" min-width="120" />
-        <el-table-column prop="period" label="期间" width="100" />
-        <el-table-column prop="sourceBasis" label="来源依据" min-width="160" />
-        <el-table-column prop="updatedAt" label="更新时间" width="160" />
+        <el-table-column prop="productCode" label="产品料号" min-width="150" />
+        <el-table-column prop="productName" label="产品名称" min-width="150" />
+        <el-table-column prop="productModel" label="产品型号" min-width="150" />
+        <el-table-column prop="productSpec" label="产品规格" min-width="150" />
+        <el-table-column label="报价净损失率" width="130">
+          <template #default="{ row }">{{ formatRate(row.lossRate) }}</template>
+        </el-table-column>
+        <el-table-column prop="remark" label="备注" min-width="160" />
         <el-table-column label="操作" width="140" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link @click="openEdit(row)">
@@ -80,37 +79,40 @@
       />
     </el-card>
 
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="560px">
-      <el-form :model="formModel" label-width="100px">
-        <el-form-item label="公司">
-          <el-input v-model="formModel.company" />
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="620px">
+      <el-form :model="formModel" label-width="110px">
+        <el-form-item label="年度">
+          <el-date-picker
+            v-model="formModel.rateYear"
+            type="year"
+            format="YYYY"
+            value-format="YYYY"
+            placeholder="选择年度"
+          />
         </el-form-item>
-        <el-form-item label="生产事业部">
-          <el-input v-model="formModel.businessUnit" />
+        <el-form-item label="事业部">
+          <el-input v-model="formModel.businessDivision" />
         </el-form-item>
         <el-form-item label="产品大类">
           <el-input v-model="formModel.productCategory" />
         </el-form-item>
-        <el-form-item label="产品小类">
-          <el-input v-model="formModel.productSubcategory" />
+        <el-form-item label="产品料号">
+          <el-input v-model="formModel.productCode" />
         </el-form-item>
-        <el-form-item label="质量损失率">
-          <el-input v-model="formModel.lossRate" />
+        <el-form-item label="产品名称">
+          <el-input v-model="formModel.productName" />
         </el-form-item>
-        <el-form-item label="客户">
-          <el-input v-model="formModel.customer" />
+        <el-form-item label="产品型号">
+          <el-input v-model="formModel.productModel" />
         </el-form-item>
-        <el-form-item label="期间">
-          <el-date-picker
-            v-model="formModel.period"
-            type="month"
-            format="YYYY-MM"
-            value-format="YYYY-MM"
-            placeholder="选择月份"
-          />
+        <el-form-item label="产品规格">
+          <el-input v-model="formModel.productSpec" />
         </el-form-item>
-        <el-form-item label="来源依据">
-          <el-input v-model="formModel.sourceBasis" />
+        <el-form-item label="报价净损失率">
+          <el-input v-model="formModel.lossRate" placeholder="例如 1% 或 0.01" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="formModel.remark" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -138,42 +140,51 @@ const importing = ref(false)
 const dialogVisible = ref(false)
 const editingId = ref(null)
 
+const currentYear = String(new Date().getFullYear())
+
 const filters = ref({
-  company: '',
-  businessUnit: '',
+  rateYear: currentYear,
+  businessDivision: '',
   productCategory: '',
-  productSubcategory: '',
-  customer: '',
-  period: '',
+  productCode: '',
+  productName: '',
+  productModel: '',
 })
 
-const formModel = ref({
-  company: '',
-  businessUnit: '',
+const emptyForm = () => ({
+  rateYear: filters.value.rateYear || currentYear,
+  businessDivision: '',
   productCategory: '',
-  productSubcategory: '',
+  productCode: '',
+  productName: '',
+  productModel: '',
+  productSpec: '',
   lossRate: '',
-  customer: '',
-  period: '',
-  sourceBasis: '',
+  remark: '',
 })
 
+const formModel = ref(emptyForm())
 const tableRows = ref([])
 const total = ref(0)
 const currentPage = ref(1)
 const pageSize = ref(20)
 
 const dialogTitle = computed(() =>
-  editingId.value ? '编辑质量损失率' : '新增质量损失率',
+  editingId.value ? '编辑报价净损失率' : '新增报价净损失率',
 )
 
+const toYearNumber = (value) => {
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined
+}
+
 const buildParams = () => ({
-  company: filters.value.company.trim(),
-  businessUnit: filters.value.businessUnit.trim(),
+  rateYear: toYearNumber(filters.value.rateYear),
+  businessDivision: filters.value.businessDivision.trim(),
   productCategory: filters.value.productCategory.trim(),
-  productSubcategory: filters.value.productSubcategory.trim(),
-  customer: filters.value.customer.trim(),
-  period: filters.value.period,
+  productCode: filters.value.productCode.trim(),
+  productName: filters.value.productName.trim(),
+  productModel: filters.value.productModel.trim(),
   page: currentPage.value,
   pageSize: pageSize.value,
 })
@@ -203,42 +214,34 @@ const applyFilters = () => {
 
 const resetFilters = () => {
   filters.value = {
-    company: '',
-    businessUnit: '',
+    rateYear: currentYear,
+    businessDivision: '',
     productCategory: '',
-    productSubcategory: '',
-    customer: '',
-    period: '',
+    productCode: '',
+    productName: '',
+    productModel: '',
   }
   applyFilters()
 }
 
 const openCreate = () => {
   editingId.value = null
-  formModel.value = {
-    company: '',
-    businessUnit: '',
-    productCategory: '',
-    productSubcategory: '',
-    lossRate: '',
-    customer: '',
-    period: '',
-    sourceBasis: '',
-  }
+  formModel.value = emptyForm()
   dialogVisible.value = true
 }
 
 const openEdit = (row) => {
   editingId.value = row.id
   formModel.value = {
-    company: row.company ?? '',
-    businessUnit: row.businessUnit ?? '',
+    rateYear: row.rateYear ? String(row.rateYear) : currentYear,
+    businessDivision: row.businessDivision ?? row.businessUnit ?? '',
     productCategory: row.productCategory ?? '',
-    productSubcategory: row.productSubcategory ?? '',
+    productCode: row.productCode ?? '',
+    productName: row.productName ?? '',
+    productModel: row.productModel ?? '',
+    productSpec: row.productSpec ?? '',
     lossRate: row.lossRate ?? '',
-    customer: row.customer ?? '',
-    period: row.period ?? '',
-    sourceBasis: row.sourceBasis ?? '',
+    remark: row.remark ?? '',
   }
   dialogVisible.value = true
 }
@@ -262,60 +265,51 @@ const normalizeHeader = (value) =>
     .replace(/[\s\u3000]+/g, '')
     .trim()
 
-const formatPeriod = (value) => {
-  if (!value) {
-    return ''
-  }
-  if (value instanceof Date) {
-    const year = value.getFullYear()
-    const month = String(value.getMonth() + 1).padStart(2, '0')
-    return `${year}-${month}`
-  }
-  const text = String(value).trim()
-  if (!text) {
-    return ''
-  }
-  const match = text.match(/^(\d{4})[-/.](\d{1,2})/)
-  if (match) {
-    return `${match[1]}-${String(match[2]).padStart(2, '0')}`
-  }
-  const compact = text.match(/^(\d{4})(\d{2})$/)
-  if (compact) {
-    return `${compact[1]}-${compact[2]}`
-  }
-  return text
-}
-
-const parseNumber = (value) => {
+const parseRate = (value) => {
   const text = String(value ?? '').replace(/,/g, '').trim()
   if (!text) {
     return null
+  }
+  if (text.endsWith('%')) {
+    const parsed = Number(text.slice(0, -1).trim())
+    return Number.isNaN(parsed) ? null : parsed / 100
   }
   const parsed = Number(text)
   return Number.isNaN(parsed) ? null : parsed
 }
 
+const formatRate = (value) => {
+  if (value === null || value === undefined || value === '') {
+    return ''
+  }
+  const parsed = Number(value)
+  return Number.isNaN(parsed) ? value : `${(parsed * 100).toFixed(2)}%`
+}
+
 const submitRow = async () => {
-  if (
-    !formModel.value.company ||
-    !formModel.value.businessUnit ||
-    !formModel.value.productCategory ||
-    !formModel.value.productSubcategory ||
-    !String(formModel.value.lossRate).trim() ||
-    !formModel.value.period
-  ) {
-    ElMessage.warning('公司、事业部、产品大类/小类、质量损失率、期间必填')
+  const rateYear = toYearNumber(formModel.value.rateYear)
+  const lossRate = parseRate(formModel.value.lossRate)
+  if (!rateYear || lossRate === null) {
+    ElMessage.warning('年度、报价净损失率必填')
+    return
+  }
+  if (!formModel.value.productCode.trim() && !formModel.value.productModel.trim()) {
+    ElMessage.warning('产品料号和产品型号至少填写一个')
     return
   }
   const payload = {
-    company: formModel.value.company,
-    businessUnit: formModel.value.businessUnit,
+    rateYear,
+    period: `${rateYear}-01`,
+    businessDivision: formModel.value.businessDivision,
+    businessUnit: formModel.value.businessDivision,
     productCategory: formModel.value.productCategory,
-    productSubcategory: formModel.value.productSubcategory,
-    lossRate: parseNumber(formModel.value.lossRate),
-    customer: formModel.value.customer,
-    period: formModel.value.period,
-    sourceBasis: formModel.value.sourceBasis,
+    productCode: formModel.value.productCode,
+    productName: formModel.value.productName,
+    productModel: formModel.value.productModel,
+    productSpec: formModel.value.productSpec,
+    lossRate,
+    remark: formModel.value.remark,
+    sourceType: 'MANUAL',
   }
   try {
     if (editingId.value) {
@@ -350,6 +344,11 @@ const removeRow = async (row) => {
 }
 
 const handleFileChange = async (uploadFile) => {
+  const rateYear = toYearNumber(filters.value.rateYear)
+  if (!rateYear) {
+    ElMessage.warning('请先选择导入年度')
+    return
+  }
   const rawFile = uploadFile.raw
   if (!rawFile) {
     return
@@ -369,14 +368,14 @@ const handleFileChange = async (uploadFile) => {
     const sheet = workbook.Sheets[workbook.SheetNames[0]]
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false })
     const headerAliases = {
-      company: ['公司'],
-      businessUnit: ['生产事业部', '事业部'],
+      businessDivision: ['事业部', '生产事业部'],
       productCategory: ['产品大类'],
-      productSubcategory: ['产品小类'],
-      lossRate: ['质量损失率', '损失率'],
-      customer: ['客户'],
-      period: ['期间', '月份'],
-      sourceBasis: ['来源依据', '来源'],
+      productCode: ['产品料号', '料号'],
+      productName: ['产品名称', '品名'],
+      productModel: ['产品型号', '型号'],
+      productSpec: ['产品规格', '规格'],
+      lossRate: ['报价净损失率', '净损失率', '质量损失率', '损失率'],
+      remark: ['备注'],
     }
     const headerMap = Object.entries(headerAliases).reduce((acc, [key, values]) => {
       values.forEach((value) => {
@@ -427,56 +426,38 @@ const handleFileChange = async (uploadFile) => {
         fieldIndex[field] = index
       }
     })
-    const requiredFields = [
-      'company',
-      'businessUnit',
-      'productCategory',
-      'productSubcategory',
-      'lossRate',
-      'period',
-    ]
-    const requiredLabels = {
-      company: '公司',
-      businessUnit: '生产事业部',
-      productCategory: '产品大类',
-      productSubcategory: '产品小类',
-      lossRate: '质量损失率',
-      period: '期间',
-    }
-    const missing = requiredFields.filter((field) => fieldIndex[field] === undefined)
-    if (missing.length > 0) {
-      const names = missing.map((field) => requiredLabels[field] || field)
-      ElMessage.error(`缺少表头：${names.join('、')}`)
+    if (fieldIndex.lossRate === undefined) {
+      ElMessage.error('缺少表头：报价净损失率')
       return
     }
     const dataRows = rows
       .slice(headerIndex + 1)
-      .map((row) => ({
-        company: String(row[fieldIndex.company] || '').trim(),
-        businessUnit: String(row[fieldIndex.businessUnit] || '').trim(),
+      .map((row, index) => ({
+        rowNo: headerIndex + index + 2,
+        businessDivision: String(row[fieldIndex.businessDivision] || '').trim(),
+        businessUnit: String(row[fieldIndex.businessDivision] || '').trim(),
         productCategory: String(row[fieldIndex.productCategory] || '').trim(),
-        productSubcategory: String(row[fieldIndex.productSubcategory] || '').trim(),
-        lossRate: parseNumber(row[fieldIndex.lossRate]),
-        customer: String(row[fieldIndex.customer] || '').trim(),
-        period: formatPeriod(row[fieldIndex.period]),
-        sourceBasis: String(row[fieldIndex.sourceBasis] || '').trim(),
+        productCode: String(row[fieldIndex.productCode] || '').trim(),
+        productName: String(row[fieldIndex.productName] || '').trim(),
+        productModel: String(row[fieldIndex.productModel] || '').trim(),
+        productSpec: String(row[fieldIndex.productSpec] || '').trim(),
+        lossRate: parseRate(row[fieldIndex.lossRate]),
+        remark: String(row[fieldIndex.remark] || '').trim(),
       }))
-      .filter(
-        (row) =>
-          row.company &&
-          row.businessUnit &&
-          row.productCategory &&
-          row.productSubcategory &&
-          row.lossRate !== null &&
-          row.period,
+      .filter((row) =>
+        Object.entries(row).some(([key, value]) => key !== 'rowNo' && value !== '' && value !== null),
       )
     if (dataRows.length === 0) {
       ElMessage.warning('未解析到有效数据')
       return
     }
-    const result = await importQualityLossRates({ rows: dataRows })
-    const imported = Array.isArray(result) ? result.length : dataRows.length
-    ElMessage.success(`已导入${imported}条质量损失率`)
+    const result = await importQualityLossRates({ rateYear, rows: dataRows })
+    const imported = (result?.inserted || 0) + (result?.updated || 0)
+    if (result?.errors > 0) {
+      ElMessage.warning(`导入${imported}条，失败${result.errors}条：${result.errorMessages?.[0] || ''}`)
+    } else {
+      ElMessage.success(`已导入${imported}条报价净损失率`)
+    }
     if (currentPage.value === 1) {
       fetchList()
     } else {

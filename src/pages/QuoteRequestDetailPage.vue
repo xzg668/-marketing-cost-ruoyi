@@ -16,7 +16,9 @@
 
     <el-descriptions :column="3" border>
       <el-descriptions-item label="报价单号">{{ detail.oaNo || '-' }}</el-descriptions-item>
-      <el-descriptions-item label="来源">{{ detail.sourceType || '-' }}</el-descriptions-item>
+      <el-descriptions-item label="来源">
+        {{ statusLabel('sourceType', detail.sourceType) }}
+      </el-descriptions-item>
       <el-descriptions-item label="外部单号">{{ detail.externalFormNo || '-' }}</el-descriptions-item>
       <el-descriptions-item label="流程编号">{{ detail.processCode || '-' }}</el-descriptions-item>
       <el-descriptions-item label="流程名称">{{ detail.processName || '-' }}</el-descriptions-item>
@@ -25,6 +27,9 @@
       </el-descriptions-item>
       <el-descriptions-item label="客户名称">{{ detail.customer || '-' }}</el-descriptions-item>
       <el-descriptions-item label="申请日期">{{ detail.applyDate || '-' }}</el-descriptions-item>
+      <el-descriptions-item label="申请单位">{{ detail.applicantUnit || '-' }}</el-descriptions-item>
+      <el-descriptions-item label="申请部门">{{ detail.applicantDept || '-' }}</el-descriptions-item>
+      <el-descriptions-item label="申请处室">{{ detail.applicantOffice || '-' }}</el-descriptions-item>
       <el-descriptions-item label="申请人">{{ detail.applicantName || '-' }}</el-descriptions-item>
       <el-descriptions-item label="分类状态">
         <el-tag :type="statusTagType('classificationStatus', detail.classificationStatus)" effect="plain">
@@ -52,7 +57,13 @@
           <el-table-column prop="materialNo" label="产品料号" min-width="150" />
           <el-table-column prop="sunlModel" label="三花型号" min-width="150" />
           <el-table-column prop="businessType" label="业务类型" width="130" />
+          <el-table-column prop="packageType" label="包装类型" width="120" />
+          <el-table-column prop="packageMethod" label="包装方式" width="120" />
+          <el-table-column prop="packageComponentCode" label="包装组件" min-width="140" />
+          <el-table-column prop="shippingFee" label="运费" width="100" />
           <el-table-column prop="annualVolume" label="预计年用量" width="120" />
+          <el-table-column prop="totalWithShip" label="含运费总价" width="120" />
+          <el-table-column prop="totalNoShip" label="不含运费总价" width="130" />
           <el-table-column prop="technicianName" label="技术员" width="120" />
           <el-table-column label="BOM 状态" width="150">
             <template #default="{ row }">
@@ -87,9 +98,15 @@
         <el-table :data="detail.extraFees || []" border stripe>
           <el-table-column prop="feeCode" label="费用编码" min-width="150" />
           <el-table-column prop="feeName" label="费用名称" min-width="180" />
+          <el-table-column prop="feeScope" label="费用粒度" width="100" />
+          <el-table-column label="关联产品行" width="110">
+            <template #default="{ row }">{{ row.oaFormItemId || '-' }}</template>
+          </el-table-column>
           <el-table-column prop="feeCategory" label="费用分类" width="130" />
           <el-table-column prop="amount" label="金额" width="120" />
           <el-table-column prop="unit" label="单位" width="100" />
+          <el-table-column prop="allocationMethod" label="分摊方式" width="120" />
+          <el-table-column prop="sourceFieldPath" label="来源路径" min-width="180" />
           <el-table-column prop="remark" label="备注" min-width="180" />
           <template #empty>
             <el-empty description="暂无额外费用" />
@@ -97,14 +114,42 @@
         </el-table>
       </el-tab-pane>
 
-      <el-tab-pane label="扩展字段" name="fields">
-        <el-table :data="detail.extraFields || []" border stripe>
+      <el-tab-pane label="核算维度" name="accounting">
+        <el-descriptions :column="2" border>
+          <el-descriptions-item label="核算月份">{{ detail.accountingPeriodMonth || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="事业部类型">{{ detail.businessUnitType || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="费用产品口径">{{ detail.expenseProductCategory || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="所属公司">{{ detail.sourceCompany || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="所属事业部">{{ detail.sourceBusinessDivision || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="申请部门">{{ detail.applicantDept || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="申请处室">{{ detail.applicantOffice || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="贸易条款">{{ detail.tradeTerms || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="汇率">{{ detail.exchangeRate || '-' }}</el-descriptions-item>
+        </el-descriptions>
+      </el-tab-pane>
+
+      <el-tab-pane label="表头扩展字段" name="headerFields">
+        <el-table :data="headerExtraFields" border stripe>
           <el-table-column prop="fieldCode" label="字段编码" min-width="160" />
           <el-table-column prop="fieldName" label="字段名称" min-width="160" />
           <el-table-column prop="fieldValue" label="字段值" min-width="200" />
           <el-table-column prop="sourceFieldName" label="来源字段" min-width="160" />
           <template #empty>
-            <el-empty description="暂无扩展字段" />
+            <el-empty description="暂无表头扩展字段" />
+          </template>
+        </el-table>
+      </el-tab-pane>
+
+      <el-tab-pane label="产品行扩展字段" name="itemFields">
+        <el-table :data="itemExtraFields" border stripe>
+          <el-table-column prop="oaFormItemId" label="产品行 ID" width="110" />
+          <el-table-column prop="productLabel" label="产品行" min-width="180" />
+          <el-table-column prop="fieldCode" label="字段编码" min-width="160" />
+          <el-table-column prop="fieldName" label="字段名称" min-width="160" />
+          <el-table-column prop="fieldValue" label="字段值" min-width="200" />
+          <el-table-column prop="sourceFieldName" label="来源字段" min-width="160" />
+          <template #empty>
+            <el-empty description="暂无产品行扩展字段" />
           </template>
         </el-table>
       </el-tab-pane>
@@ -206,6 +251,25 @@ const confirmDialog = reactive({
     quoteScenario: '',
     businessUnitType: 'COMMERCIAL',
   },
+})
+
+const headerExtraFields = computed(() =>
+  (detail.value.extraFields || []).filter((field) => field.oaFormItemId == null),
+)
+
+const itemExtraFields = computed(() => {
+  const labelByItemId = new Map(
+    (detail.value.items || []).map((item) => [
+      item.id,
+      `#${item.seq || '-'} ${item.materialNo || item.sunlModel || item.productName || ''}`.trim(),
+    ]),
+  )
+  return (detail.value.extraFields || [])
+    .filter((field) => field.oaFormItemId != null)
+    .map((field) => ({
+      ...field,
+      productLabel: labelByItemId.get(field.oaFormItemId) || '-',
+    }))
 })
 
 async function loadDetail() {

@@ -24,26 +24,32 @@
         <el-form-item label="物料编码">
           <el-input v-model="filters.itemCode" placeholder="物料编码" />
         </el-form-item>
+        <el-form-item label="计算场景">
+          <el-select v-model="filters.calcScene" placeholder="全部" clearable style="width: 150px">
+            <el-option label="全部" value="" />
+            <el-option label="正常报价" value="QUOTE" />
+            <el-option label="月度调价" value="MONTHLY_ADJUST" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="价格月份">
           <el-input v-model="filters.pricingMonth" placeholder="2026-05" />
+        </el-form-item>
+        <el-form-item label="调价批次">
+          <el-input v-model="filters.adjustBatchId" placeholder="批次 ID" />
         </el-form-item>
         <el-form-item label="计算状态">
           <el-select v-model="filters.calcStatus" placeholder="全部" clearable>
             <el-option label="全部" value="" />
-            <el-option label="成功" value="SUCCESS" />
+            <el-option label="成功" value="OK" />
             <el-option label="失败" value="FAILED" />
-            <el-option label="待刷新" value="PENDING" />
           </el-select>
         </el-form-item>
-        <el-form-item label="变量来源">
-          <el-select v-model="filters.variableSource" placeholder="全部" clearable>
+        <el-form-item label="结果来源">
+          <el-select v-model="filters.factorSource" placeholder="全部" clearable>
             <el-option label="全部" value="" />
-            <el-option label="OA报价单基价覆盖" value="QUOTE_BASE" />
-            <el-option label="影响因素月度价" value="FINANCE_FACTOR" />
-            <el-option label="行局部字段" value="PART_CONTEXT" />
-            <el-option label="派生公式" value="DERIVED" />
-            <el-option label="常量" value="CONST" />
-            <el-option label="缺失" value="MISSING" />
+            <el-option label="OA锁价" value="OA_LOCKED" />
+            <el-option label="调价批次" value="ADJUST_BATCH" />
+            <el-option label="月度影响因素" value="MONTHLY_FACTOR" />
           </el-select>
         </el-form-item>
         <el-form-item label="形态属性">
@@ -79,7 +85,7 @@
           <strong>{{ summary.hasTrace }}</strong>
         </div>
         <div class="summary-item">
-          <span>OA基价覆盖变量</span>
+          <span>OA锁价变量</span>
           <strong>{{ summary.quoteBaseVariables }}</strong>
         </div>
         <div class="summary-item">
@@ -101,15 +107,28 @@
         <el-table-column prop="itemCode" label="物料编码" min-width="150" />
         <el-table-column prop="materialName" label="物料名称" min-width="160" />
         <el-table-column prop="supplierName" label="供应商" min-width="140" />
+        <el-table-column label="计算场景" width="110">
+          <template #default="{ row }">
+            <el-tag effect="light" :type="row.calcScene === 'MONTHLY_ADJUST' ? 'warning' : 'success'">
+              {{ calcSceneText(row.calcScene) }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="pricingMonth" label="价格月份" width="110" />
+        <el-table-column prop="adjustBatchId" label="调价批次" width="110" />
         <el-table-column prop="shapeAttr" label="形态属性" width="120" />
         <el-table-column prop="bomQty" label="部品用量" width="120" />
         <el-table-column prop="partUnitPrice" label="部品单价" width="120" />
         <el-table-column prop="partAmount" label="部品价格" width="120" />
-        <el-table-column label="OA基价覆盖" width="130">
+        <el-table-column label="结果来源" width="120">
           <template #default="{ row }">
-            <el-tag v-if="quoteBaseCount(row) > 0" type="success" effect="light">
-              {{ quoteBaseCount(row) }} 个
+            {{ factorSourceText(row.factorSource) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="OA锁价变量" width="130">
+          <template #default="{ row }">
+            <el-tag v-if="oaLockedCount(row) > 0" type="success" effect="light">
+              {{ oaLockedCount(row) }} 个
             </el-tag>
             <span v-else class="muted">—</span>
           </template>
@@ -121,6 +140,7 @@
             </el-tag>
           </template>
         </el-table-column>
+        <el-table-column prop="calcMessage" label="计算信息" min-width="180" show-overflow-tooltip />
         <el-table-column prop="updatedAt" label="计算时间" min-width="160" />
         <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
@@ -158,6 +178,8 @@
         <el-descriptions :column="2" border size="small">
           <el-descriptions-item label="OA单号">{{ traceMeta.oaNo }}</el-descriptions-item>
           <el-descriptions-item label="末端料号">{{ traceMeta.itemCode }}</el-descriptions-item>
+          <el-descriptions-item label="计算场景">{{ calcSceneText(traceMeta.calcScene) }}</el-descriptions-item>
+          <el-descriptions-item label="变量来源">{{ factorSourceText(traceMeta.factorSource) }}</el-descriptions-item>
           <el-descriptions-item label="价格月份">{{ traceMeta.pricingMonth }}</el-descriptions-item>
           <el-descriptions-item label="计算状态">{{ calcStatusText(traceMeta.calcStatus) }}</el-descriptions-item>
           <el-descriptions-item label="部品用量">{{ traceMeta.bomQty }}</el-descriptions-item>
@@ -235,7 +257,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import BasePagination from '../components/BasePagination.vue'
 import {
-  fetchPriceLinkedCalc,
+  fetchPriceLinkedCalcResults,
   refreshPriceLinkedCalc,
   fetchCalcTrace,
 } from '../api/priceLinkedCalc'
@@ -252,23 +274,32 @@ const filters = ref({
   customer: '',
   businessUnitType: '',
   itemCode: '',
+  calcScene: '',
   pricingMonth: '',
+  adjustBatchId: '',
   calcStatus: '',
-  variableSource: '',
+  factorSource: '',
   shapeAttr: '',
 })
 
 const currentPage = ref(1)
 const pageSize = ref(20)
 
+const optionalLong = (value) => {
+  const text = String(value || '').trim()
+  return /^\d+$/.test(text) ? Number(text) : undefined
+}
+
 const buildParams = () => ({
   oaNo: filters.value.oaNo?.trim(),
   customer: filters.value.customer?.trim(),
   businessUnitType: filters.value.businessUnitType,
   itemCode: filters.value.itemCode?.trim(),
+  calcScene: filters.value.calcScene,
   pricingMonth: filters.value.pricingMonth?.trim(),
+  adjustBatchId: optionalLong(filters.value.adjustBatchId),
   calcStatus: filters.value.calcStatus,
-  variableSource: filters.value.variableSource,
+  factorSource: filters.value.factorSource,
   shapeAttr: filters.value.shapeAttr,
   page: currentPage.value,
   pageSize: pageSize.value,
@@ -283,30 +314,24 @@ const summary = computed(() => {
   let financeVariables = 0
   let derivedVariables = 0
   rows.forEach((row) => {
-    if (row.calcStatus === 'SUCCESS') success += 1
+    if (row.calcStatus === 'OK' || row.calcStatus === 'SUCCESS') success += 1
     if (row.calcStatus === 'FAILED') failed += 1
     if (row.hasTrace) hasTrace += 1
     const sourceSummary = row.variableSourceSummary || {}
-    quoteBaseVariables += Number(sourceSummary.QUOTE_BASE || 0)
+    quoteBaseVariables += Number(sourceSummary.OA_LOCKED || sourceSummary.QUOTE_BASE || 0)
     financeVariables += Number(sourceSummary.FINANCE || sourceSummary.FINANCE_FACTOR || 0)
     derivedVariables += Number(sourceSummary.DERIVED || sourceSummary.FORMULA_REF || 0)
   })
   return { success, failed, hasTrace, quoteBaseVariables, financeVariables, derivedVariables }
 })
 
-const quoteBaseCount = (row) => Number(row?.variableSourceSummary?.QUOTE_BASE || 0)
+const oaLockedCount = (row) =>
+  Number(row?.variableSourceSummary?.OA_LOCKED || row?.variableSourceSummary?.QUOTE_BASE || 0)
 
 const fetchList = async () => {
-  // V48：必须输 OA 单号才查询。否则不带 OA 时后端会返回联动价主表 22 条料号
-  // (OA 单号 / 用量 / 单价 全空)，业务侧看着像 bug。强制 OA 必填，引导业务先输再查。
-  if (!filters.value.oaNo?.trim()) {
-    tableRows.value = []
-    total.value = 0
-    return
-  }
   loading.value = true
   try {
-    const data = await fetchPriceLinkedCalc(buildParams())
+    const data = await fetchPriceLinkedCalcResults(buildParams())
     tableRows.value = data?.list || []
     total.value = data?.total || 0
   } catch (error) {
@@ -353,9 +378,11 @@ const resetFilters = () => {
     customer: '',
     businessUnitType: '',
     itemCode: '',
+    calcScene: '',
     pricingMonth: '',
+    adjustBatchId: '',
     calcStatus: '',
-    variableSource: '',
+    factorSource: '',
     shapeAttr: '',
   }
   applyFilters()
@@ -392,6 +419,8 @@ const traceData = ref(null)
 const traceMeta = ref({
   oaNo: '',
   itemCode: '',
+  calcScene: '',
+  factorSource: '',
   pricingMonth: '',
   calcStatus: '',
   bomQty: '',
@@ -422,24 +451,44 @@ const formatNum = (v) => {
 }
 
 const calcStatusText = (status) => {
-  if (status === 'SUCCESS') return '成功'
+  if (status === 'OK' || status === 'SUCCESS') return '成功'
   if (status === 'FAILED') return '失败'
   if (status === 'PENDING') return '待刷新'
   return '—'
 }
 
 const calcStatusTag = (status) => {
-  if (status === 'SUCCESS') return 'success'
+  if (status === 'OK' || status === 'SUCCESS') return 'success'
   if (status === 'FAILED') return 'danger'
   if (status === 'PENDING') return 'warning'
   return 'info'
 }
 
+const calcSceneText = (scene) => {
+  if (scene === 'QUOTE') return '正常报价'
+  if (scene === 'MONTHLY_ADJUST') return '月度调价'
+  return scene || '—'
+}
+
+const factorSourceText = (source) => {
+  const map = {
+    OA_LOCKED: 'OA锁价',
+    QUOTE_BASE: 'OA报价单基价覆盖',
+    ADJUST_BATCH: '调价批次',
+    MONTHLY_FACTOR: '月度影响因素',
+    FINANCE_FACTOR: '影响因素月度价',
+  }
+  return map[source] || source || '—'
+}
+
 const sourceText = (source) => {
   const map = {
+    OA_LOCKED: 'OA锁价',
     QUOTE_BASE: 'OA报价单基价覆盖',
     FINANCE: '报价单基价/影响因素月度价',
     FINANCE_FACTOR: '影响因素月度价',
+    MONTHLY_FACTOR: '月度影响因素',
+    ADJUST_BATCH: '调价批次',
     PART_CONTEXT: '行局部字段',
     DERIVED: '派生公式/调价结果',
     FORMULA_REF: '派生公式',
@@ -458,6 +507,8 @@ const openTrace = async (row) => {
   traceMeta.value = {
     oaNo: row.oaNo,
     itemCode: row.itemCode,
+    calcScene: row.calcScene || '',
+    factorSource: row.factorSource || '',
     pricingMonth: row.pricingMonth || '',
     calcStatus: row.calcStatus || '',
     bomQty: formatNum(row.bomQty),

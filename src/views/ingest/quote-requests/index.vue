@@ -20,6 +20,16 @@
           <el-form-item label="流程编号">
             <el-input v-model="filters.processCode" clearable placeholder="FI-SC-020" @keyup.enter="applyFilters" />
           </el-form-item>
+          <el-form-item label="来源类型">
+            <el-select v-model="filters.sourceType" clearable placeholder="全部">
+              <el-option
+                v-for="item in SOURCE_TYPE_OPTIONS"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
+            </el-select>
+          </el-form-item>
           <el-form-item label="报价场景">
             <el-select v-model="filters.quoteScenario" clearable placeholder="全部">
               <el-option
@@ -74,11 +84,21 @@
     <el-table :data="displayRows" border stripe v-loading="loading">
       <el-table-column prop="oaNo" label="报价单号" min-width="180" />
       <el-table-column prop="processCode" label="流程编号" width="130" />
+      <el-table-column prop="sourceType" label="来源类型" width="120">
+        <template #default="{ row }">
+          <el-tag :type="statusTagType('sourceType', row.sourceType)" effect="plain">
+            {{ statusLabel('sourceType', row.sourceType) }}
+          </el-tag>
+        </template>
+      </el-table-column>
       <el-table-column prop="quoteScenario" label="报价场景" width="150">
         <template #default="{ row }">{{ statusLabel('quoteScenario', row.quoteScenario) }}</template>
       </el-table-column>
       <el-table-column prop="customer" label="客户名称" min-width="180" />
       <el-table-column prop="applyDate" label="申请日期" width="120" />
+      <el-table-column prop="applicantUnit" label="申请单位" min-width="160" />
+      <el-table-column prop="applicantDept" label="申请部门" min-width="140" />
+      <el-table-column prop="applicantOffice" label="申请处室" min-width="140" />
       <el-table-column prop="productCount" label="产品数量" width="100" />
       <el-table-column prop="ingestStatus" label="接入状态" width="130">
         <template #default="{ row }">
@@ -107,6 +127,9 @@
             {{ statusLabel('calcStatus', row.calcStatus || '未核算') }}
           </el-tag>
         </template>
+      </el-table-column>
+      <el-table-column label="接入时间" width="180">
+        <template #default="{ row }">{{ formatDateTime(row.ingestAt) }}</template>
       </el-table-column>
       <el-table-column label="操作" width="240" fixed="right">
         <template #default="{ row }">
@@ -181,8 +204,10 @@ import {
   CALC_STATUS_OPTIONS,
   CLASSIFICATION_STATUS_OPTIONS,
   QUOTE_SCENARIO_OPTIONS,
+  SOURCE_TYPE_OPTIONS,
   canConfirmClassification,
   filterQuoteRequestRows,
+  formatDateTime,
   hasNoBom,
   normalizeQuoteRequestPage,
   statusLabel,
@@ -194,6 +219,7 @@ const router = useRouter()
 const filters = reactive({
   oaNo: '',
   processCode: '',
+  sourceType: '',
   quoteScenario: '',
   customer: '',
   classificationStatus: '',
@@ -228,6 +254,7 @@ async function loadRows() {
       pageSize: pageSize.value,
       oaNo: filters.oaNo,
       processCode: filters.processCode,
+      sourceType: filters.sourceType,
       classificationStatus: filters.classificationStatus,
     })
     const page = normalizeQuoteRequestPage(data)
@@ -267,6 +294,7 @@ function resetFilters() {
   Object.assign(filters, {
     oaNo: '',
     processCode: '',
+    sourceType: '',
     quoteScenario: '',
     customer: '',
     classificationStatus: '',

@@ -2,7 +2,7 @@
   <div class="fixed-page">
     <el-card shadow="never" class="filter-card">
       <div class="filter-header">
-        <div class="filter-title">固定价</div>
+        <div class="filter-title">固定采购价</div>
         <div class="filter-actions">
           <el-upload
             class="upload-btn"
@@ -16,15 +16,7 @@
           <el-button type="primary" @click="openCreate">新增</el-button>
         </div>
       </div>
-      <!-- V46：source_type tab 切换 + 结算期间 + 物料/供应商 筛选 -->
-      <el-tabs v-model="filters.sourceType" class="source-type-tabs" @tab-change="applyFilters">
-        <el-tab-pane
-          v-for="opt in SOURCE_TYPE_OPTIONS"
-          :key="opt.value"
-          :label="opt.label"
-          :name="opt.value"
-        />
-      </el-tabs>
+      <!-- 固定采购价页面只展示 PURCHASE_FIXED，结算固定价后续独立页面维护。 -->
       <el-form :inline="true" label-width="90px">
         <el-form-item label="结算期间">
           <el-date-picker
@@ -51,7 +43,7 @@
 
     <el-card shadow="never">
       <el-table :data="tableRows" stripe v-loading="loading">
-        <!-- V46 新加：来源类型 tag + 结算期间 -->
+        <!-- FPT-04：固定采购价页面只查 PURCHASE_FIXED。 -->
         <el-table-column label="来源" width="90">
           <template #default="{ row }">
             <el-tag :type="sourceTagType(row.sourceType)" size="small">
@@ -64,23 +56,23 @@
         <el-table-column prop="materialCode" label="物料代码" width="160" />
         <el-table-column prop="specModel" label="规格型号" width="140" />
         <el-table-column prop="unit" label="单位" width="70" />
-        <el-table-column prop="fixedPrice" label="单价" width="100" />
+        <el-table-column prop="fixedPrice" label="现不含税价格" width="120" />
         <el-table-column label="是否含税" width="80">
           <template #default="{ row }">
             {{ row.taxIncluded ? '含税' : '未税' }}
           </template>
         </el-table-column>
+        <el-table-column prop="externalRowId" label="id" width="100" />
+        <el-table-column prop="srmDocNo" label="SRM单据编号" width="160" />
+        <el-table-column prop="processStatus" label="流程状态" width="100" />
         <!-- 采购件专属：供应商 + 流程编号 -->
         <el-table-column prop="supplierName" label="供应商名称" min-width="140" />
+        <el-table-column prop="currentSupplierName" label="现供方名称" min-width="140" />
         <el-table-column prop="processNo" label="流程编号" width="180" />
-        <!-- 自制件专属：下料重 / 净重 -->
         <el-table-column prop="blankWeight" label="下料重" width="100" />
         <el-table-column prop="netWeight" label="净重" width="100" />
-        <!-- 结算价专属：计划价 + 上浮比例 + V47 双口径 -->
-        <el-table-column prop="plannedPrice" label="计划价" width="100" />
-        <el-table-column prop="markupRatio" label="上浮比例" width="90" />
-        <el-table-column prop="baseSettlePrice" label="基准结算价" width="110" />
-        <el-table-column prop="linkedSettlePrice" label="联动结算价" width="110" />
+        <el-table-column prop="currentTaxIncludedPrice" label="现含税价格" width="110" />
+        <el-table-column prop="executionPeriodText" label="执行日期" width="180" />
         <el-table-column prop="remark" label="备注" min-width="120" />
         <el-table-column prop="updatedAt" label="更新时间" width="160" />
         <el-table-column label="操作" width="140" fixed="right">
@@ -106,13 +98,7 @@
 
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="640px">
       <el-form :model="formModel" label-width="90px">
-        <!-- V46 新字段优先放前面：来源类型 + 结算期间是核心维度 -->
-        <el-form-item label="来源类型" required>
-          <el-select v-model="formModel.sourceType" style="width: 100%">
-            <el-option v-for="opt in SOURCE_TYPE_OPTIONS" :key="opt.value"
-                       :label="opt.label" :value="opt.value" />
-          </el-select>
-        </el-form-item>
+        <!-- 本页固定写入 PURCHASE_FIXED，避免和结算固定价混用。 -->
         <el-form-item label="结算期间" required>
           <el-date-picker v-model="formModel.pricingMonth" type="month"
                           format="YYYY-MM" value-format="YYYY-MM" placeholder="2026-03"
@@ -192,14 +178,8 @@
           <el-input v-model="formModel.quota" />
         </el-form-item>
         <!-- V46 新字段：根据 sourceType 隐式分组 -->
-        <el-form-item v-if="formModel.sourceType === 'PURCHASE'" label="流程编号">
+        <el-form-item label="流程编号">
           <el-input v-model="formModel.processNo" placeholder="SC-SC-001-20260227-001" />
-        </el-form-item>
-        <el-form-item v-if="formModel.sourceType === 'SETTLE'" label="计划价">
-          <el-input v-model="formModel.plannedPrice" placeholder="0.4202" />
-        </el-form-item>
-        <el-form-item v-if="formModel.sourceType === 'SETTLE'" label="上浮比例">
-          <el-input v-model="formModel.markupRatio" placeholder="1.2000" />
         </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="formModel.remark" type="textarea" :rows="2" />
@@ -230,11 +210,12 @@ const importing = ref(false)
 const dialogVisible = ref(false)
 const editingId = ref(null)
 
-// V46/V48：source_type 仅保留 PURCHASE/SETTLE 两类（自制件归 lp_make_part_spec、废料归 lp_price_scrap，
-// 各自独立页面，不再在固定价 tab 里展示）
+const FIXED_PURCHASE_SOURCE_TYPE = 'PURCHASE_FIXED'
+
+// FPT-04：本页面只展示固定采购价，结算固定价后续单独菜单维护。
 const SOURCE_TYPE_OPTIONS = [
-  { value: 'PURCHASE', label: '采购件', tag: 'primary' },
-  { value: 'SETTLE',   label: '结算价', tag: 'warning' },
+  { value: FIXED_PURCHASE_SOURCE_TYPE, label: '固定采购价', tag: 'primary' },
+  { value: 'PURCHASE', label: '固定采购价(旧)', tag: 'info' },
 ]
 const sourceLabel = (v) =>
   SOURCE_TYPE_OPTIONS.find((o) => o.value === v)?.label || v || '-'
@@ -242,7 +223,6 @@ const sourceTagType = (v) =>
   SOURCE_TYPE_OPTIONS.find((o) => o.value === v)?.tag || ''
 
 const filters = ref({
-  sourceType: 'PURCHASE',
   pricingMonth: '2026-03',
   materialCode: '',
   supplierCode: '',
@@ -270,11 +250,9 @@ const formModel = ref({
   orderType: '',
   quota: '',
   // V46 新字段
-  sourceType: 'PURCHASE',
+  sourceType: FIXED_PURCHASE_SOURCE_TYPE,
   pricingMonth: '2026-03',
   processNo: '',
-  plannedPrice: '',
-  markupRatio: '',
   remark: '',
 })
 
@@ -284,11 +262,11 @@ const currentPage = ref(1)
 const pageSize = ref(20)
 
 const dialogTitle = computed(() =>
-  editingId.value ? '编辑固定价' : '新增固定价',
+  editingId.value ? '编辑固定采购价' : '新增固定采购价',
 )
 
 const buildParams = () => ({
-  sourceType: filters.value.sourceType || undefined,    // V46：tab 切换
+  sourceType: FIXED_PURCHASE_SOURCE_TYPE,
   pricingMonth: filters.value.pricingMonth || undefined,// V46：月份选择器
   materialCode: filters.value.materialCode.trim(),
   supplierCode: filters.value.supplierCode.trim(),
@@ -333,7 +311,6 @@ const applyFilters = () => {
 
 const resetFilters = () => {
   filters.value = {
-    sourceType: 'PURCHASE',
     pricingMonth: '2026-03',
     materialCode: '',
     supplierCode: '',
@@ -364,6 +341,10 @@ const openCreate = () => {
     effectiveTo: '',
     orderType: '',
     quota: '',
+    sourceType: FIXED_PURCHASE_SOURCE_TYPE,
+    pricingMonth: filters.value.pricingMonth || '2026-03',
+    processNo: '',
+    remark: '',
   }
   dialogVisible.value = true
 }
@@ -392,35 +373,67 @@ const openEdit = (row) => {
     orderType: row.orderType ?? '',
     quota: row.quota ?? '',
     // V46 新字段
-    sourceType: row.sourceType ?? 'PURCHASE',
+    sourceType: row.sourceType ?? FIXED_PURCHASE_SOURCE_TYPE,
     pricingMonth: row.pricingMonth ?? '2026-03',
     processNo: row.processNo ?? '',
-    plannedPrice: row.plannedPrice ?? '',
-    markupRatio: row.markupRatio ?? '',
     remark: row.remark ?? '',
   }
   dialogVisible.value = true
 }
 
-const normalizeDate = (value) => {
+const parseExcelDateParts = (value) => {
   if (!value) {
-    return ''
+    return null
   }
   if (value instanceof Date) {
     const year = value.getFullYear()
     const month = String(value.getMonth() + 1).padStart(2, '0')
     const day = String(value.getDate()).padStart(2, '0')
-    return `${year}-${month}-${day}`
+    const hour = String(value.getHours()).padStart(2, '0')
+    const minute = String(value.getMinutes()).padStart(2, '0')
+    const second = String(value.getSeconds()).padStart(2, '0')
+    return { date: `${year}-${month}-${day}`, time: `${hour}:${minute}:${second}` }
   }
   const text = String(value).trim()
   if (!text) {
+    return null
+  }
+  const fullYearMatch = text.match(/(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/)
+  if (fullYearMatch) {
+    const time = fullYearMatch[4]
+      ? `${fullYearMatch[4].padStart(2, '0')}:${fullYearMatch[5].padStart(2, '0')}:${(fullYearMatch[6] || '0').padStart(2, '0')}`
+      : '00:00:00'
+    return {
+      date: `${fullYearMatch[1]}-${fullYearMatch[2].padStart(2, '0')}-${fullYearMatch[3].padStart(2, '0')}`,
+      time,
+    }
+  }
+  const shortYearMatch = text.match(/(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/)
+  if (shortYearMatch) {
+    const rawYear = shortYearMatch[3]
+    const year = rawYear.length === 2 ? `20${rawYear}` : rawYear
+    const time = shortYearMatch[4]
+      ? `${shortYearMatch[4].padStart(2, '0')}:${shortYearMatch[5].padStart(2, '0')}:${(shortYearMatch[6] || '0').padStart(2, '0')}`
+      : '00:00:00'
+    return {
+      date: `${year}-${shortYearMatch[1].padStart(2, '0')}-${shortYearMatch[2].padStart(2, '0')}`,
+      time,
+    }
+  }
+  return null
+}
+
+const normalizeDate = (value) => {
+  const parts = parseExcelDateParts(value)
+  return parts ? parts.date : ''
+}
+
+const normalizeDateTime = (value) => {
+  const parts = parseExcelDateParts(value)
+  if (!parts) {
     return ''
   }
-  const match = text.match(/(\\d{4})[-/.](\\d{1,2})[-/.](\\d{1,2})/)
-  if (match) {
-    return `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`
-  }
-  return text.replace(/\//g, '-')
+  return `${parts.date}T${parts.time}`
 }
 
 const parseNumber = (value) => {
@@ -430,23 +443,6 @@ const parseNumber = (value) => {
   }
   const parsed = Number(text)
   return Number.isNaN(parsed) ? null : parsed
-}
-
-const parseBoolean = (value) => {
-  if (value === true || value === false) {
-    return value
-  }
-  const text = String(value ?? '').trim().toLowerCase()
-  if (!text) {
-    return null
-  }
-  if (['1', 'true', 'yes', 'y', '是', '含税'].includes(text)) {
-    return true
-  }
-  if (['0', 'false', 'no', 'n', '否', '未税'].includes(text)) {
-    return false
-  }
-  return null
 }
 
 const submitRow = async () => {
@@ -476,11 +472,9 @@ const submitRow = async () => {
     orderType: formModel.value.orderType,
     quota: parseNumber(formModel.value.quota),
     // V46 新字段
-    sourceType: formModel.value.sourceType,
+    sourceType: FIXED_PURCHASE_SOURCE_TYPE,
     pricingMonth: formModel.value.pricingMonth,
     processNo: formModel.value.processNo,
-    plannedPrice: parseNumber(formModel.value.plannedPrice),
-    markupRatio: parseNumber(formModel.value.markupRatio),
     remark: formModel.value.remark,
   }
   try {
@@ -522,6 +516,21 @@ const normalizeHeader = (value) =>
     .replace(/[\s\u3000]+/g, '')
     .trim()
 
+const parseExecutionPeriod = (value) => {
+  const text = String(value ?? '').trim()
+  if (!text) {
+    return { effectiveFrom: null, effectiveTo: null }
+  }
+  const matches = [...text.matchAll(/(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/g)]
+  const toDate = (match) => match
+    ? `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`
+    : null
+  return {
+    effectiveFrom: toDate(matches[0]),
+    effectiveTo: toDate(matches[1]),
+  }
+}
+
 const handleFileChange = async (uploadFile) => {
   const rawFile = uploadFile.raw
   if (!rawFile) {
@@ -539,38 +548,50 @@ const handleFileChange = async (uploadFile) => {
     }
     const buffer = await rawFile.arrayBuffer()
     const workbook = XLSX.read(buffer, { type: 'array', cellDates: true })
-    const sheet = workbook.Sheets[workbook.SheetNames[0]]
+    const sheetName = workbook.SheetNames.find((name) => normalizeHeader(name) === normalizeHeader('固定采购价5'))
+    if (!sheetName) {
+      ElMessage.error('未找到固定采购价5 sheet')
+      return
+    }
+    const sheet = workbook.Sheets[sheetName]
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false })
     const headerAliases = {
-      orgCode: ['组织'],
-      sourceName: ['来源'],
-      supplierName: ['供应商名称', '现供方名称'],         // V46：固定采购价 sheet 用"现供方名称"
-      supplierCode: ['供应商代码'],
-      purchaseClass: ['采购分类'],
-      materialName: ['物料名称', '料品名称'],           // V46：家用结算价 sheet 用"料品名称"
-      materialCode: ['物料代码', '物料编码', '料号'],    // V46：自制件/家用结算价用"料号"
-      specModel: ['规格型号', '型号', '图号'],           // V46：自制件 sheet 用"图号"
-      unit: ['单位'],
-      formulaExpr: ['联动公式'],
-      blankWeight: ['下料重', '下料量', '下料重量'],     // V46：自制件 sheet 用"下料重量"
-      netWeight: ['净重'],
-      processFee: ['加工费'],
-      agentFee: ['代理费'],
-      // 注意：'基准结算价' / '联动结算价' **故意不放在这里**，否则会在 SETTLE sheet 跟
-      //   baseSettlePrice/linkedSettlePrice 抢 alias，导致 fixedPrice 误命中 C5。
-      //   SETTLE sheet 的真实取价列是"铜价（90000元/吨）"，由下方 settle 分支专门处理
-      fixedPrice: ['单价', '固定价', '现不含税价格', '零件价格'],  // V46 3 个非 SETTLE sheet 的价格列
-      taxIncluded: ['是否含税'],
-      effectiveFrom: ['生效日期'],
-      effectiveTo: ['失效日期'],
-      orderType: ['订单类型'],
-      quota: ['配额'],
-      // V46 新字段
-      processNo: ['流程编号'],                          // 来自固定采购价5
-      plannedPrice: ['计划价'],                         // 来自家用结算价9 C3
-      markupRatio: ['上浮比例'],                        // 来自家用结算价9 C4
-      baseSettlePrice: ['基准结算价'],                  // V47：家用结算价9 C5
-      linkedSettlePrice: ['联动结算价'],                // V47：家用结算价9 C6
+      externalRowId: ['id'],
+      processStatus: ['流程状态'],
+      srmDocNo: ['SRM单据编号'],
+      processNo: ['流程编号'],
+      materialCategory: ['物料类别'],
+      materialCode: ['物料代码'],
+      materialName: ['物料名称'],
+      specModel: ['规格型号', '型号'],
+      unit: ['价格单位'],
+      taxRate: ['税率'],
+      blankWeight: ['下料重量'],
+      netWeight: ['产品净重'],
+      originalProcessFee: ['原不含税加工费'],
+      originalProcessFeeTaxIncluded: ['原含税加工费'],
+      originalTaxExcludedPrice: ['原不含税价格'],
+      originalTaxIncludedPrice: ['原含税价格'],
+      originalSupplierName: ['原供方名称'],
+      currentProcessFee: ['现不含税加工费'],
+      currentProcessFeeTaxIncluded: ['现含税加工费'],
+      fixedPrice: ['现不含税价格'],
+      currentTaxIncludedPrice: ['现含税价格'],
+      currentSupplierName: ['现供方名称'],
+      changeAmount: ['上涨额'],
+      changeRate: ['幅度'],
+      executionPeriodText: ['执行日期'],
+      annualUsageText: ['预计年用量'],
+      applicant: ['申请人'],
+      applyDept: ['申请部门'],
+      marketSituation: ['市场行情'],
+      similarCompare: ['类似物比较'],
+      approvalConclusion: ['结论'],
+      approvalType: ['审批表类型'],
+      businessDivision: ['涉及事业部'],
+      generalManagerApprovedAt: ['总经理批准时间'],
+      trackingDate: ['板分法跟踪日期'],
+      printFlag: ['是否打印'],
       remark: ['备注'],
     }
     const headerMap = Object.entries(headerAliases).reduce((acc, [key, values]) => {
@@ -604,11 +625,10 @@ const handleFileChange = async (uploadFile) => {
       { index: -1, count: 0 },
     ).index
     if (headerIndex === -1) {
-      ElMessage.error('未找到表头，请确认Excel格式是否正确')
+      ElMessage.error('固定采购价5 未找到表头，请确认Excel格式是否正确')
       return
     }
     const headerRow = rows[headerIndex]
-    const nextHeaderRow = rows[headerIndex + 1] || []
     const fieldIndex = {}
     headerRow.forEach((cell, index) => {
       const field = resolveHeaderField(cell)
@@ -616,40 +636,13 @@ const handleFileChange = async (uploadFile) => {
         fieldIndex[field] = index
       }
     })
-    nextHeaderRow.forEach((cell, index) => {
-      const field = resolveHeaderField(cell)
-      if (field && fieldIndex[field] === undefined) {
-        fieldIndex[field] = index
-      }
-    })
-    // V47 + A 方案：当用户在 SETTLE tab 上传家用结算价 sheet 时，
-    //   fixedPrice 不从通用 alias 取，而是按"含'铜价' 关键字" 找列（VLOOKUP 公式真正命中的列）
-    //   同时把"基准结算价" / "联动结算价" 列识别为 baseSettlePrice / linkedSettlePrice
-    if (filters.value.sourceType === 'SETTLE') {
-      const findHeaderIdx = (kw) => {
-        const i = headerRow.findIndex((c) => normalizeHeader(c).includes(kw))
-        return i >= 0 ? i : nextHeaderRow.findIndex((c) => normalizeHeader(c).includes(kw))
-      }
-      // SETTLE 真取价列：表头含"铜价"（家用结算价9 C8 = "铜价（90000元/吨...）"）
-      const settlePriceIdx = findHeaderIdx('铜价')
-      if (settlePriceIdx >= 0) {
-        fieldIndex.fixedPrice = settlePriceIdx
-      }
-      // 顺手把基准 / 联动结算价识别出来
-      const baseIdx = findHeaderIdx('基准结算价')
-      if (baseIdx >= 0 && fieldIndex.baseSettlePrice === undefined) {
-        fieldIndex.baseSettlePrice = baseIdx
-      }
-      const linkedIdx = findHeaderIdx('联动结算价')
-      if (linkedIdx >= 0 && fieldIndex.linkedSettlePrice === undefined) {
-        fieldIndex.linkedSettlePrice = linkedIdx
-      }
-    }
 
-    const requiredFields = ['materialCode', 'fixedPrice']
+    const requiredFields = ['externalRowId', 'materialCode', 'materialName', 'fixedPrice']
     const requiredLabels = {
+      externalRowId: 'id',
       materialCode: '物料代码',
-      fixedPrice: filters.value.sourceType === 'SETTLE' ? '铜价（取价列）' : '单价',
+      materialName: '物料名称',
+      fixedPrice: '现不含税价格',
     }
     const missing = requiredFields.filter((field) => fieldIndex[field] === undefined)
     if (missing.length > 0) {
@@ -657,47 +650,88 @@ const handleFileChange = async (uploadFile) => {
       ElMessage.error(`缺少表头：${names.join('、')}`)
       return
     }
-    const dataRows = rows
-      .slice(headerIndex + 1)
-      .map((row) => ({
-        orgCode: String(row[fieldIndex.orgCode] || '').trim(),
-        sourceName: String(row[fieldIndex.sourceName] || '').trim(),
-        supplierName: String(row[fieldIndex.supplierName] || '').trim(),
-        supplierCode: String(row[fieldIndex.supplierCode] || '').trim(),
-        purchaseClass: String(row[fieldIndex.purchaseClass] || '').trim(),
-        materialName: String(row[fieldIndex.materialName] || '').trim(),
+    let skippedU9 = 0
+    let skippedInvalid = 0
+    const dataRows = rows.slice(headerIndex + 1).map((row, offset) => {
+      const processNo = String(row[fieldIndex.processNo] || '').trim()
+      const executionPeriodText = String(row[fieldIndex.executionPeriodText] || '').trim()
+      const { effectiveFrom, effectiveTo } = parseExecutionPeriod(executionPeriodText)
+      const srmDocNo = String(row[fieldIndex.srmDocNo] || '').trim()
+      const currentTaxExcludedPrice = parseNumber(row[fieldIndex.fixedPrice])
+      return {
+        externalRowId: String(row[fieldIndex.externalRowId] || '').trim(),
+        processStatus: String(row[fieldIndex.processStatus] || '').trim(),
+        srmDocNo,
+        processNo,
+        materialCategory: String(row[fieldIndex.materialCategory] || '').trim(),
         materialCode: String(row[fieldIndex.materialCode] || '').trim(),
+        materialName: String(row[fieldIndex.materialName] || '').trim(),
         specModel: String(row[fieldIndex.specModel] || '').trim(),
         unit: String(row[fieldIndex.unit] || '').trim(),
-        formulaExpr: String(row[fieldIndex.formulaExpr] || '').trim(),
+        taxRate: parseNumber(row[fieldIndex.taxRate]),
         blankWeight: parseNumber(row[fieldIndex.blankWeight]),
         netWeight: parseNumber(row[fieldIndex.netWeight]),
-        processFee: parseNumber(row[fieldIndex.processFee]),
-        agentFee: parseNumber(row[fieldIndex.agentFee]),
-        fixedPrice: parseNumber(row[fieldIndex.fixedPrice]),
-        taxIncluded: parseBoolean(row[fieldIndex.taxIncluded]),
-        effectiveFrom: normalizeDate(row[fieldIndex.effectiveFrom]) || null,
-        effectiveTo: normalizeDate(row[fieldIndex.effectiveTo]) || null,
-        orderType: String(row[fieldIndex.orderType] || '').trim(),
-        quota: parseNumber(row[fieldIndex.quota]),
-        // V46：源类型 / 月份从 filter tab 取（用户在哪个 tab 上传就归到哪类）
-        sourceType: filters.value.sourceType,
+        originalProcessFee: parseNumber(row[fieldIndex.originalProcessFee]),
+        originalProcessFeeTaxIncluded: parseNumber(row[fieldIndex.originalProcessFeeTaxIncluded]),
+        originalTaxExcludedPrice: parseNumber(row[fieldIndex.originalTaxExcludedPrice]),
+        originalTaxIncludedPrice: parseNumber(row[fieldIndex.originalTaxIncludedPrice]),
+        originalSupplierName: String(row[fieldIndex.originalSupplierName] || '').trim(),
+        currentProcessFee: parseNumber(row[fieldIndex.currentProcessFee]),
+        currentProcessFeeTaxIncluded: parseNumber(row[fieldIndex.currentProcessFeeTaxIncluded]),
+        // 现不含税价格对齐当前系统固定价主价格字段 fixedPrice，参与成本计算取价。
+        currentTaxExcludedPrice,
+        fixedPrice: currentTaxExcludedPrice,
+        currentTaxIncludedPrice: parseNumber(row[fieldIndex.currentTaxIncludedPrice]),
+        currentSupplierName: String(row[fieldIndex.currentSupplierName] || '').trim(),
+        supplierName: String(row[fieldIndex.currentSupplierName] || '').trim(),
+        changeAmount: parseNumber(row[fieldIndex.changeAmount]),
+        changeRate: parseNumber(row[fieldIndex.changeRate]),
+        executionPeriodText,
+        effectiveFrom,
+        effectiveTo,
+        annualUsageText: String(row[fieldIndex.annualUsageText] || '').trim(),
+        applicant: String(row[fieldIndex.applicant] || '').trim(),
+        applyDept: String(row[fieldIndex.applyDept] || '').trim(),
+        marketSituation: String(row[fieldIndex.marketSituation] || '').trim(),
+        similarCompare: String(row[fieldIndex.similarCompare] || '').trim(),
+        approvalConclusion: String(row[fieldIndex.approvalConclusion] || '').trim(),
+        approvalType: String(row[fieldIndex.approvalType] || '').trim(),
+        businessDivision: String(row[fieldIndex.businessDivision] || '').trim(),
+        generalManagerApprovedAt: normalizeDateTime(row[fieldIndex.generalManagerApprovedAt]) || null,
+        trackingDate: normalizeDate(row[fieldIndex.trackingDate]) || null,
+        printFlag: String(row[fieldIndex.printFlag] || '').trim(),
+        sourceType: FIXED_PURCHASE_SOURCE_TYPE,
+        sourceSystem: srmDocNo ? 'SRM' : 'EXCEL',
+        sourceSheetName: sheetName,
+        sourceRowNo: headerIndex + offset + 2,
         pricingMonth: filters.value.pricingMonth || '2026-03',
-        processNo: String(row[fieldIndex.processNo] || '').trim(),
-        plannedPrice: parseNumber(row[fieldIndex.plannedPrice]),
-        markupRatio: parseNumber(row[fieldIndex.markupRatio]),
-        baseSettlePrice: parseNumber(row[fieldIndex.baseSettlePrice]),
-        linkedSettlePrice: parseNumber(row[fieldIndex.linkedSettlePrice]),
-        remark: String(row[fieldIndex.remark] || '').trim(),
-      }))
-      .filter((row) => row.materialCode && row.fixedPrice !== null)
+        taxIncluded: false,
+      }
+    }).filter((row) => {
+      // 固定采购价5 里的 U9 行属于结算固定价来源，本页导入时跳过，FPT-05 归入结算固定价。
+      if (row.processNo === 'U9') {
+        skippedU9 += 1
+        return false
+      }
+      const valid = row.externalRowId && row.materialCode && row.materialName && row.fixedPrice !== null
+      if (!valid) {
+        skippedInvalid += 1
+      }
+      return valid
+    })
     if (dataRows.length === 0) {
       ElMessage.warning('未解析到有效数据')
       return
     }
-    const result = await importFixedItems({ rows: dataRows })
-    const imported = Array.isArray(result) ? result.length : dataRows.length
-    ElMessage.success(`已导入${imported}条固定价`)
+    const result = await importFixedItems({
+      importFileName: rawFile.name,
+      sourceBatchNo: `FIXED_PURCHASE_${Date.now()}`,
+      rows: dataRows,
+    })
+    const created = result?.createdCount ?? 0
+    const updated = result?.updatedCount ?? 0
+    const skipped = (result?.skippedCount ?? 0) + skippedU9 + skippedInvalid
+    ElMessage.success(`固定采购价导入完成：新增${created}条，更新${updated}条，跳过${skipped}条`)
     if (currentPage.value === 1) {
       fetchList()
     } else {
@@ -742,11 +776,4 @@ onMounted(fetchList)
   gap: 8px;
 }
 
-/* V46：source_type tabs 上移嵌入 filter-card */
-.source-type-tabs {
-  margin-bottom: 8px;
-}
-.source-type-tabs :deep(.el-tabs__nav-wrap)::after {
-  height: 1px;
-}
 </style>

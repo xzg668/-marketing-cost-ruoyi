@@ -14,6 +14,16 @@ export const CLASSIFICATION_STATUS_OPTIONS = [
   { value: 'REJECTED', label: '已驳回', type: 'danger' },
 ]
 
+export const SOURCE_TYPE_OPTIONS = [
+  { value: 'EXCEL', label: 'Excel 导入', type: 'success' },
+  { value: 'WEAVER_OA', label: '泛微 OA', type: 'primary' },
+  { value: 'OA', label: 'OA 推送', type: 'primary' },
+  { value: 'MOCK_OA', label: '模拟 OA', type: 'warning' },
+  { value: 'MANUAL', label: '手工录入', type: 'info' },
+  { value: 'TECH', label: '技术补充', type: 'warning' },
+  { value: 'LEGACY', label: '历史数据', type: 'info' },
+]
+
 export const BOM_STATUS_OPTIONS = [
   { value: 'NOT_CHECKED', label: '未检查', type: 'info' },
   { value: 'SYNCED', label: '已同步', type: 'success' },
@@ -52,6 +62,7 @@ const calcStatusAliases = {
 
 const optionGroups = {
   quoteScenario: QUOTE_SCENARIO_OPTIONS,
+  sourceType: SOURCE_TYPE_OPTIONS,
   classificationStatus: CLASSIFICATION_STATUS_OPTIONS,
   bomStatus: BOM_STATUS_OPTIONS,
   ingestStatus: INGEST_STATUS_OPTIONS,
@@ -94,6 +105,7 @@ export function filterQuoteRequestRows(rows, filters = {}) {
     if (!includesText(row.oaNo, filters.oaNo)) return false
     if (!includesText(row.processCode, filters.processCode)) return false
     if (!includesText(row.customer, filters.customer)) return false
+    if (filters.sourceType && row.sourceType !== filters.sourceType) return false
     if (filters.quoteScenario && row.quoteScenario !== filters.quoteScenario) return false
     if (filters.classificationStatus && row.classificationStatus !== filters.classificationStatus) return false
     if (filters.bomAggregateStatus && row.bomAggregateStatus !== filters.bomAggregateStatus) return false

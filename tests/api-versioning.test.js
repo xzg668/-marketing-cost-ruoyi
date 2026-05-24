@@ -59,6 +59,11 @@ describe('http.js 核心配置检查', () => {
     assert.match(httpContent, /export\s+(const|function)\s+request/)
   })
 
+  it('request 支持单次请求覆盖 timeout', () => {
+    assert.match(httpContent, /dedupKey,\s*timeout/)
+    assert.match(httpContent, /config\.timeout\s*=\s*timeout/)
+  })
+
   it('导出 cancelPendingRequests 函数', () => {
     assert.match(httpContent, /export\s+(const|function)\s+cancelPendingRequests/)
   })

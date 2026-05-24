@@ -36,6 +36,15 @@
       </el-descriptions>
     </el-card>
 
+    <el-alert
+      v-if="pricePrepareMessage"
+      class="price-prepare-alert"
+      type="warning"
+      :title="pricePrepareMessage"
+      show-icon
+      :closable="false"
+    />
+
     <el-card v-if="running" shadow="never" class="progress-card">
       <div class="section-title">试算进度</div>
       <!-- T17：排队中时进度条上方显示排队位置 -->
@@ -109,6 +118,7 @@ const startAt = ref(0)
 const lastDurationMs = ref(0)
 const elapsedMs = ref(0)
 const statusOverride = ref('')
+const pricePrepareMessage = ref('')
 // T17：排队位置（0=正在跑/已结束，>0=排队中第 N 位）
 const queuePos = ref(0)
 // T17：单个试算预估时长（秒）；OA-GOLDEN-001 实测约 1s 内，保守按 5s × 队长估算
@@ -188,6 +198,14 @@ const progressTip = computed(() => {
   }
   return '试算完成'
 })
+
+const syncProgressMessage = (data) => {
+  pricePrepareMessage.value =
+    data?.pricePrepareMessage ||
+    data?.prepareMessage ||
+    data?.preCheckMessage ||
+    ''
+}
 
 const formatAmount = (value) => {
   const number = Number(value)
@@ -274,6 +292,7 @@ const pollProgress = async () => {
     if (!data) {
       return
     }
+    syncProgressMessage(data)
     const percent = Number(data.percent)
     if (Number.isFinite(percent)) {
       progress.value = Math.max(0, Math.min(100, percent))
@@ -311,6 +330,7 @@ const waitForCompletion = () => {
         const data = await fetchCostRunProgress(oaNo.value)
         if (data) {
           lastSuccessAt = Date.now()
+          syncProgressMessage(data)
           const percent = Number(data.percent)
           if (Number.isFinite(percent)) {
             progress.value = Math.max(0, Math.min(100, percent))
@@ -362,6 +382,7 @@ const resetFlow = async () => {
     elapsedMs.value = 0
     lastDurationMs.value = 0
     statusOverride.value = ''
+    pricePrepareMessage.value = ''
     result.value = { meta: {}, items: [] }
     return
   }
@@ -369,6 +390,7 @@ const resetFlow = async () => {
   elapsedMs.value = 0
   lastDurationMs.value = 0
   statusOverride.value = ''
+  pricePrepareMessage.value = ''
 
   // T18(f)：进页面先查 live progress，后端还在跑 → 直接接管 polling，不重复 enqueue
   try {
@@ -517,6 +539,10 @@ onBeforeUnmount(() => {
 
 .progress-card {
   padding-bottom: 6px;
+}
+
+.price-prepare-alert {
+  margin-top: 16px;
 }
 
 .progress-tip {

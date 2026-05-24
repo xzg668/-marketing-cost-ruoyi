@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import {
   CALC_STATUS_OPTIONS,
+  SOURCE_TYPE_OPTIONS,
   canConfirmClassification,
   filterQuoteRequestRows,
   hasNoBom,
@@ -25,6 +26,7 @@ describe('T11 报价单接入工作台工具', () => {
       oaNo: 'OA-T11-001',
       processCode: 'FI-SC-020',
       quoteScenario: 'DIRECT_SALE',
+      sourceType: 'EXCEL',
       customer: '华东客户',
       classificationStatus: 'CONFIRMED',
       bomAggregateStatus: 'SYNCED',
@@ -35,6 +37,7 @@ describe('T11 报价单接入工作台工具', () => {
       oaNo: 'OA-T11-002',
       processCode: 'FI-SR-005',
       quoteScenario: 'UNKNOWN',
+      sourceType: 'WEAVER_OA',
       customer: '华南客户',
       classificationStatus: 'PENDING',
       bomAggregateStatus: 'NO_BOM',
@@ -45,6 +48,8 @@ describe('T11 报价单接入工作台工具', () => {
 
   it('状态码展示为业务中文', () => {
     assert.equal(statusLabel('quoteScenario', 'DIRECT_SALE'), '板换直销')
+    assert.equal(statusLabel('sourceType', 'EXCEL'), 'Excel 导入')
+    assert.equal(statusLabel('sourceType', 'WEAVER_OA'), '泛微 OA')
     assert.equal(statusLabel('classificationStatus', 'PENDING'), '待确认')
     assert.equal(statusLabel('bomStatus', 'NO_BOM'), '无 BOM')
     assert.equal(statusLabel('calcStatus', 'CALCULATED'), '已核算')
@@ -52,9 +57,10 @@ describe('T11 报价单接入工作台工具', () => {
     assert.equal(statusLabel('calcStatus', 'PENDING'), '未核算')
   })
 
-  it('支持报价单号、流程、客户、场景、分类、BOM、核算状态筛选', () => {
+  it('支持报价单号、流程、来源、客户、场景、分类、BOM、核算状态筛选', () => {
     assert.equal(filterQuoteRequestRows(rows, { oaNo: '001' }).length, 1)
     assert.equal(filterQuoteRequestRows(rows, { processCode: 'FI-SR' }).length, 1)
+    assert.equal(filterQuoteRequestRows(rows, { sourceType: 'WEAVER_OA' }).length, 1)
     assert.equal(filterQuoteRequestRows(rows, { customer: '华南' }).length, 1)
     assert.equal(filterQuoteRequestRows(rows, { quoteScenario: 'UNKNOWN' }).length, 1)
     assert.equal(filterQuoteRequestRows(rows, { classificationStatus: 'PENDING' }).length, 1)
@@ -69,6 +75,13 @@ describe('T11 报价单接入工作台工具', () => {
       ['未核算', '试算中', '已核算'],
     )
     assert.equal(new Set(CALC_STATUS_OPTIONS.map((item) => item.label)).size, CALC_STATUS_OPTIONS.length)
+  })
+
+  it('来源类型支持区分 Excel 和未来泛微 OA', () => {
+    assert.deepEqual(
+      SOURCE_TYPE_OPTIONS.map((item) => item.value).slice(0, 2),
+      ['EXCEL', 'WEAVER_OA'],
+    )
   })
 
   it('操作可见性由状态驱动', () => {
@@ -105,6 +118,11 @@ describe('T11 报价单接入页面契约', () => {
     assert.match(listPageContent, /fetchQuoteRequests/)
     assert.match(listPageContent, /confirmQuoteRequestClassification/)
     assert.match(listPageContent, /checkQuoteBomStatus/)
+    assert.match(listPageContent, /来源类型/)
+    assert.match(listPageContent, /申请单位/)
+    assert.match(listPageContent, /申请部门/)
+    assert.match(listPageContent, /申请处室/)
+    assert.match(listPageContent, /接入时间/)
     assert.doesNotMatch(listPageContent, /goCostRun/)
     assert.doesNotMatch(listPageContent, /转到成本核算/)
     assert.doesNotMatch(listPageContent, /查看核算结果/)
@@ -131,11 +149,24 @@ describe('T11 报价单接入页面契约', () => {
     assert.doesNotMatch(productBomPageContent, /后续 T15/)
   })
 
-  it('详情页展示产品、费用、扩展字段、接入原文和操作记录', () => {
+  it('详情页展示基础业务信息、产品、费用、扩展字段、核算维度和接入记录', () => {
     assert.match(detailPageContent, /fetchQuoteRequestDetail/)
+    assert.match(detailPageContent, /申请单位/)
+    assert.match(detailPageContent, /申请部门/)
+    assert.match(detailPageContent, /申请处室/)
     assert.match(detailPageContent, /产品明细/)
+    assert.match(detailPageContent, /包装类型/)
     assert.match(detailPageContent, /额外费用/)
-    assert.match(detailPageContent, /扩展字段/)
+    assert.match(detailPageContent, /费用粒度/)
+    assert.match(detailPageContent, /核算维度/)
+    assert.match(detailPageContent, /accountingPeriodMonth/)
+    assert.match(detailPageContent, /expenseProductCategory/)
+    assert.match(detailPageContent, /sourceCompany/)
+    assert.match(detailPageContent, /sourceBusinessDivision/)
+    assert.match(detailPageContent, /表头扩展字段/)
+    assert.match(detailPageContent, /产品行扩展字段/)
+    assert.match(detailPageContent, /headerExtraFields/)
+    assert.match(detailPageContent, /itemExtraFields/)
     assert.match(detailPageContent, /接入原文/)
     assert.match(detailPageContent, /操作记录/)
     assert.match(detailPageContent, /checkQuoteBomStatus/)

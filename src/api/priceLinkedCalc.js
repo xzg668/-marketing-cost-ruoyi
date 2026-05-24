@@ -3,6 +3,10 @@ import { request } from './http'
 export const fetchPriceLinkedCalc = (params) =>
   request('/api/v1/price-linked/calc', { params })
 
+// 只读查询已落库结果；不触发联动价计算或补写 calc_item
+export const fetchPriceLinkedCalcResults = (params) =>
+  request('/api/v1/price-linked/calc/results', { params })
+
 export const refreshPriceLinkedCalc = (body) =>
   request('/api/v1/price-linked/calc/refresh', { method: 'POST', body })
 

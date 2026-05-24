@@ -66,7 +66,10 @@ export const cancelPendingRequests = (pathPrefix) => {
   }
 }
 
-export const request = async (path, { method = 'GET', params, body, dedupKey } = {}) => {
+export const request = async (
+  path,
+  { method = 'GET', params, body, dedupKey, timeout } = {}
+) => {
   // GET request dedup: reuse in-flight promise for same URL
   const isGet = method === 'GET'
   const cacheKey = dedupKey || `${path}?${JSON.stringify(params || {})}`
@@ -83,6 +86,9 @@ export const request = async (path, { method = 'GET', params, body, dedupKey } =
         url: path,
         method,
         signal: controller.signal,
+      }
+      if (timeout !== undefined) {
+        config.timeout = timeout
       }
 
       if (params && typeof params === 'object') {
