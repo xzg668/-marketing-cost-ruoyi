@@ -4,9 +4,11 @@ import fs from 'node:fs'
 import path from 'node:path'
 import {
   DIFF_THRESHOLD,
+  buildImportSummaryItems,
   buildTraceTimeline,
   diffWithGolden,
   parseTraceJson,
+  splitImportDetailRows,
 } from '../src/pages/priceLinkedResultUtils.js'
 
 /**
@@ -22,6 +24,12 @@ const FILE = path.resolve(
   '../src/pages/PriceLinkedResultPage.vue'
 )
 const content = fs.readFileSync(FILE, 'utf-8')
+const UTILS_FILE = path.resolve(
+  import.meta.dirname,
+  '../src/pages/priceLinkedResultUtils.js'
+)
+const utilsContent = fs.readFileSync(UTILS_FILE, 'utf-8')
+const resultDisplayContent = `${content}\n${utilsContent}`
 
 describe('PriceLinkedResultPage.vue T24 契约', () => {
   it('导入 fetchTrace 端点', () => {
@@ -31,10 +39,12 @@ describe('PriceLinkedResultPage.vue T24 契约', () => {
     )
   })
 
-  it('导入 priceLinkedResultUtils 四个纯函数', () => {
+  it('导入 priceLinkedResultUtils 结果页纯函数', () => {
     assert.match(content, /parseTraceJson/)
     assert.match(content, /buildTraceTimeline/)
     assert.match(content, /diffWithGolden/)
+    assert.match(content, /buildImportSummaryItems/)
+    assert.match(content, /splitImportDetailRows/)
     assert.match(
       content,
       /from\s*['"]\.\/priceLinkedResultUtils['"]/
@@ -111,37 +121,59 @@ describe('PriceLinkedResultPage.vue V2-14 月度导入和结果页契约', () =>
     )
   })
 
-  it('导入弹窗包含月份、业务单元、处理方式和 Excel 文件校验', () => {
+  it('T1：导入弹窗包含月份、业务单元、公式生效日期、价格冲突策略和 Excel 文件校验', () => {
     assert.match(content, /v-model="importForm\.pricingMonth"/)
     assert.match(content, /v-model="importForm\.businessUnitType"/)
-    assert.match(content, /v-model="importForm\.effectiveStrategy"/)
-    assert.match(content, /APPEND_ONLY/)
-    assert.match(content, /OVERRIDE_EFFECTIVE/)
+    assert.match(content, /v-model="importForm\.formulaEffectiveDate"/)
+    assert.match(content, /v-model="importForm\.factorPriceConflictStrategy"/)
+    assert.match(content, /KEEP_EXISTING/)
+    assert.match(content, /OVERWRITE/)
     assert.match(content, /accept="\.xlsx,\.xls"/)
     assert.match(content, /isExcelFile/)
   })
 
-  it('V5-10：默认仅新增，并向 importLinkedItemsExcel 传 effectiveStrategy', () => {
-    assert.match(content, /effectiveStrategy:\s*'APPEND_ONLY'/)
-    assert.match(content, /effectiveStrategy:\s*importForm\.value\.effectiveStrategy/)
-    assert.match(content, /仅新增：只新增系统没有的料号/)
-    assert.match(content, /覆盖生效：本次 Excel 涉及的料号/)
+  it('T1：导入月份为 2026-05 时公式生效日期默认 2026-05-01', () => {
+    assert.match(content, /const\s+firstDayOfMonth\s*=\s*\(monthText\)/)
+    assert.match(content, /`\$\{value\}-01`/)
+    assert.match(content, /formulaEffectiveDate:\s*firstDayOfMonth\(pricingMonth\)/)
+    assert.match(content, /formulaEffectiveDate:\s*firstDayOfMonth\(queryString\('pricingMonth',\s*currentMonthText\(\)\)\)/)
   })
 
-  it('导入结果区展示新增、覆盖、跳过、自动绑定、冲突和失败数量', () => {
+  it('T1：默认保留已有影响因素价格，并提交新参数', () => {
+    assert.match(content, /factorPriceConflictStrategy:\s*'KEEP_EXISTING'/)
+    assert.match(content, /formulaEffectiveDate:\s*importForm\.value\.formulaEffectiveDate/)
+    assert.match(content, /factorPriceConflictStrategy:\s*importForm\.value\.factorPriceConflictStrategy/)
+    assert.match(content, /影响因素：缺失新增，相同跳过，价格不同按上方策略处理/)
+    assert.match(content, /联动公式：新料号新增，公式变化生成新版本，公式相同跳过/)
+  })
+
+  it('T1：新导入弹窗不再提交 effectiveStrategy', () => {
+    assert.doesNotMatch(content, /v-model="importForm\.effectiveStrategy"/)
+    assert.doesNotMatch(content, /effectiveStrategy:\s*importForm\.value\.effectiveStrategy/)
+  })
+
+  it('T1：页面不再出现旧处理方式文案', () => {
+    assert.doesNotMatch(content, /仅新增/)
+    assert.doesNotMatch(content, /覆盖生效/)
+  })
+
+  it('导入结果区展示影响因素、版本化联动公式、自动绑定、冲突和失败数量', () => {
     for (const key of [
       'linkedCreatedCount',
-      'linkedUpdatedCount',
+      'linkedVersionCreatedCount',
+      'linkedExpiredCount',
+      'linkedUnchangedSkippedCount',
       'linkedSkippedCount',
-      'monthlyPriceSkippedCount',
+      'monthlyPriceConflictCount',
+      'monthlyPriceOverwriteCount',
       'autoBindingCount',
-      'consistentHistoryBindingCount',
       'conflictBindingCount',
-      'manualSkippedCount',
       'bindingErrorCount',
     ]) {
-      assert.match(content, new RegExp(key))
+      assert.match(resultDisplayContent, new RegExp(key))
     }
+    assert.match(resultDisplayContent, /conflictTypeText/)
+    assert.match(resultDisplayContent, /failureTypeText/)
   })
 
   it('页面包含影响因素预览、冲突处理、失败明细、导入历史入口', () => {
@@ -210,6 +242,77 @@ describe('PriceLinkedResultPage.vue V2-14 月度导入和结果页契约', () =>
   it('冲突和失败行可进入现有人工绑定抽屉', () => {
     assert.match(content, /openBindingByMaterial/)
     assert.match(content, /openBinding\(target\)/)
+  })
+})
+
+describe('PriceLinkedResultPage.vue T7 导入结果展示辅助', () => {
+  it('前端结果卡片展示新增字段，且无公式变化时只显示未变化跳过', () => {
+    const items = buildImportSummaryItems({
+      batchId: '77',
+      formulaEffectiveDate: '2026-06-01',
+      factorPriceConflictStrategy: 'KEEP_EXISTING',
+      linkedCount: 0,
+      linkedVersionCreatedCount: 0,
+      linkedUnchangedSkippedCount: 1,
+      linkedExpiredCount: 0,
+      monthlyPriceConflictCount: 0,
+      monthlyPriceOverwriteCount: 0,
+      autoBindingCount: 0,
+      conflictBindingCount: 0,
+      bindingErrorCount: 0,
+    }, {
+      factorPreviewRows: [],
+      conflictRows: [],
+      failedRows: [],
+    })
+    const byKey = Object.fromEntries(items.map((item) => [item.key, item]))
+
+    assert.equal(byKey.linkedCreated.label, '联动价新增版本')
+    assert.equal(byKey.linkedCreated.value, 0)
+    assert.equal(byKey.linkedSkipped.label, '联动价未变化跳过')
+    assert.equal(byKey.linkedSkipped.value, 1)
+    assert.equal(byKey.linkedExpired.value, 0)
+    assert.equal(byKey.factorPriceConflictStrategy.value, '保留已有价格，冲突行跳过')
+  })
+
+  it('冲突行可见并包含影响因素价格冲突和历史绑定关系冲突原因', () => {
+    const detailRows = splitImportDetailRows({
+      bindingErrors: [{
+        excelRowNumber: 3,
+        materialCode: 'M001',
+        tokenName: '材料含税价格',
+        existingFactorIdentity: 1001,
+        newFactorIdentity: 9999,
+        reason: '本次公式识别结果与历史标准关系不一致，默认不覆盖，请人工确认',
+      }],
+      errors: [],
+    }, [{
+      sourceSheetName: '影响因素',
+      sourceRowNumber: 64,
+      factorIdentityId: 2001,
+      factorName: '电解铜',
+      monthlyPriceAction: 'CONFLICT_KEEP_EXISTING',
+    }])
+
+    assert.equal(detailRows.conflictRows.length, 2)
+    assert.match(detailRows.conflictRows[0].reason, /影响因素价格冲突/)
+    assert.equal(detailRows.conflictRows[0].conflictTypeText, '影响因素价格冲突')
+    assert.equal(detailRows.conflictRows[1].conflictTypeText, '历史绑定关系冲突')
+    assert.equal(detailRows.conflictRows[1].tokenName, '材料含税价格')
+  })
+
+  it('公式版本生效日期倒挂进入失败列表并给出明确类型', () => {
+    const detailRows = splitImportDetailRows({
+      errors: [{
+        rowNumber: 2,
+        materialCode: 'M001',
+        message: 'formulaEffectiveDate 必须晚于当前公式版本 effective_from，避免生命周期倒挂: 2026-05-01 <= 2026-05-01',
+      }],
+    }, [])
+
+    assert.equal(detailRows.failedRows.length, 1)
+    assert.equal(detailRows.failedRows[0].failureTypeText, '公式版本生效日期倒挂')
+    assert.match(detailRows.failedRows[0].message, /生命周期倒挂/)
   })
 })
 

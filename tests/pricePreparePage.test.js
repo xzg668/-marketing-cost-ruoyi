@@ -29,6 +29,18 @@ describe('PPR-13 价格准备候选行入口', () => {
     assert.doesNotMatch(pageContent, /<strong>顶级产品汇总<\/strong>/)
   })
 
+  it('有全量权限的账号默认查询全部候选，避免进入页面被我的候选空关键词过滤为空', () => {
+    assert.match(pageContent, /const defaultOwnerScope = \(\) => \(hasPermission\('cost:price-prepare:list-all'\) \? 'ALL' : 'MINE'\)/)
+    assert.match(pageContent, /ownerScope: defaultOwnerScope\(\)/)
+  })
+
+  it('默认不限定核算状态，已核算 OA 的历史价格准备也能查出来', () => {
+    assert.match(pageContent, /placeholder="全部状态"/)
+    assert.match(pageContent, /calcStatus: '',/)
+    assert.doesNotMatch(pageContent, /calcStatus: '未核算'/)
+    assert.doesNotMatch(pageContent, /默认未核算/)
+  })
+
   it('生成优先提交 OA+成品 targets，粘贴 OA 作为高级兜底入口', () => {
     assert.match(pageContent, /<el-cascader/)
     assert.match(pageContent, /candidateTreeOptions/)

@@ -518,6 +518,7 @@ const adjustForm = ref({
 const importForm = ref({
   pricingMonth: '',
   businessUnitType: '',
+  adjustType: 'MONTHLY',
   usageScope: 'REPRICE_ONLY',
   remark: '',
 })
@@ -607,6 +608,7 @@ const buildBatchParams = () => {
   return {
     pricingMonth: filters.value.priceMonth,
     businessUnitType: filters.value.businessUnitType,
+    adjustType: 'MONTHLY',
     usageScope: filters.value.latestAdjustUsageScope,
     uploadedBy: includeAllUploaders
       ? filters.value.uploadedBy?.trim()
@@ -738,6 +740,7 @@ const openImportDialog = () => {
   importForm.value = {
     pricingMonth: filters.value.priceMonth || currentMonthText(),
     businessUnitType: filters.value.businessUnitType || userStore.businessUnitType || '',
+    adjustType: 'MONTHLY',
     usageScope: 'REPRICE_ONLY',
     remark: '',
   }

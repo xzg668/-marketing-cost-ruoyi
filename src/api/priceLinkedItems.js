@@ -38,8 +38,11 @@ export const importLinkedItemsExcel = (file, pricingMonth, options = {}) => {
   if (options.overwriteManual !== undefined) {
     form.append('overwriteManual', String(!!options.overwriteManual))
   }
-  if (options.effectiveStrategy) {
-    form.append('effectiveStrategy', options.effectiveStrategy)
+  if (options.formulaEffectiveDate) {
+    form.append('formulaEffectiveDate', options.formulaEffectiveDate)
+  }
+  if (options.factorPriceConflictStrategy) {
+    form.append('factorPriceConflictStrategy', options.factorPriceConflictStrategy)
   }
   return request('/api/v1/price-linked/items/import-excel', {
     method: 'POST',

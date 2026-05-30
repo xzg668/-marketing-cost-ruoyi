@@ -137,6 +137,9 @@ export const importFactorAdjustExcel = (file, options = {}) => {
   form.append('file', file)
   form.append('pricingMonth', options.pricingMonth)
   form.append('businessUnitType', options.businessUnitType)
+  if (options.adjustType) {
+    form.append('adjustType', options.adjustType)
+  }
   form.append('usageScope', options.usageScope)
   if (options.remark) {
     form.append('remark', options.remark)

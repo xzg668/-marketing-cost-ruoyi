@@ -16,19 +16,19 @@ const CONTROLLER_FILE = path.resolve(
   ROOT,
   '../marketing-cost-api/marketing-cost-biz/src/main/java/com/sanhua/marketingcost/controller/MakePartSpecController.java'
 )
-const MAKE_CALC_RESOLVER_FILE = path.resolve(
+const MAKE_PRICE_PREPARE_STRATEGY_FILE = path.resolve(
   ROOT,
-  '../marketing-cost-api/marketing-cost-biz/src/main/java/com/sanhua/marketingcost/service/pricing/MakePartPriceCalcResolver.java'
+  '../marketing-cost-api/marketing-cost-biz/src/main/java/com/sanhua/marketingcost/service/impl/MakePartPricePrepareStrategyImpl.java'
 )
-const LEGACY_RESOLVER_FILE = path.resolve(
+const MAKE_PRICE_PREPARE_CONTRACT_FILE = path.resolve(
   ROOT,
-  '../marketing-cost-api/marketing-cost-biz/src/main/java/com/sanhua/marketingcost/service/pricing/MakeSpecPriceResolver.java'
+  '../marketing-cost-api/marketing-cost-biz/src/main/java/com/sanhua/marketingcost/service/MakePartPricePrepareStrategy.java'
 )
 
 const menuContent = fs.readFileSync(MENU_FILE, 'utf-8')
 const controllerContent = fs.readFileSync(CONTROLLER_FILE, 'utf-8')
-const makeCalcResolverContent = fs.readFileSync(MAKE_CALC_RESOLVER_FILE, 'utf-8')
-const legacyResolverContent = fs.readFileSync(LEGACY_RESOLVER_FILE, 'utf-8')
+const makePricePrepareStrategyContent = fs.readFileSync(MAKE_PRICE_PREPARE_STRATEGY_FILE, 'utf-8')
+const makePricePrepareContractContent = fs.readFileSync(MAKE_PRICE_PREPARE_CONTRACT_FILE, 'utf-8')
 
 describe('MPPG-10 旧自制件管理入口收口', () => {
   it('前端不再保留旧自制件管理页面、wrapper 和 API', () => {
@@ -57,11 +57,11 @@ describe('MPPG-10 旧自制件管理入口收口', () => {
     assert.match(controllerContent, /@DeleteMapping/)
   })
 
-  it('实时成本制造件取价使用生成表 Resolver，旧规格 Resolver 不作为 Spring Bean 注入', () => {
-    assert.match(makeCalcResolverContent, /@Service/)
-    assert.match(makeCalcResolverContent, /lp_make_part_price_calc_row/)
-    assert.match(makeCalcResolverContent, /禁止回退/)
-    assert.doesNotMatch(legacyResolverContent, /@Service/)
-    assert.match(legacyResolverContent, /@Deprecated/)
+  it('实时成本制造件取价使用生成表准备策略，旧 pricing Resolver 已下线', () => {
+    assert.match(makePricePrepareStrategyContent, /@Service/)
+    assert.match(makePricePrepareStrategyContent, /lp_make_part_price_calc_row/)
+    assert.match(makePricePrepareContractContent, /禁止回退/)
+    assert.equal(fs.existsSync(path.dirname(MAKE_PRICE_PREPARE_STRATEGY_FILE).replace('/impl', '/pricing')), true)
+    assert.equal(fs.readdirSync(path.dirname(MAKE_PRICE_PREPARE_STRATEGY_FILE).replace('/impl', '/pricing')).length, 0)
   })
 })

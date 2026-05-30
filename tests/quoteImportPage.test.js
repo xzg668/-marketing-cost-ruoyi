@@ -3,9 +3,9 @@ import { describe, it } from 'node:test'
 import fs from 'node:fs'
 import path from 'node:path'
 import {
-  canCommitQuoteExcelPreview,
-  normalizeQuoteExcelCommitResponse,
-  normalizeQuoteExcelPreview,
+  canCommitQuoteImportPreview,
+  normalizeQuoteImportCommitResponse,
+  normalizeQuoteImportPreview,
   QUOTE_IMPORT_ACCEPTED_EXTENSIONS,
   validateQuoteImportFile,
 } from '../src/utils/quoteImport.js'
@@ -21,13 +21,13 @@ const importPageContent = fs.readFileSync(IMPORT_PAGE_FILE, 'utf-8')
 const quoteIngestApiContent = fs.readFileSync(QUOTE_INGEST_API_FILE, 'utf-8')
 const routerContent = fs.readFileSync(ROUTER_FILE, 'utf-8')
 
-describe('T10 报价单导入页面契约', () => {
-  it('只允许 Excel 文件并限制 20MB', () => {
-    assert.deepEqual(QUOTE_IMPORT_ACCEPTED_EXTENSIONS, ['.xlsx', '.xls'])
-    assert.equal(validateQuoteImportFile({ name: '报价单.xlsx', size: 1024 }).valid, true)
-    assert.equal(validateQuoteImportFile({ name: '报价单.xls', size: 1024 }).valid, true)
+describe('T6 OA PDF 报价单导入页面契约', () => {
+  it('默认只允许 PDF 文件并限制 20MB', () => {
+    assert.deepEqual(QUOTE_IMPORT_ACCEPTED_EXTENSIONS, ['.pdf'])
+    assert.equal(validateQuoteImportFile({ name: '报价单.pdf', size: 1024 }).valid, true)
+    assert.equal(validateQuoteImportFile({ name: '报价单.xlsx', size: 1024 }).valid, false)
     assert.equal(validateQuoteImportFile({ name: '报价单.csv', size: 1024 }).valid, false)
-    assert.equal(validateQuoteImportFile({ name: '报价单.xlsx', size: 21 * 1024 * 1024 }).valid, false)
+    assert.equal(validateQuoteImportFile({ name: '报价单.pdf', size: 21 * 1024 * 1024 }).valid, false)
   })
 
   it('预览有错误时不允许提交，有 warning 无 error 时允许提交', () => {
@@ -54,12 +54,12 @@ describe('T10 报价单导入页面契约', () => {
       forms: [],
     }
 
-    assert.equal(canCommitQuoteExcelPreview(warningOnly), true)
-    assert.equal(canCommitQuoteExcelPreview(warningOnlyWithoutValidFlag), true)
-    assert.equal(canCommitQuoteExcelPreview(invalid), false)
-    assert.equal(normalizeQuoteExcelPreview(warningOnly).statusType, 'warning')
-    assert.equal(normalizeQuoteExcelPreview(warningOnlyWithoutValidFlag).statusLabel, '可提交，有提醒')
-    assert.equal(normalizeQuoteExcelPreview(invalid).errorCount, 1)
+    assert.equal(canCommitQuoteImportPreview(warningOnly), true)
+    assert.equal(canCommitQuoteImportPreview(warningOnlyWithoutValidFlag), true)
+    assert.equal(canCommitQuoteImportPreview(invalid), false)
+    assert.equal(normalizeQuoteImportPreview(warningOnly).statusType, 'warning')
+    assert.equal(normalizeQuoteImportPreview(warningOnlyWithoutValidFlag).statusLabel, '可提交，有提醒')
+    assert.equal(normalizeQuoteImportPreview(invalid).errorCount, 1)
   })
 
   it('预览聚合 Q6 明细数量，提交结果保留 OA 和流水主键', () => {
@@ -90,9 +90,9 @@ describe('T10 报价单导入页面契约', () => {
       ],
     }
 
-    assert.equal(normalizeQuoteExcelPreview(preview).itemCount, 2)
-    assert.equal(normalizeQuoteExcelPreview(preview).feeCount, 1)
-    assert.deepEqual(normalizeQuoteExcelCommitResponse(commit)[0], {
+    assert.equal(normalizeQuoteImportPreview(preview).itemCount, 2)
+    assert.equal(normalizeQuoteImportPreview(preview).feeCount, 1)
+    assert.deepEqual(normalizeQuoteImportCommitResponse(commit)[0], {
       rowKey: 34,
       oaNo: 'OA-Q8-001',
       oaFormId: 12,
@@ -103,15 +103,24 @@ describe('T10 报价单导入页面契约', () => {
     })
   })
 
-  it('页面串联模板列表、模板下载、preview 和 commit API', () => {
+  it('页面串联辅助字段说明、PDF preview 和 commit API', () => {
     assert.match(quoteIngestApiContent, /fetchQuoteExcelTemplates/)
     assert.match(quoteIngestApiContent, /downloadQuoteExcelTemplate/)
+    assert.match(quoteIngestApiContent, /previewQuotePdf/)
+    assert.match(quoteIngestApiContent, /commitQuotePdf/)
+    assert.match(quoteIngestApiContent, /\/api\/v1\/quote-ingest\/pdf\/preview/)
+    assert.match(quoteIngestApiContent, /\/api\/v1\/quote-ingest\/pdf\/commit/)
     assert.match(quoteIngestApiContent, /\/api\/v1\/quote-ingest\/excel\/templates/)
     assert.match(quoteIngestApiContent, /\/download/)
     assert.match(importPageContent, /fetchQuoteExcelTemplates/)
     assert.match(importPageContent, /downloadQuoteExcelTemplate/)
-    assert.match(importPageContent, /previewQuoteExcel/)
-    assert.match(importPageContent, /commitQuoteExcel/)
+    assert.match(importPageContent, /previewQuotePdf/)
+    assert.match(importPageContent, /commitQuotePdf/)
+    assert.match(importPageContent, /accept="\.pdf"/)
+    assert.match(importPageContent, /支持的 OA 流程与字段说明/)
+    assert.match(importPageContent, /下载字段说明/)
+    assert.match(importPageContent, /referenceOpen/)
+    assert.match(importPageContent, /上传 OA PDF/)
     assert.match(importPageContent, /commitResults/)
     assert.match(importPageContent, /oaFormId/)
     assert.match(importPageContent, /ingestLogId/)

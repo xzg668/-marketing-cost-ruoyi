@@ -99,7 +99,12 @@
         </el-table-column>
         <el-table-column label="操作" width="170" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" link @click="goTrial(row)">
+            <el-button
+              type="primary"
+              link
+              :disabled="isCostRunLocked(row)"
+              @click="goTrial(row)"
+            >
               {{ getFormStatus(row) === '未核算' ? '试算' : '查看' }}
             </el-button>
             <!-- T13：查看明细 → 弹窗轻量预览部品 4 列 + 缺价红字 -->
@@ -117,6 +122,15 @@
       :oa-no="detailDialog.oaNo"
       :product-code="detailDialog.productCode"
     />
+
+    <el-alert
+      v-if="activeRepriceLock.locked"
+      type="warning"
+      show-icon
+      :closable="false"
+      class="lock-alert"
+      :title="activeRepriceLock.message || '当前业务单元正在月度调价，暂不能发起成本核算'"
+    />
   </div>
 </template>
 
@@ -125,6 +139,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { fetchOaForms } from '../api/oaForms'
+import { fetchMonthlyRepriceActiveLock } from '../api/monthlyReprice'
 import CostRunPartDetailDialog from '../components/CostRunPartDetailDialog.vue'
 
 const route = useRoute()
@@ -134,6 +149,7 @@ const loading = ref(false)
 const loadingForms = ref(false)
 const oaForms = ref([])
 const tableRows = ref([])
+const activeRepriceLock = ref({ locked: false })
 
 const form = ref({
   customer: '',
@@ -184,6 +200,9 @@ const getFormStatus = (item) => {
   }
   return item.calcStatus || item.status || item.auditStatus || '未核算'
 }
+
+const isCostRunLocked = (row) =>
+  activeRepriceLock.value?.locked && getFormStatus(row) === '未核算'
 
 const customerOptions = computed(() => {
   const values = oaForms.value.map((item) => item.customer).filter(Boolean)
@@ -288,7 +307,19 @@ const fetchList = async () => {
   }
 }
 
+const loadActiveRepriceLock = async () => {
+  try {
+    activeRepriceLock.value = await fetchMonthlyRepriceActiveLock()
+  } catch (error) {
+    activeRepriceLock.value = { locked: false }
+  }
+}
+
 const goTrial = (row) => {
+  if (isCostRunLocked(row)) {
+    ElMessage.warning(activeRepriceLock.value?.message || '当前业务单元正在月度调价，暂不能发起成本核算')
+    return
+  }
   const oaNo = row?.oaNo
   if (!oaNo) {
     return
@@ -387,6 +418,7 @@ watch(
 )
 
 onMounted(() => {
+  loadActiveRepriceLock()
   loadOaForms().then(() => {
     applyQuery()
   })
@@ -421,5 +453,9 @@ onMounted(() => {
 .filter-form :deep(.el-form-item__label),
 .filter-form :deep(.el-form-item__content) {
   white-space: nowrap;
+}
+
+.lock-alert {
+  order: -1;
 }
 </style>

@@ -45,7 +45,7 @@
     <el-table :data="rows" border stripe v-loading="loading">
       <el-table-column prop="id" label="流水 ID" width="100" />
       <el-table-column prop="oaNo" label="报价单号" min-width="180" />
-      <el-table-column prop="processCode" label="流程编号" width="130" />
+      <el-table-column prop="processCode" label="流程类型" width="130" />
       <el-table-column prop="requestId" label="请求 ID" min-width="180" show-overflow-tooltip />
       <el-table-column prop="sourceType" label="来源" width="100">
         <template #default="{ row }">{{ sourceLabel(row.sourceType) }}</template>
@@ -103,7 +103,7 @@
             </el-button>
             <span v-else>-</span>
           </el-descriptions-item>
-          <el-descriptions-item label="流程编号">{{ drawer.detail.processCode || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="流程类型">{{ drawer.detail.processCode || '-' }}</el-descriptions-item>
           <el-descriptions-item label="来源">{{ sourceLabel(drawer.detail.sourceType) }}</el-descriptions-item>
           <el-descriptions-item label="来源系统">{{ drawer.detail.sourceSystem || '-' }}</el-descriptions-item>
           <el-descriptions-item label="接入状态">

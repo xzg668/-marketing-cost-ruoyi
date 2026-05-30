@@ -45,9 +45,15 @@ describe('importLinkedItemsExcel (T18)', () => {
     assert.match(content, /append\(['"]businessUnitType['"]\s*,\s*options\.businessUnitType\)/)
     assert.match(content, /append\(['"]overwriteManual['"]\s*,\s*String\(\s*!!options\.overwriteManual\s*\)\)/)
   })
-  it('V5-10：支持传递 effectiveStrategy 处理方式', () => {
-    assert.match(content, /options\.effectiveStrategy/)
-    assert.match(content, /append\(['"]effectiveStrategy['"]\s*,\s*options\.effectiveStrategy\)/)
+  it('T1：支持传递公式生效日期和影响因素价格冲突策略', () => {
+    assert.match(content, /options\.formulaEffectiveDate/)
+    assert.match(content, /append\(['"]formulaEffectiveDate['"]\s*,\s*options\.formulaEffectiveDate\)/)
+    assert.match(content, /options\.factorPriceConflictStrategy/)
+    assert.match(content, /append\(['"]factorPriceConflictStrategy['"]\s*,\s*options\.factorPriceConflictStrategy\)/)
+  })
+  it('T1：新导入 API 不再提交 effectiveStrategy', () => {
+    assert.doesNotMatch(content, /options\.effectiveStrategy/)
+    assert.doesNotMatch(content, /append\(['"]effectiveStrategy['"]/)
   })
   it('POST 到 /items/import-excel', () => {
     assert.match(content, /\/items\/import-excel/)

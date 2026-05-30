@@ -6,7 +6,7 @@
         <p>单据维度工作台，用于查看报价单、确认分类和检查 BOM 汇总状态。</p>
       </div>
       <div class="head-actions">
-        <el-button :icon="Operation" @click="goProductBom">产品 BOM 处理</el-button>
+        <el-button :icon="Operation" @click="goProductBom">产品 BOM 准备</el-button>
         <el-button type="primary" :icon="Upload" @click="goImport">导入</el-button>
       </div>
     </div>
@@ -17,7 +17,7 @@
           <el-form-item label="报价单号">
             <el-input v-model="filters.oaNo" clearable placeholder="OA-2026-001" @keyup.enter="applyFilters" />
           </el-form-item>
-          <el-form-item label="流程编号">
+          <el-form-item label="流程类型">
             <el-input v-model="filters.processCode" clearable placeholder="FI-SC-020" @keyup.enter="applyFilters" />
           </el-form-item>
           <el-form-item label="来源类型">
@@ -83,7 +83,7 @@
 
     <el-table :data="displayRows" border stripe v-loading="loading">
       <el-table-column prop="oaNo" label="报价单号" min-width="180" />
-      <el-table-column prop="processCode" label="流程编号" width="130" />
+      <el-table-column prop="processCode" label="流程类型" width="130" />
       <el-table-column prop="sourceType" label="来源类型" width="120">
         <template #default="{ row }">
           <el-tag :type="statusTagType('sourceType', row.sourceType)" effect="plain">

@@ -3,52 +3,12 @@
     <div class="page-head">
       <div>
         <h1>报价单导入</h1>
-        <p>财务 OA 原始表单 Excel 接入</p>
+        <p>财务 OA PDF 直接接入</p>
       </div>
       <div class="page-actions">
-        <el-button :icon="RefreshRight" :loading="templateLoading" @click="loadTemplates">刷新模板</el-button>
         <el-button :icon="ArrowLeft" @click="goList">返回列表</el-button>
       </div>
     </div>
-
-    <section class="template-panel">
-      <div class="section-head">
-        <h2>导入模板</h2>
-        <el-tag effect="plain">{{ templates.length }} 个</el-tag>
-      </div>
-      <el-alert
-        v-if="templateError"
-        :title="templateError"
-        type="error"
-        show-icon
-        :closable="false"
-      />
-      <el-table v-loading="templateLoading" :data="templates" border stripe>
-        <el-table-column prop="displayName" label="模板" min-width="220" />
-        <el-table-column prop="templateType" label="类型" width="170" />
-        <el-table-column prop="processCode" label="流程编号" width="130" />
-        <el-table-column prop="quoteScenario" label="报价场景" width="150">
-          <template #default="{ row }">{{ formatValue(row.quoteScenario) }}</template>
-        </el-table-column>
-        <el-table-column prop="fileName" label="文件名" min-width="260" show-overflow-tooltip />
-        <el-table-column label="操作" width="130" fixed="right">
-          <template #default="{ row }">
-            <el-button
-              type="primary"
-              link
-              :icon="Download"
-              :loading="downloadingTemplateType === row.templateType"
-              @click="handleDownloadTemplate(row)"
-            >
-              下载
-            </el-button>
-          </template>
-        </el-table-column>
-        <template #empty>
-          <el-empty description="暂无模板" />
-        </template>
-      </el-table>
-    </section>
 
     <div class="upload-panel">
       <el-upload
@@ -56,16 +16,30 @@
         drag
         :auto-upload="false"
         :show-file-list="false"
-        accept=".xlsx,.xls"
+        accept=".pdf"
         :disabled="previewing || committing"
         :on-change="handleFileChange"
       >
         <el-icon class="upload-icon"><UploadFilled /></el-icon>
-        <div class="upload-title">拖拽或点击上传报价单 Excel</div>
-        <div class="upload-tip">支持 .xlsx / .xls，文件大小不超过 20MB</div>
+        <div class="upload-title">拖拽或点击上传 OA PDF</div>
+        <div class="upload-tip">支持 .pdf，文件大小不超过 20MB</div>
       </el-upload>
 
       <div class="upload-state">
+        <div class="import-context">
+          <div class="context-row">
+            <span>接入方式</span>
+            <strong>OA PDF</strong>
+          </div>
+          <div class="context-row">
+            <span>处理路径</span>
+            <strong>预览校验后确认导入</strong>
+          </div>
+          <div class="context-row">
+            <span>支持范围</span>
+            <strong>{{ supportScopeLabel }}</strong>
+          </div>
+        </div>
         <div class="state-alerts">
           <el-alert
             v-if="selectedFileName"
@@ -99,6 +73,64 @@
       </div>
     </div>
 
+    <section class="reference-panel">
+      <div class="reference-head">
+        <div>
+          <h2>支持的 OA 流程与字段说明</h2>
+          <p>字段来源、费用项、流程映射用于异常排查。</p>
+        </div>
+        <div class="reference-actions">
+          <el-tag effect="plain">{{ referenceCountLabel }}</el-tag>
+          <el-button :icon="referenceOpen ? ArrowUp : ArrowDown" @click="toggleReference">
+            {{ referenceOpen ? '收起' : '查看' }}
+          </el-button>
+        </div>
+      </div>
+
+      <div v-show="referenceOpen" class="reference-body">
+        <div class="reference-toolbar">
+          <el-alert
+            v-if="templateError"
+            :title="templateError"
+            type="error"
+            show-icon
+            :closable="false"
+          />
+          <el-button :icon="RefreshRight" :loading="templateLoading" @click="loadTemplates">
+            刷新字段说明
+          </el-button>
+        </div>
+        <el-table v-loading="templateLoading" :data="templates" border stripe>
+          <el-table-column prop="displayName" label="OA 流程" min-width="220" />
+          <el-table-column prop="processCode" label="流程编号" width="130" />
+          <el-table-column prop="quoteScenario" label="业务场景" min-width="150">
+            <template #default="{ row }">{{ formatQuoteScenario(row.quoteScenario) }}</template>
+          </el-table-column>
+          <el-table-column label="支持状态" width="110">
+            <template #default>
+              <el-tag type="success" effect="plain">已支持</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="字段说明" width="150" fixed="right">
+            <template #default="{ row }">
+              <el-button
+                type="primary"
+                link
+                :icon="Download"
+                :loading="downloadingTemplateType === row.templateType"
+                @click="handleDownloadTemplate(row)"
+              >
+                下载字段说明
+              </el-button>
+            </template>
+          </el-table-column>
+          <template #empty>
+            <el-empty description="暂无字段说明" />
+          </template>
+        </el-table>
+      </div>
+    </section>
+
     <QuoteImportPreviewSummary v-if="preview" :summary="previewSummary" />
 
     <section v-if="commitResults.length" class="result-panel">
@@ -124,7 +156,7 @@
       <el-tab-pane label="报价单预览" name="forms">
         <el-table :data="previewSummary.forms" border stripe>
           <el-table-column prop="oaNo" label="报价单号" min-width="180" />
-          <el-table-column prop="processCode" label="流程编号" width="130" />
+          <el-table-column prop="processCode" label="流程类型" width="130" />
           <el-table-column prop="quoteScenario" label="报价场景" width="150">
             <template #default="{ row }">{{ formatValue(row.quoteScenario) }}</template>
           </el-table-column>
@@ -230,25 +262,27 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
+  ArrowDown,
   ArrowLeft,
+  ArrowUp,
   DocumentChecked,
   Download,
   RefreshRight,
   UploadFilled,
 } from '@element-plus/icons-vue'
 import {
-  commitQuoteExcel,
+  commitQuotePdf,
   downloadQuoteExcelTemplate,
   fetchQuoteExcelTemplates,
-  previewQuoteExcel,
+  previewQuotePdf,
 } from '../../../../api/quoteIngest'
 import {
-  canCommitQuoteExcelPreview,
+  canCommitQuoteImportPreview,
   downloadBlob,
   getQuoteImportFile,
   getQuoteImportFileName,
-  normalizeQuoteExcelCommitResponse,
-  normalizeQuoteExcelPreview,
+  normalizeQuoteImportCommitResponse,
+  normalizeQuoteImportPreview,
   validateQuoteImportFile,
 } from '../../../../utils/quoteImport'
 import QuoteImportIssueTable from './components/QuoteImportIssueTable.vue'
@@ -269,19 +303,32 @@ const committing = ref(false)
 const commitResults = ref([])
 const selectedFormIndex = ref(0)
 const activeTab = ref('forms')
+const referenceOpen = ref(false)
 
 const previewSummary = computed(() =>
-  normalizeQuoteExcelPreview(preview.value, selectedFileName.value)
+  normalizeQuoteImportPreview(preview.value, selectedFileName.value)
 )
 
 const selectedForm = computed(() => previewSummary.value.forms[selectedFormIndex.value] || {})
 const selectedItems = computed(() => selectedForm.value.items || [])
 const selectedFees = computed(() => selectedForm.value.extraFees || [])
+const referenceCountLabel = computed(() => {
+  if (templateLoading.value && templates.value.length === 0) {
+    return '加载中'
+  }
+  return templates.value.length > 0 ? `${templates.value.length} 类已支持` : '字段说明'
+})
+const supportScopeLabel = computed(() => {
+  if (templates.value.length > 0) {
+    return `${templates.value.length} 类 OA 报价流程`
+  }
+  return 'OA 报价流程'
+})
 
 const canCommit = computed(
   () =>
     selectedFile.value &&
-    canCommitQuoteExcelPreview(preview.value) &&
+    canCommitQuoteImportPreview(preview.value) &&
     !previewing.value &&
     !committing.value
 )
@@ -310,7 +357,7 @@ const headerFields = computed(() => {
     { key: 'sourceSystem', label: '来源系统', value: header.sourceSystem },
     { key: 'externalFormNo', label: '外部单号', value: header.externalFormNo },
     { key: 'oaNo', label: 'OA 单号', value: header.oaNo },
-    { key: 'processCode', label: '流程编号', value: header.processCode },
+    { key: 'processCode', label: '流程类型', value: header.processCode },
     { key: 'processName', label: '流程名称', value: header.processName },
     { key: 'formType', label: '表单类型', value: header.formType },
     { key: 'applyDate', label: '申请日期', value: header.applyDate },
@@ -353,6 +400,17 @@ function formatValue(value) {
   return value === undefined || value === null || value === '' ? '-' : value
 }
 
+function formatQuoteScenario(value) {
+  const scenarioNames = {
+    DERIVED_PRODUCT: '衍生品',
+    DIRECT_SALE: '直销',
+    MASS_PRODUCT: '批量品',
+    NEW_PRODUCT: '新品',
+    STANDARD_BATCH: '标准品/批量品',
+  }
+  return scenarioNames[value] || formatValue(value)
+}
+
 function goList() {
   router.push('/ingest/quote-requests')
 }
@@ -367,15 +425,24 @@ function resetImport() {
   activeTab.value = 'forms'
 }
 
-async function loadTemplates() {
+function toggleReference() {
+  referenceOpen.value = !referenceOpen.value
+  if (referenceOpen.value && templates.value.length === 0 && !templateLoading.value && !templateError.value) {
+    loadTemplates()
+  }
+}
+
+async function loadTemplates(options = {}) {
   templateLoading.value = true
   templateError.value = ''
   try {
     const rows = await fetchQuoteExcelTemplates()
     templates.value = Array.isArray(rows) ? rows : []
   } catch (error) {
-    templateError.value = error?.message || '模板列表加载失败'
-    ElMessage.error(templateError.value)
+    templateError.value = error?.message || '字段说明加载失败'
+    if (!options.silent) {
+      ElMessage.error(templateError.value)
+    }
   } finally {
     templateLoading.value = false
   }
@@ -387,7 +454,7 @@ async function handleDownloadTemplate(template) {
     const result = await downloadQuoteExcelTemplate(template.templateType)
     downloadBlob(result.blob, result.fileName || template.fileName || `${template.templateType}.xlsx`)
   } catch (error) {
-    ElMessage.error(error?.message || '模板下载失败')
+    ElMessage.error(error?.message || '字段说明下载失败')
   } finally {
     downloadingTemplateType.value = ''
   }
@@ -412,9 +479,9 @@ async function handleFileChange(uploadFile) {
   previewing.value = true
 
   try {
-    const response = await previewQuoteExcel(file)
+    const response = await previewQuotePdf(file)
     preview.value = response
-    const summary = normalizeQuoteExcelPreview(response, selectedFileName.value)
+    const summary = normalizeQuoteImportPreview(response, selectedFileName.value)
     activeTab.value = summary.errorCount > 0 ? 'errors' : 'accounting'
     ElMessage[summary.errorCount > 0 ? 'warning' : 'success'](
       summary.errorCount > 0 ? '预览发现错误，请修正后重新上传' : '预览完成'
@@ -429,13 +496,13 @@ async function handleFileChange(uploadFile) {
 
 async function handleCommit() {
   if (!canCommit.value) {
-    ElMessage.warning('当前预览存在错误，不能确认导入')
+    ElMessage.warning('当前 PDF 预览存在错误，不能确认导入')
     return
   }
 
   committing.value = true
   try {
-    const response = await commitQuoteExcel(selectedFile.value)
+    const response = await commitQuotePdf(selectedFile.value)
     if (response?.preview) {
       preview.value = response.preview
     }
@@ -444,7 +511,7 @@ async function handleCommit() {
       ElMessage.warning('导入未提交，请检查错误明细')
       return
     }
-    commitResults.value = normalizeQuoteExcelCommitResponse(response)
+    commitResults.value = normalizeQuoteImportCommitResponse(response)
     ElMessage.success('导入成功')
   } catch (error) {
     ElMessage.error(error?.message || '导入失败')
@@ -453,7 +520,7 @@ async function handleCommit() {
   }
 }
 
-onMounted(loadTemplates)
+onMounted(() => loadTemplates({ silent: true }))
 </script>
 
 <style scoped>
@@ -500,7 +567,7 @@ onMounted(loadTemplates)
   flex-wrap: wrap;
 }
 
-.template-panel,
+.reference-panel,
 .result-panel,
 .preview-tabs {
   padding: 16px;
@@ -509,7 +576,7 @@ onMounted(loadTemplates)
   background: #ffffff;
 }
 
-.template-panel,
+.reference-panel,
 .result-panel {
   display: flex;
   flex-direction: column;
@@ -568,10 +635,73 @@ onMounted(loadTemplates)
   background: #ffffff;
 }
 
+.import-context {
+  display: grid;
+  gap: 10px;
+}
+
+.context-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.context-row strong {
+  color: #1f2a37;
+  font-weight: 600;
+  text-align: right;
+}
+
 .state-alerts {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.reference-head,
+.reference-actions,
+.reference-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.reference-head {
+  justify-content: space-between;
+}
+
+.reference-head h2 {
+  margin: 0;
+  color: #1f2a37;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.reference-head p {
+  margin: 6px 0 0;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.reference-actions {
+  flex-shrink: 0;
+}
+
+.reference-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.reference-toolbar {
+  justify-content: space-between;
+}
+
+.reference-toolbar .el-alert {
+  flex: 1;
 }
 
 .form-detail-head {
@@ -593,6 +723,12 @@ onMounted(loadTemplates)
 
   .upload-panel {
     grid-template-columns: 1fr;
+  }
+
+  .reference-head,
+  .reference-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .form-detail-head {

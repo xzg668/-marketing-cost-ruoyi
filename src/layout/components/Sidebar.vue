@@ -47,7 +47,22 @@ const permissionStore = usePermissionStore()
 
 // T9/V61：200 是新的“数据接入”顶级菜单；旧 BOM 入口已收敛到“BOM 数据管理”。
 // 旧 OA 报价单入口由“报价单接入”替代，按常见旧 ID 和路径双重兜底隐藏。
-const LEGACY_MENU_IDS = new Set([201, 300, 400, 500, 40166])
+const LEGACY_MENU_IDS = new Set([
+  201,
+  300,
+  400,
+  500,
+  40166,
+  // demo 残留入口：辅料管理 / 工资表。后续成本口径不再从这些维护页取数。
+  305,
+  3051,
+  3052,
+  307,
+  40164,
+  40176,
+  40182,
+  40183,
+])
 const LEGACY_OA_PATHS = new Set(['/ingest/oa-form', 'ingest/oa-form', 'oa-form'])
 const CMS_RAW_DETAIL_MENU_IDS = new Set([40233, 40234, 40235])
 

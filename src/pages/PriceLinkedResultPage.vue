@@ -231,8 +231,11 @@
             border
             empty-text="本次没有冲突项"
           >
+            <el-table-column prop="conflictTypeText" label="冲突类型" width="140" />
             <el-table-column prop="materialCode" label="料号" width="140" />
             <el-table-column prop="tokenName" label="token" width="150" />
+            <el-table-column prop="factorName" label="影响因素" min-width="150" />
+            <el-table-column prop="priceText" label="价格差异" width="150" />
             <el-table-column prop="existingFactorIdentity" label="历史绑定影响因素" width="160" />
             <el-table-column prop="newFactorIdentity" label="本次公式识别影响因素" width="170" />
             <el-table-column prop="refText" label="引用位置" width="160" />
@@ -241,6 +244,7 @@
             <el-table-column label="操作" width="220" fixed="right">
               <template #default="{ row }">
                 <el-button
+                  v-if="row.conflictType === 'BINDING_HISTORY'"
                   v-hasPermi="['price:linked:binding:admin']"
                   link
                   type="primary"
@@ -249,6 +253,7 @@
                   进入人工绑定
                 </el-button>
                 <el-button
+                  v-if="row.conflictType === 'BINDING_HISTORY'"
                   v-hasPermi="['price:linked:binding:admin']"
                   link
                   type="info"
@@ -268,16 +273,18 @@
             empty-text="本次没有失败明细"
           >
             <el-table-column prop="rowNumber" label="Excel 行号" width="110" />
+            <el-table-column prop="failureTypeText" label="失败类型" width="150" />
             <el-table-column prop="materialCode" label="料号" width="140" />
             <el-table-column prop="refText" label="影响因素引用" width="160" />
             <el-table-column prop="formula" label="公式原文" min-width="260" />
             <el-table-column prop="message" label="失败原因" min-width="240" />
             <el-table-column label="操作" width="180" fixed="right">
               <template #default="{ row }">
-                <el-button link type="primary" @click="copyFormula(row.formula)">
+                <el-button v-if="row.formula" link type="primary" @click="copyFormula(row.formula)">
                   查看公式原文
                 </el-button>
                 <el-button
+                  v-if="row.canOpenBinding"
                   v-hasPermi="['price:linked:binding:admin']"
                   link
                   type="primary"
@@ -520,14 +527,26 @@
         <el-form-item label="业务单元" required>
           <el-input v-model="importForm.businessUnitType" placeholder="COMMERCIAL" />
         </el-form-item>
-        <el-form-item label="处理方式" required>
-          <el-radio-group v-model="importForm.effectiveStrategy">
-            <el-radio-button label="APPEND_ONLY">仅新增</el-radio-button>
-            <el-radio-button label="OVERRIDE_EFFECTIVE">覆盖生效</el-radio-button>
+        <el-form-item label="公式生效日期" required>
+          <el-date-picker
+            v-model="importForm.formulaEffectiveDate"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="选择公式生效日期"
+          />
+        </el-form-item>
+        <el-form-item label="影响因素价格冲突" required>
+          <el-radio-group v-model="importForm.factorPriceConflictStrategy">
+            <el-radio-button label="KEEP_EXISTING">
+              保留已有价格，冲突行跳过
+            </el-radio-button>
+            <el-radio-button label="OVERWRITE">
+              使用本次 Excel 覆盖
+            </el-radio-button>
           </el-radio-group>
           <div class="strategy-help">
-            <div>仅新增：只新增系统没有的料号、影响因素和绑定，已有料号不覆盖。</div>
-            <div>覆盖生效：本次 Excel 涉及的料号后续按新公式、新绑定、新影响因素价格计算。</div>
+            <div>影响因素：缺失新增，相同跳过，价格不同按上方策略处理。</div>
+            <div>联动公式：新料号新增，公式变化生成新版本，公式相同跳过。</div>
           </div>
         </el-form-item>
         <el-form-item label="Excel 文件" required>
@@ -868,8 +887,11 @@ import PriceLinkedBindingDrawer from '../components/PriceLinkedBindingDrawer.vue
 import {
   DIFF_THRESHOLD,
   buildTraceTimeline,
+  buildImportSummaryItems,
   diffWithGolden,
   parseTraceJson,
+  pickImportResultValue,
+  splitImportDetailRows,
 } from './priceLinkedResultUtils'
 
 const router = useRouter()
@@ -928,6 +950,11 @@ const currentMonthText = () => {
   return `${year}-${month}`
 }
 
+const firstDayOfMonth = (monthText) => {
+  const value = String(monthText || '').trim()
+  return /^\d{4}-\d{2}$/.test(value) ? `${value}-01` : ''
+}
+
 // V4-10 历史兼容回归：支持从 URL query 直接打开历史月份，避免刷新或分享
 // /price/linked/result?pricingMonth=2026-02 时又回到当前月份。
 const queryString = (key, fallback = '') => {
@@ -950,7 +977,8 @@ const importForm = ref({
   pricingMonth: queryString('pricingMonth', currentMonthText()),
   businessUnitType: queryString('businessUnitType', userStore.businessUnitType || ''),
   overwriteManual: false,
-  effectiveStrategy: 'APPEND_ONLY',
+  formulaEffectiveDate: firstDayOfMonth(queryString('pricingMonth', currentMonthText())),
+  factorPriceConflictStrategy: 'KEEP_EXISTING',
 })
 
 const importHistoryFilter = ref({
@@ -1603,23 +1631,8 @@ const visibleRows = computed(() => {
   })
 })
 
-const formatCount = (value) =>
-  value === null || value === undefined || value === '' ? '-' : value
-
 const resultValue = (...keys) => {
-  const result = lastImportResult.value || {}
-  for (const key of keys) {
-    if (result[key] !== undefined && result[key] !== null) {
-      return result[key]
-    }
-  }
-  return null
-}
-
-const effectiveStrategyText = (value) => {
-  if (value === 'APPEND_ONLY') return '仅新增'
-  if (value === 'OVERRIDE_EFFECTIVE') return '覆盖生效'
-  return value || '-'
+  return pickImportResultValue(lastImportResult.value || {}, ...keys)
 }
 
 const normalizeFactorPreviewRow = (row) => ({
@@ -1697,80 +1710,30 @@ const quoteBaseDetectRows = computed(() => {
   )
 })
 
-const normalizeBindingError = (row) => ({
-  rowNumber: row?.excelRowNumber ?? row?.rowNumber ?? '-',
-  materialCode: row?.materialCode || '-',
-  tokenName: row?.tokenName || row?.token || '-',
-  formula: row?.formula || row?.formulaExpr || '',
-  refSheet: row?.refSheet || row?.sourceRefSheet || '',
-  refRow: row?.refRow || row?.sourceRefRow || '',
-  refText: row?.refSheet || row?.refRow ? `${row?.refSheet || '-'}!${row?.refRow || '-'}` : '-',
-  existingFactorIdentity: row?.existingFactorIdentity ?? row?.oldFactorIdentityId ?? '-',
-  newFactorIdentity: row?.newFactorIdentity ?? row?.newFactorIdentityId ?? '-',
-  reason: row?.reason || row?.message || '',
-  message: row?.reason || row?.message || '',
-})
-
-const bindingErrorRows = computed(() => {
-  const rows = lastImportResult.value?.bindingErrors || []
-  return Array.isArray(rows) ? rows.map(normalizeBindingError) : []
-})
-
-const conflictRows = computed(() =>
-  bindingErrorRows.value.filter((row) => {
-    const reason = String(row.reason || '')
-    return (
-      reason.includes('冲突') ||
-      (row.existingFactorIdentity !== '-' &&
-        row.newFactorIdentity !== '-' &&
-        row.existingFactorIdentity !== row.newFactorIdentity)
-    )
-  }),
+const importDetailRows = computed(() =>
+  splitImportDetailRows(lastImportResult.value || {}, factorPreviewRows.value),
 )
 
-const failedRows = computed(() => {
-  const regularErrors = Array.isArray(lastImportResult.value?.errors)
-    ? lastImportResult.value.errors.map((row) => ({
-        rowNumber: row?.rowNumber ?? '-',
-        materialCode: row?.materialCode || '-',
-        refText: '-',
-        formula: row?.formula || '',
-        message: row?.message || '',
-      }))
-    : []
-  return [
-    ...bindingErrorRows.value.filter(
-      (row) => !conflictRows.value.some((it) => it === row),
-    ),
-    ...regularErrors,
-  ]
-})
+const bindingErrorRows = computed(() => importDetailRows.value.bindingErrorRows)
+
+const conflictRows = computed(() => importDetailRows.value.conflictRows)
+
+const failedRows = computed(() => importDetailRows.value.failedRows)
 
 const hasImportDetails = computed(
   () => conflictRows.value.length > 0 || failedRows.value.length > 0,
 )
 
-const importSummaryItems = computed(() => [
-  { key: 'batch', label: '上传批次ID', value: formatCount(resultValue('batchId', 'factorUploadBatchId')) },
-  { key: 'strategy', label: '处理方式', value: effectiveStrategyText(resultValue('effectiveStrategy')) },
-  { key: 'factor', label: '影响因素识别条数', value: formatCount(resultValue('factorRecognizedCount', 'factorRowCount', 'validFactorRowCount') ?? factorPreviewRows.value.length) },
-  { key: 'quoteBaseRecognized', label: '公共基价已识别', value: formatCount(quoteBaseRecognizedCount.value), tag: 'success' },
-  { key: 'quoteBaseConflict', label: '公共基价冲突', value: formatCount(quoteBaseConflictCount.value), tag: quoteBaseConflictCount.value ? 'danger' : 'info' },
-  { key: 'quoteBaseUnrecognized', label: '公共基价未识别', value: formatCount(quoteBaseUnrecognizedCount.value), tag: 'info' },
-  { key: 'created', label: '月度价格新增', value: formatCount(resultValue('monthlyPriceCreatedCount')) },
-  { key: 'updated', label: '月度价格更新', value: formatCount(resultValue('monthlyPriceUpdatedCount')) },
-  { key: 'unchanged', label: '月度价格重复跳过', value: formatCount(resultValue('monthlyPriceUnchangedCount')) },
-  { key: 'monthlySkipped', label: '月度价格策略跳过', value: formatCount(resultValue('monthlyPriceSkippedCount')), tag: resultValue('monthlyPriceSkippedCount') ? 'warning' : 'info' },
-  { key: 'linked', label: '联动价导入条数', value: formatCount(resultValue('linkedCount')) },
-  { key: 'linkedCreated', label: '联动价新增', value: formatCount(resultValue('linkedCreatedCount')), tag: 'success' },
-  { key: 'linkedUpdated', label: '联动价覆盖', value: formatCount(resultValue('linkedUpdatedCount')), tag: resultValue('linkedUpdatedCount') ? 'warning' : 'info' },
-  { key: 'linkedSkipped', label: '联动价跳过', value: formatCount(resultValue('linkedSkippedCount')), tag: resultValue('linkedSkippedCount') ? 'warning' : 'info' },
-  { key: 'auto', label: '自动绑定成功', value: formatCount(resultValue('autoBindingCount')), tag: 'success' },
-  { key: 'consistent', label: '历史关系一致', value: formatCount(resultValue('consistentHistoryBindingCount')), tag: 'success' },
-  { key: 'conflict', label: '历史关系冲突', value: formatCount(resultValue('conflictBindingCount') ?? conflictRows.value.length), tag: conflictRows.value.length ? 'danger' : 'info' },
-  { key: 'manual', label: '人工绑定跳过', value: formatCount(resultValue('manualSkippedCount')), tag: resultValue('manualSkippedCount') ? 'warning' : 'info' },
-  { key: 'failed', label: '失败条数', value: formatCount(resultValue('bindingErrorCount') ?? failedRows.value.length), tag: failedRows.value.length ? 'danger' : 'info' },
-])
+const importSummaryItems = computed(() =>
+  buildImportSummaryItems(lastImportResult.value || {}, {
+    factorPreviewRows: factorPreviewRows.value,
+    quoteBaseRecognizedCount: quoteBaseRecognizedCount.value,
+    quoteBaseConflictCount: quoteBaseConflictCount.value,
+    quoteBaseUnrecognizedCount: quoteBaseUnrecognizedCount.value,
+    conflictRows: conflictRows.value,
+    failedRows: failedRows.value,
+  }),
+)
 
 const lastImportMetaText = computed(() => {
   const row = importHistoryRows.value[0]
@@ -1784,6 +1747,8 @@ const monthlyActionText = (action) => {
   const text = String(action || '').toUpperCase()
   if (text === 'CREATE' || text === 'NEW') return '新增'
   if (text === 'UPDATE') return '更新'
+  if (text === 'NO_CHANGE') return '不变'
+  if (text.includes('CONFLICT')) return '冲突跳过'
   if (text === 'UNCHANGED' || text === 'SKIP') return '重复'
   return action || '-'
 }
@@ -1792,6 +1757,7 @@ const monthlyActionTag = (action) => {
   const text = String(action || '').toUpperCase()
   if (text === 'CREATE' || text === 'NEW') return 'success'
   if (text === 'UPDATE') return 'warning'
+  if (text.includes('CONFLICT')) return 'danger'
   if (text === 'UNCHANGED' || text === 'SKIP' || text === 'IMPORTED') return 'info'
   return 'info'
 }
@@ -2051,12 +2017,14 @@ const handleBindingCsvChange = async (uploadFile) => {
 }
 
 const openMonthlyImport = () => {
+  const pricingMonth = filters.value.pricingMonth || currentMonthText()
   importForm.value = {
-    pricingMonth: filters.value.pricingMonth || currentMonthText(),
+    pricingMonth,
     businessUnitType:
       filters.value.businessUnitType || userStore.businessUnitType || '',
     overwriteManual: false,
-    effectiveStrategy: 'APPEND_ONLY',
+    formulaEffectiveDate: firstDayOfMonth(pricingMonth),
+    factorPriceConflictStrategy: 'KEEP_EXISTING',
   }
   selectedImportFile.value = null
   importProgressActiveStep.value = 0
@@ -2086,6 +2054,14 @@ const submitMonthlyImport = async () => {
     ElMessage.warning('业务单元必填')
     return
   }
+  if (!importForm.value.formulaEffectiveDate) {
+    ElMessage.warning('公式生效日期必填')
+    return
+  }
+  if (!importForm.value.factorPriceConflictStrategy) {
+    ElMessage.warning('影响因素价格冲突策略必填')
+    return
+  }
   if (!rawFile) {
     ElMessage.warning('请选择 Excel 文件')
     return
@@ -2101,7 +2077,8 @@ const submitMonthlyImport = async () => {
     const result = await importLinkedItemsExcel(rawFile, importForm.value.pricingMonth, {
       businessUnitType: importForm.value.businessUnitType,
       overwriteManual: importForm.value.overwriteManual,
-      effectiveStrategy: importForm.value.effectiveStrategy,
+      formulaEffectiveDate: importForm.value.formulaEffectiveDate,
+      factorPriceConflictStrategy: importForm.value.factorPriceConflictStrategy,
     })
     importProgressActiveStep.value = importStepList.length
     lastImportResult.value = result || {}
@@ -2111,15 +2088,16 @@ const submitMonthlyImport = async () => {
     showFactorPreview.value = true
     showImportLogs.value = true
     importDetailTab.value = conflictRows.value.length ? 'conflicts' : 'failures'
-    const failed = result?.bindingErrorCount ?? failedRows.value.length
-    const conflicts = result?.conflictBindingCount ?? conflictRows.value.length
-    const created = result?.linkedCreatedCount ?? 0
-    const updated = result?.linkedUpdatedCount ?? 0
-    const skipped = result?.linkedSkippedCount ?? 0
+    const detailRows = splitImportDetailRows(result || {}, factorPreviewRows.value)
+    const failed = detailRows.failedRows.length
+    const conflicts = detailRows.conflictRows.length
+    const created = result?.linkedVersionCreatedCount ?? result?.linkedCreatedCount ?? 0
+    const updated = result?.linkedExpiredCount ?? result?.linkedUpdatedCount ?? 0
+    const skipped = result?.linkedUnchangedSkippedCount ?? result?.linkedSkippedCount ?? 0
     if (failed || conflicts) {
-      ElMessage.warning(`导入完成：新增 ${created}，覆盖 ${updated}，跳过 ${skipped}，需处理 ${failed + conflicts} 条`)
+      ElMessage.warning(`导入完成：新增版本 ${created}，旧版本失效 ${updated}，未变化跳过 ${skipped}，需处理 ${failed + conflicts} 条`)
     } else {
-      ElMessage.success(`导入完成：新增 ${created}，覆盖 ${updated}，跳过 ${skipped}`)
+      ElMessage.success(`导入完成：新增版本 ${created}，旧版本失效 ${updated}，未变化跳过 ${skipped}`)
     }
     fetchList({ loadLatestImport: false })
     await loadImportHistory({ loadLatest: false })
@@ -2156,6 +2134,19 @@ const copyFormula = async (formula) => {
     ElMessage.info(formula)
   }
 }
+
+watch(
+  () => importForm.value.pricingMonth,
+  (month, oldMonth) => {
+    const oldDefault = firstDayOfMonth(oldMonth)
+    if (
+      !importForm.value.formulaEffectiveDate ||
+      importForm.value.formulaEffectiveDate === oldDefault
+    ) {
+      importForm.value.formulaEffectiveDate = firstDayOfMonth(month)
+    }
+  },
+)
 
 watch(
   () => userStore.businessUnitType,

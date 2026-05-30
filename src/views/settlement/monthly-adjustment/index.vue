@@ -1,4 +1,4 @@
 <script>
-import Component from '../../../pages/PlaceholderPage.vue'
+import Component from '../../../pages/MonthlyRepricePage.vue'
 export default Component
 </script>

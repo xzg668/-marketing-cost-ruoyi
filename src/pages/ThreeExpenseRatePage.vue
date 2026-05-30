@@ -17,8 +17,24 @@
         </div>
       </div>
       <el-form :inline="true" label-width="90px">
-        <el-form-item label="部门">
-          <el-input v-model="filters.department" placeholder="亚洲业务部" />
+        <el-form-item label="年度">
+          <el-input-number v-model="filters.periodYear" :controls="false" :min="2000" :max="2100" placeholder="2026" />
+        </el-form-item>
+        <el-form-item label="产品口径">
+          <el-select v-model="filters.productCategory" clearable placeholder="全部" style="width: 180px">
+            <el-option v-for="item in productCategoryOptions" :key="item" :label="item" :value="item" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="产线">
+          <el-select v-model="filters.productLine" clearable placeholder="全部" style="width: 160px">
+            <el-option v-for="item in productLineOptions" :key="item" :label="item" :value="item" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="申请部门">
+          <el-input v-model="filters.applicantDepartment" placeholder="亚洲业务部" />
+        </el-form-item>
+        <el-form-item label="申请处室">
+          <el-input v-model="filters.applicantOffice" placeholder="华南业务部" />
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="applyFilters">查询</el-button>
@@ -28,17 +44,42 @@
     </el-card>
 
     <el-card shadow="never">
-      <el-table :data="tableRows" stripe v-loading="loading">
-        <el-table-column prop="company" label="公司" min-width="160" />
-        <el-table-column prop="businessUnit" label="生产事业部" min-width="140" />
-        <el-table-column prop="department" label="部门" min-width="140" />
-        <el-table-column prop="managementExpenseRate" label="管理费用" width="120" />
-        <el-table-column prop="financeExpenseRate" label="财务费用" width="120" />
-        <el-table-column prop="salesExpenseRate" label="营业费用" width="120" />
-        <el-table-column prop="threeExpenseRate2025" label="2025三项费用" width="140" />
-        <el-table-column prop="threeExpenseRate2026" label="2026三项费用" width="140" />
-        <el-table-column prop="overseasSales" label="是否通过海外销" width="140" />
-        <el-table-column prop="period" label="期间" width="100" />
+      <el-table :data="tableRows" stripe v-loading="loading" class="three-expense-table">
+        <el-table-column prop="periodYear" label="年度" width="90" />
+        <el-table-column prop="productCategory" label="产品口径" min-width="150" />
+        <el-table-column prop="productLine" label="产线" min-width="130" />
+        <el-table-column prop="applicantDepartment" label="申请部门" min-width="190" />
+        <el-table-column label="申请处室" min-width="140">
+          <template #default="{ row }">
+            {{ displayApplicantOffice(row.applicantOffice) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="管理费用" width="120" align="right">
+          <template #default="{ row }">
+            {{ formatRate(row.managementExpenseRate) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="财务费用" width="120" align="right">
+          <template #default="{ row }">
+            {{ formatRate(row.financeExpenseRate) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="营业费用" width="120" align="right">
+          <template #default="{ row }">
+            {{ formatRate(row.salesExpenseRate) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="三项费用合计" width="140" align="right">
+          <template #default="{ row }">
+            {{ formatRate(row.threeExpenseTotalRate) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="OEM费用率" width="120" align="right">
+          <template #default="{ row }">
+            {{ formatRate(row.oemExpenseRate) }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="sourceType" label="来源" width="120" />
         <el-table-column prop="updatedAt" label="更新时间" width="160" />
         <el-table-column label="操作" width="140" fixed="right">
           <template #default="{ row }">
@@ -58,14 +99,24 @@
 
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="620px">
       <el-form :model="formModel" label-width="110px">
-        <el-form-item label="公司">
-          <el-input v-model="formModel.company" />
+        <el-form-item label="年度">
+          <el-input-number v-model="formModel.periodYear" :controls="false" :min="2000" :max="2100" />
         </el-form-item>
-        <el-form-item label="生产事业部">
-          <el-input v-model="formModel.businessUnit" />
+        <el-form-item label="产品口径">
+          <el-select v-model="formModel.productCategory" placeholder="请选择">
+            <el-option v-for="item in productCategoryOptions" :key="item" :label="item" :value="item" />
+          </el-select>
         </el-form-item>
-        <el-form-item label="部门">
-          <el-input v-model="formModel.department" />
+        <el-form-item label="产线">
+          <el-select v-model="formModel.productLine" placeholder="请选择">
+            <el-option v-for="item in productLineOptions" :key="item" :label="item" :value="item" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="申请部门">
+          <el-input v-model="formModel.applicantDepartment" />
+        </el-form-item>
+        <el-form-item label="申请处室">
+          <el-input v-model="formModel.applicantOffice" placeholder="留空或 / 表示按申请部门匹配" />
         </el-form-item>
         <el-form-item label="管理费用">
           <el-input v-model="formModel.managementExpenseRate" />
@@ -76,23 +127,11 @@
         <el-form-item label="营业费用">
           <el-input v-model="formModel.salesExpenseRate" />
         </el-form-item>
-        <el-form-item label="2025三项费用">
-          <el-input v-model="formModel.threeExpenseRate2025" />
+        <el-form-item label="三项费用合计">
+          <el-input v-model="formModel.threeExpenseTotalRate" />
         </el-form-item>
-        <el-form-item label="2026三项费用">
-          <el-input v-model="formModel.threeExpenseRate2026" />
-        </el-form-item>
-        <el-form-item label="是否通过海外销">
-          <el-input v-model="formModel.overseasSales" />
-        </el-form-item>
-        <el-form-item label="期间">
-          <el-date-picker
-            v-model="formModel.period"
-            type="month"
-            format="YYYY-MM"
-            value-format="YYYY-MM"
-            placeholder="选择月份"
-          />
+        <el-form-item label="OEM费用率">
+          <el-input v-model="formModel.oemExpenseRate" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -113,27 +152,35 @@ import {
   updateThreeExpenseRate,
   deleteThreeExpenseRate,
 } from '../api/threeExpenseRates'
+import { parseThreeExpenseRateRows } from './threeExpenseRateImportUtils'
 
 const loading = ref(false)
 const importing = ref(false)
 const dialogVisible = ref(false)
 const editingId = ref(null)
 
+const productCategoryOptions = ['商用直销产品', '家代商代销产品']
+const productLineOptions = ['国内产线', '墨西哥产线', '越南事业部']
+
 const filters = ref({
-  department: '',
+  periodYear: null,
+  productCategory: '',
+  productLine: '',
+  applicantDepartment: '',
+  applicantOffice: '',
 })
 
 const formModel = ref({
-  company: '',
-  businessUnit: '',
-  department: '',
+  periodYear: null,
+  productCategory: '',
+  productLine: '',
+  applicantDepartment: '',
+  applicantOffice: '',
   managementExpenseRate: '',
   financeExpenseRate: '',
   salesExpenseRate: '',
-  threeExpenseRate2025: '',
-  threeExpenseRate2026: '',
-  overseasSales: '',
-  period: '',
+  threeExpenseTotalRate: '',
+  oemExpenseRate: '',
 })
 
 const tableRows = ref([])
@@ -142,8 +189,28 @@ const dialogTitle = computed(() =>
   editingId.value ? '编辑三项费用' : '新增三项费用',
 )
 
+const displayApplicantOffice = (value) => {
+  const text = String(value ?? '').trim()
+  return text || '/'
+}
+
+const formatRate = (value) => {
+  if (value === null || value === undefined || value === '') {
+    return ''
+  }
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) {
+    return value
+  }
+  return `${(parsed * 100).toFixed(1)}%`
+}
+
 const buildParams = () => ({
-  department: filters.value.department.trim(),
+  periodYear: filters.value.periodYear || undefined,
+  productCategory: filters.value.productCategory || undefined,
+  productLine: filters.value.productLine || undefined,
+  applicantDepartment: filters.value.applicantDepartment.trim(),
+  applicantOffice: filters.value.applicantOffice.trim(),
 })
 
 const fetchList = async () => {
@@ -165,7 +232,11 @@ const applyFilters = () => {
 
 const resetFilters = () => {
   filters.value = {
-    department: '',
+    periodYear: null,
+    productCategory: '',
+    productLine: '',
+    applicantDepartment: '',
+    applicantOffice: '',
   }
   applyFilters()
 }
@@ -173,16 +244,16 @@ const resetFilters = () => {
 const openCreate = () => {
   editingId.value = null
   formModel.value = {
-    company: '',
-    businessUnit: '',
-    department: '',
+    periodYear: new Date().getFullYear(),
+    productCategory: '',
+    productLine: '',
+    applicantDepartment: '',
+    applicantOffice: '',
     managementExpenseRate: '',
     financeExpenseRate: '',
     salesExpenseRate: '',
-    threeExpenseRate2025: '',
-    threeExpenseRate2026: '',
-    overseasSales: '',
-    period: '',
+    threeExpenseTotalRate: '',
+    oemExpenseRate: '',
   }
   dialogVisible.value = true
 }
@@ -190,16 +261,16 @@ const openCreate = () => {
 const openEdit = (row) => {
   editingId.value = row.id
   formModel.value = {
-    company: row.company ?? '',
-    businessUnit: row.businessUnit ?? '',
-    department: row.department ?? '',
+    periodYear: row.periodYear ?? null,
+    productCategory: row.productCategory ?? '',
+    productLine: row.productLine ?? '',
+    applicantDepartment: row.applicantDepartment ?? '',
+    applicantOffice: row.applicantOffice ?? '',
     managementExpenseRate: row.managementExpenseRate ?? '',
     financeExpenseRate: row.financeExpenseRate ?? '',
     salesExpenseRate: row.salesExpenseRate ?? '',
-    threeExpenseRate2025: row.threeExpenseRate2025 ?? '',
-    threeExpenseRate2026: row.threeExpenseRate2026 ?? '',
-    overseasSales: row.overseasSales ?? '',
-    period: row.period ?? '',
+    threeExpenseTotalRate: row.threeExpenseTotalRate ?? '',
+    oemExpenseRate: row.oemExpenseRate ?? '',
   }
   dialogVisible.value = true
 }
@@ -209,36 +280,45 @@ const parseNumber = (value) => {
   if (!text) {
     return null
   }
-  const parsed = Number(text)
-  return Number.isNaN(parsed) ? null : parsed
+  const hasPercent = text.includes('%')
+  const parsed = Number(text.replace('%', ''))
+  if (Number.isNaN(parsed)) {
+    return null
+  }
+  if (hasPercent || Math.abs(parsed) > 1) {
+    return Number((parsed / 100).toFixed(6))
+  }
+  return Number(parsed.toFixed(6))
 }
 
 const submitRow = async () => {
   if (
-    !formModel.value.company ||
-    !formModel.value.businessUnit ||
-    !formModel.value.department ||
+    !formModel.value.periodYear ||
+    !formModel.value.productCategory ||
+    !formModel.value.productLine ||
+    !formModel.value.applicantDepartment ||
     !String(formModel.value.managementExpenseRate).trim() ||
     !String(formModel.value.financeExpenseRate).trim() ||
     !String(formModel.value.salesExpenseRate).trim() ||
-    !String(formModel.value.threeExpenseRate2025).trim() ||
-    !String(formModel.value.threeExpenseRate2026).trim() ||
-    !formModel.value.period
+    !String(formModel.value.threeExpenseTotalRate).trim()
   ) {
-    ElMessage.warning('公司、事业部、部门、费用、期间必填')
+    ElMessage.warning('年度、产品口径、产线、申请部门和费率必填')
     return
   }
+  const productCategory = formModel.value.productCategory
   const payload = {
-    company: formModel.value.company,
-    businessUnit: formModel.value.businessUnit,
-    department: formModel.value.department,
+    periodYear: formModel.value.periodYear,
+    productCategory,
+    productLine: formModel.value.productLine,
+    applicantDepartment: formModel.value.applicantDepartment,
+    applicantOffice: formModel.value.applicantOffice,
     managementExpenseRate: parseNumber(formModel.value.managementExpenseRate),
     financeExpenseRate: parseNumber(formModel.value.financeExpenseRate),
     salesExpenseRate: parseNumber(formModel.value.salesExpenseRate),
-    threeExpenseRate2025: parseNumber(formModel.value.threeExpenseRate2025),
-    threeExpenseRate2026: parseNumber(formModel.value.threeExpenseRate2026),
-    overseasSales: formModel.value.overseasSales,
-    period: formModel.value.period,
+    threeExpenseTotalRate: parseNumber(formModel.value.threeExpenseTotalRate),
+    oemExpenseRate: parseNumber(formModel.value.oemExpenseRate),
+    sourceType: 'MANUAL',
+    businessUnitType: productCategory === '家代商代销产品' ? 'HOUSEHOLD' : 'COMMERCIAL',
   }
   try {
     if (editingId.value) {
@@ -272,25 +352,6 @@ const removeRow = async (row) => {
   }
 }
 
-const normalizeHeader = (value) =>
-  String(value || '')
-    .replace(/^\uFEFF/, '')
-    .replace(/[：:]/g, '')
-    .replace(/[\s\u3000]+/g, '')
-    .trim()
-
-const formatPeriod = (value) => {
-  if (!value) {
-    return ''
-  }
-  if (value instanceof Date) {
-    const year = value.getFullYear()
-    const month = String(value.getMonth() + 1).padStart(2, '0')
-    return `${year}-${month}`
-  }
-  return String(value).trim()
-}
-
 const handleFileChange = async (uploadFile) => {
   const rawFile = uploadFile.raw
   if (!rawFile) {
@@ -310,128 +371,27 @@ const handleFileChange = async (uploadFile) => {
     const workbook = XLSX.read(buffer, { type: 'array', cellDates: true })
     const sheet = workbook.Sheets[workbook.SheetNames[0]]
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false })
-    const headerAliases = {
-      company: ['公司'],
-      businessUnit: ['生产事业部', '事业部'],
-      department: ['部门'],
-      managementExpenseRate: ['管理费用'],
-      financeExpenseRate: ['财务费用'],
-      salesExpenseRate: ['营业费用'],
-      threeExpenseRate2025: ['2025三项费用', '2025 三项费用'],
-      threeExpenseRate2026: ['2026三项费用', '2026 三项费用'],
-      overseasSales: ['是否通过海外销'],
-      period: ['期间'],
-    }
-    const headerMap = Object.entries(headerAliases).reduce((acc, [key, values]) => {
-      values.forEach((value) => {
-        acc[normalizeHeader(value)] = key
-      })
-      return acc
-    }, {})
-    const headerKeys = Object.keys(headerMap).sort((a, b) => b.length - a.length)
-    const resolveHeaderField = (cell) => {
-      const normalized = normalizeHeader(cell)
-      if (!normalized) {
-        return null
-      }
-      if (headerMap[normalized]) {
-        return headerMap[normalized]
-      }
-      const matched = headerKeys.find((key) => normalized.includes(key))
-      return matched ? headerMap[matched] : null
-    }
-    const headerIndex = rows.reduce(
-      (best, row, index) => {
-        const hitCount = row.reduce((count, cell) => {
-          return resolveHeaderField(cell) ? count + 1 : count
-        }, 0)
-        if (hitCount > best.count) {
-          return { index, count: hitCount }
-        }
-        return best
-      },
-      { index: -1, count: 0 },
-    ).index
-    if (headerIndex === -1) {
-      ElMessage.error('未找到表头，请确认Excel格式是否正确')
+    const { rows: dataRows, errors } = parseThreeExpenseRateRows(rows, {
+      defaultPeriodYear: filters.value.periodYear || new Date().getFullYear(),
+    })
+    if (errors.length > 0) {
+      const preview = errors.slice(0, 5).map((item) => item.message).join('；')
+      ElMessage.error(`导入校验失败：${preview}`)
       return
     }
-    const headerRow = rows[headerIndex]
-    const nextHeaderRow = rows[headerIndex + 1] || []
-    const fieldIndex = {}
-    headerRow.forEach((cell, index) => {
-      const field = resolveHeaderField(cell)
-      if (field) {
-        fieldIndex[field] = index
-      }
-    })
-    nextHeaderRow.forEach((cell, index) => {
-      const field = resolveHeaderField(cell)
-      if (field && fieldIndex[field] === undefined) {
-        fieldIndex[field] = index
-      }
-    })
-    const requiredFields = [
-      'company',
-      'businessUnit',
-      'department',
-      'managementExpenseRate',
-      'financeExpenseRate',
-      'salesExpenseRate',
-      'threeExpenseRate2025',
-      'threeExpenseRate2026',
-      'period',
-    ]
-    const requiredLabels = {
-      company: '公司',
-      businessUnit: '生产事业部',
-      department: '部门',
-      managementExpenseRate: '管理费用',
-      financeExpenseRate: '财务费用',
-      salesExpenseRate: '营业费用',
-      threeExpenseRate2025: '2025三项费用',
-      threeExpenseRate2026: '2026三项费用',
-      period: '期间',
-    }
-    const missing = requiredFields.filter((field) => fieldIndex[field] === undefined)
-    if (missing.length > 0) {
-      const names = missing.map((field) => requiredLabels[field] || field)
-      ElMessage.error(`缺少表头：${names.join('、')}`)
-      return
-    }
-    const dataRows = rows
-      .slice(headerIndex + 1)
-      .map((row) => ({
-        company: String(row[fieldIndex.company] || '').trim(),
-        businessUnit: String(row[fieldIndex.businessUnit] || '').trim(),
-        department: String(row[fieldIndex.department] || '').trim(),
-        managementExpenseRate: parseNumber(row[fieldIndex.managementExpenseRate]),
-        financeExpenseRate: parseNumber(row[fieldIndex.financeExpenseRate]),
-        salesExpenseRate: parseNumber(row[fieldIndex.salesExpenseRate]),
-        threeExpenseRate2025: parseNumber(row[fieldIndex.threeExpenseRate2025]),
-        threeExpenseRate2026: parseNumber(row[fieldIndex.threeExpenseRate2026]),
-        overseasSales: String(row[fieldIndex.overseasSales] || '').trim(),
-        period: formatPeriod(row[fieldIndex.period]),
-      }))
-      .filter(
-        (row) =>
-          row.company &&
-          row.businessUnit &&
-          row.department &&
-          row.managementExpenseRate !== null &&
-          row.financeExpenseRate !== null &&
-          row.salesExpenseRate !== null &&
-          row.threeExpenseRate2025 !== null &&
-          row.threeExpenseRate2026 !== null &&
-          row.period,
-      )
     if (dataRows.length === 0) {
       ElMessage.warning('未解析到有效数据')
       return
     }
     const result = await importThreeExpenseRates({ rows: dataRows })
-    const imported = Array.isArray(result) ? result.length : dataRows.length
-    ElMessage.success(`已导入${imported}条三项费用`)
+    if (result?.errors?.length) {
+      ElMessage.error(`导入失败：${result.errors.slice(0, 5).join('；')}`)
+      return
+    }
+    const imported = result?.insertedCount ?? (Array.isArray(result) ? result.length : dataRows.length)
+    const updated = result?.updatedCount ?? 0
+    const duplicate = result?.duplicateOverrideCount ?? 0
+    ElMessage.success(`导入完成：新增${imported}条，更新${updated}条，同批覆盖${duplicate}条`)
     fetchList()
   } catch (error) {
     ElMessage.error(error?.message || '导入失败')

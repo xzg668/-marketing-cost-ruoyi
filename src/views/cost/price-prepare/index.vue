@@ -36,7 +36,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="核算状态">
-          <el-input v-model="candidateFilters.calcStatus" clearable placeholder="默认未核算" />
+          <el-input v-model="candidateFilters.calcStatus" clearable placeholder="全部状态" />
         </el-form-item>
         <el-form-item label="准备状态">
           <el-select v-model="candidateFilters.prepareStatus" clearable placeholder="待处理">
@@ -312,7 +312,9 @@ import {
   generatePricePrepareBulk,
   normalizePricePreparePage,
 } from '../../../api/pricePrepare.js'
+import { useUserStore } from '../../../store/modules/user'
 
+const userStore = useUserStore()
 const activeTab = ref('items')
 const candidateTableRef = ref(null)
 const candidateRows = ref([])
@@ -340,10 +342,16 @@ const gapLoading = ref(false)
 const generating = ref(false)
 const generateDialogVisible = ref(false)
 
+const hasPermission = (permission) => {
+  const permissions = Array.isArray(userStore.permissions) ? userStore.permissions : []
+  return permissions.includes('*:*:*') || permissions.includes(permission)
+}
+const defaultOwnerScope = () => (hasPermission('cost:price-prepare:list-all') ? 'ALL' : 'MINE')
+
 const candidateFilters = reactive({
   keyword: '',
-  ownerScope: 'MINE',
-  calcStatus: '未核算',
+  ownerScope: defaultOwnerScope(),
+  calcStatus: '',
   prepareStatus: '',
   onlyPending: true,
 })
@@ -508,7 +516,7 @@ const fetchGenerateCandidates = async () => {
   dialogCandidatesLoading.value = true
   try {
     const baseParams = {
-      keyword: candidateFilters.keyword,
+    keyword: candidateFilters.keyword,
       calcStatus: candidateFilters.calcStatus,
       prepareStatus: candidateFilters.prepareStatus,
       onlyPending: candidateFilters.onlyPending,
@@ -627,8 +635,8 @@ const applyCandidateFilters = async () => {
 const resetCandidateFilters = async () => {
   Object.assign(candidateFilters, {
     keyword: '',
-    ownerScope: 'MINE',
-    calcStatus: '未核算',
+    ownerScope: defaultOwnerScope(),
+    calcStatus: '',
     prepareStatus: '',
     onlyPending: true,
   })

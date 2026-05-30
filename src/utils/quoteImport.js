@@ -1,5 +1,5 @@
 export const QUOTE_IMPORT_MAX_FILE_SIZE = 20 * 1024 * 1024
-export const QUOTE_IMPORT_ACCEPTED_EXTENSIONS = ['.xlsx', '.xls']
+export const QUOTE_IMPORT_ACCEPTED_EXTENSIONS = ['.pdf']
 
 const toArray = (value) => (Array.isArray(value) ? value : [])
 
@@ -11,18 +11,20 @@ export function getQuoteImportFileName(fileLike) {
   return getQuoteImportFile(fileLike)?.name || fileLike?.name || ''
 }
 
-export function isQuoteImportExcelFile(fileLike) {
+export function isQuoteImportPdfFile(fileLike) {
   const name = getQuoteImportFileName(fileLike).toLowerCase()
   return QUOTE_IMPORT_ACCEPTED_EXTENSIONS.some((extension) => name.endsWith(extension))
 }
 
+export const isQuoteImportExcelFile = isQuoteImportPdfFile
+
 export function validateQuoteImportFile(fileLike) {
   const file = getQuoteImportFile(fileLike)
   if (!file) {
-    return { valid: false, message: '请选择报价单 Excel 文件' }
+    return { valid: false, message: '请选择 OA PDF 报价单' }
   }
-  if (!isQuoteImportExcelFile(file)) {
-    return { valid: false, message: '仅支持 .xlsx / .xls 格式' }
+  if (!isQuoteImportPdfFile(file)) {
+    return { valid: false, message: '仅支持 .pdf 格式' }
   }
   if (Number(file.size || 0) > QUOTE_IMPORT_MAX_FILE_SIZE) {
     return { valid: false, message: '文件大小不能超过 20MB' }
@@ -30,7 +32,7 @@ export function validateQuoteImportFile(fileLike) {
   return { valid: true, message: '' }
 }
 
-export function normalizeQuoteExcelPreview(preview, fallbackFileName = '') {
+export function normalizeQuoteImportPreview(preview, fallbackFileName = '') {
   const safePreview = preview || {}
   const errors = toArray(safePreview.errors)
   const warnings = toArray(safePreview.warnings)
@@ -57,10 +59,16 @@ export function normalizeQuoteExcelPreview(preview, fallbackFileName = '') {
 }
 
 export function canCommitQuoteExcelPreview(preview) {
-  return Boolean(preview) && normalizeQuoteExcelPreview(preview).valid
+  return canCommitQuoteImportPreview(preview)
 }
 
-export function normalizeQuoteExcelCommitResponse(response) {
+export function canCommitQuoteImportPreview(preview) {
+  return Boolean(preview) && normalizeQuoteImportPreview(preview).valid
+}
+
+export const normalizeQuoteExcelPreview = normalizeQuoteImportPreview
+
+export function normalizeQuoteImportCommitResponse(response) {
   return toArray(response?.results).map((row, index) => ({
     rowKey: row?.ingestLogId || row?.oaFormId || row?.oaNo || index,
     oaNo: row?.oaNo || '',
@@ -71,6 +79,8 @@ export function normalizeQuoteExcelCommitResponse(response) {
     itemCount: Number(row?.itemCount || 0),
   }))
 }
+
+export const normalizeQuoteExcelCommitResponse = normalizeQuoteImportCommitResponse
 
 export function downloadBlob(blob, fileName) {
   const url = URL.createObjectURL(blob)

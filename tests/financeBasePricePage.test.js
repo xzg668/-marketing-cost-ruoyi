@@ -68,6 +68,7 @@ describe('PriceLinkedFinanceBasePage.vue V5-09 契约', () => {
     assert.match(content, /const\s+historyLimit\s*=\s*ref\(10\)/)
     assert.match(content, /loadMoreBatches/)
     assert.match(content, /Math\.min\(historyLimit\.value\s*\+\s*10,\s*50\)/)
+    assert.match(content, /adjustType:\s*'MONTHLY'/)
     assert.match(content, /普通用户只看自己的记录/)
   })
 
@@ -109,6 +110,7 @@ describe('PriceLinkedFinanceBasePage.vue V5-09 契约', () => {
 
   it('支持导入弹窗用途选择和调价结果展示', () => {
     assert.match(content, /importDialogVisible/)
+    assert.match(content, /adjustType:\s*'MONTHLY'/)
     assert.match(content, /REPRICE_ONLY/)
     assert.match(content, /REPRICE_AND_DAILY/)
     assert.match(content, /importResult/)

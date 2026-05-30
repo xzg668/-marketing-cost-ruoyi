@@ -4,13 +4,18 @@ import fs from 'node:fs'
 import path from 'node:path'
 import {
   CALC_STATUS_OPTIONS,
+  PRODUCT_TYPE_OPTIONS,
+  REVIEW_STATUS_OPTIONS,
+  OA_TODO_PUSH_STATUS_OPTIONS,
   SOURCE_TYPE_OPTIONS,
   canConfirmClassification,
   filterQuoteRequestRows,
   hasNoBom,
+  isCostReadyBomStatus,
   mergeBomStatusToDetail,
   normalizeQuoteRequestPage,
   statusLabel,
+  statusTagType,
 } from '../src/utils/quoteRequestWorkbench.js'
 
 const LIST_PAGE_FILE = path.resolve(import.meta.dirname, '../src/views/ingest/quote-requests/index.vue')
@@ -52,6 +57,14 @@ describe('T11 报价单接入工作台工具', () => {
     assert.equal(statusLabel('sourceType', 'WEAVER_OA'), '泛微 OA')
     assert.equal(statusLabel('classificationStatus', 'PENDING'), '待确认')
     assert.equal(statusLabel('bomStatus', 'NO_BOM'), '无 BOM')
+    assert.equal(statusLabel('bomStatus', 'REUSED_CURRENT_MONTH'), '已沿用')
+    assert.equal(statusLabel('bomStatus', 'SYNCING'), '同步中')
+    assert.equal(statusLabel('productType', 'BARE'), '裸品')
+    assert.equal(statusLabel('reviewStatus', 'APPROVED'), '已通过')
+    assert.equal(statusTagType('bomStatus', 'REUSED_CURRENT_MONTH'), 'success')
+    assert.equal(statusTagType('bomStatus', 'SYNCING'), 'warning')
+    assert.equal(statusTagType('productType', 'BARE'), 'warning')
+    assert.equal(statusTagType('reviewStatus', 'APPROVED'), 'success')
     assert.equal(statusLabel('calcStatus', 'CALCULATED'), '已核算')
     assert.equal(statusLabel('calcStatus', 'CALCULATING'), '试算中')
     assert.equal(statusLabel('calcStatus', 'PENDING'), '未核算')
@@ -84,6 +97,12 @@ describe('T11 报价单接入工作台工具', () => {
     )
   })
 
+  it('报价产品 BOM 准备筛选枚举覆盖产品形态和财务审核', () => {
+    assert.deepEqual(PRODUCT_TYPE_OPTIONS.map((item) => item.value), ['NON_BARE', 'BARE', 'UNKNOWN'])
+    assert.ok(REVIEW_STATUS_OPTIONS.some((item) => item.value === 'APPROVED' && item.label === '已通过'))
+    assert.ok(OA_TODO_PUSH_STATUS_OPTIONS.some((item) => item.value === 'FAILED' && item.label === '推送失败'))
+  })
+
   it('操作可见性由状态驱动', () => {
     assert.equal(canConfirmClassification(rows[0]), false)
     assert.equal(canConfirmClassification(rows[1]), true)
@@ -111,6 +130,25 @@ describe('T11 报价单接入工作台工具', () => {
     assert.equal(merged.bomAggregateStatus, 'SYNCED')
     assert.equal(merged.items[0].bomStatus.bomSource, 'U9')
   })
+
+  it('已沿用参与 BOM 聚合和可核算判断，同步中不可核算', () => {
+    const reused = mergeBomStatusToDetail({ items: [{ id: 11 }, { id: 12 }] }, {
+      items: [
+        { oaFormItemId: 11, bomStatus: 'REUSED_CURRENT_MONTH' },
+        { oaFormItemId: 12, bomStatus: 'MANUAL_ENTERED' },
+      ],
+    })
+    const syncing = mergeBomStatusToDetail({ items: [{ id: 13 }] }, {
+      items: [{ oaFormItemId: 13, bomStatus: 'SYNCING' }],
+    })
+
+    assert.equal(reused.bomAggregateStatus, 'SYNCED')
+    assert.equal(syncing.bomAggregateStatus, 'SYNCING')
+    assert.equal(isCostReadyBomStatus('REUSED_CURRENT_MONTH'), true)
+    assert.equal(isCostReadyBomStatus('ENTRY_PENDING'), false)
+    assert.equal(isCostReadyBomStatus('EXPIRED'), false)
+    assert.equal(isCostReadyBomStatus('SYNCING'), false)
+  })
 })
 
 describe('T11 报价单接入页面契约', () => {
@@ -131,21 +169,47 @@ describe('T11 报价单接入页面契约', () => {
 
   it('T16 报价单列表不再内嵌产品 BOM 处理主表', () => {
     assert.match(listPageContent, /goProductBom/)
-    assert.match(listPageContent, /产品 BOM 处理/)
+    assert.match(listPageContent, /产品 BOM 准备/)
     assert.doesNotMatch(listPageContent, /batchSyncQuoteBomStatus/)
     assert.doesNotMatch(listPageContent, /batchCreateBomSupplementOaTasks/)
     assert.doesNotMatch(listPageContent, /type="selection"/)
   })
 
   it('T16 独立产品 BOM 处理页支持多选、批量同步和 OA 任务入口', () => {
-    assert.match(productBomPageContent, /报价单产品 BOM 处理/)
+    const quoteIngestApiContent = fs.readFileSync(
+      path.resolve(import.meta.dirname, '../src/api/quoteIngest.js'),
+      'utf-8',
+    )
+    assert.match(productBomPageContent, /报价产品 BOM 准备/)
     assert.match(productBomPageContent, /type="selection"/)
-    assert.match(productBomPageContent, /batchSyncQuoteBomStatus/)
-    assert.match(productBomPageContent, /batchCreateBomSupplementOaTasks/)
-    assert.match(productBomPageContent, /批量同步/)
-    assert.match(productBomPageContent, /批量发起OA任务/)
-    assert.match(productBomPageContent, /本地 U9 全量快照/)
-    assert.match(productBomPageContent, /补录任务/)
+    assert.match(productBomPageContent, /fetchQuoteProductBomPage/)
+    assert.match(productBomPageContent, /batchPrepareQuoteProductBom/)
+    assert.match(productBomPageContent, /createQuoteProductBomTasks/)
+    assert.match(productBomPageContent, /pushQuoteProductBomOaTodo/)
+    assert.match(productBomPageContent, /fetchQuoteProductBomPreparationPreview/)
+    assert.match(productBomPageContent, /buildQuoteProductBomCostingRows/)
+    assert.match(productBomPageContent, /批量检查\/准备/)
+    assert.match(productBomPageContent, /批量推送 OA 待办/)
+    assert.match(productBomPageContent, /裸品\/非裸品/)
+    assert.match(productBomPageContent, /本体 BOM/)
+    assert.match(productBomPageContent, /包装参考/)
+    assert.match(productBomPageContent, /财务审核/)
+    assert.match(productBomPageContent, /OA待办/)
+    assert.match(productBomPageContent, /推送状态/)
+    assert.match(productBomPageContent, /推送失败原因/)
+    assert.match(productBomPageContent, /完整预览/)
+    assert.match(productBomPageContent, /重新生成结算行/)
+    assert.match(quoteIngestApiContent, /\/api\/v1\/quote-product-bom-preparation\/batch-prepare/)
+    assert.match(quoteIngestApiContent, /\/oa-todo\/push/)
+    assert.match(quoteIngestApiContent, /fetchQuoteProductBomPreparationPreview[\s\S]*\/preview/)
+    assert.match(quoteIngestApiContent, /\/build-costing-rows/)
+    assert.match(productBomPageContent, /包装方式/)
+    assert.match(productBomPageContent, /缺口说明/)
+    assert.doesNotMatch(productBomPageContent, /fetchQuoteRequestDetail/)
+    assert.doesNotMatch(productBomPageContent, /fetchQuoteRequests/)
+    assert.doesNotMatch(productBomPageContent, /batchCreateBomSupplementOaTasks/)
+    assert.doesNotMatch(productBomPageContent, /OA任务已发起/)
+    assert.doesNotMatch(productBomPageContent, /批量发起OA任务/)
     assert.doesNotMatch(productBomPageContent, /后续 T15/)
   })
 

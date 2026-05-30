@@ -3,7 +3,7 @@
 //   BomImportController       POST /api/v1/bom/import, GET /api/v1/bom/batches
 //   BomHierarchyController    POST /api/v1/bom/build-hierarchy, GET /api/v1/bom/hierarchy/{topProductCode}
 //   BomFlattenController      POST /api/v1/bom/flatten
-//   BomDrillRuleController    GET/POST/PUT/DELETE /api/v1/bom/drill-rules, POST /{id}/toggle
+//   BomSettlementRuleController GET/POST/PUT/DELETE /api/v1/bom/settlement-rules, POST /{id}/toggle
 //
 // 所有响应都经过 http.request() 的 CommonResult 解包，调用方直接拿到 data；
 // 业务错误 / HTTP 错误由 errorHandler 统一弹 toast 并 throw Error。
@@ -119,82 +119,32 @@ export const getBomHierarchy = (topProductCode, query = {}) =>
 // ===== 阶段 C：拍平 =====
 
 /**
- * 触发拍平 —— 把 raw_hierarchy + 过滤规则合成 lp_bom_costing_row。
+ * 触发拍平 —— 把 raw_hierarchy + 结算规则合成 lp_bom_costing_row。
  *
  * @param {object} payload { bomPurpose?, mode:'BY_OA'|'BY_PRODUCT'|'ALL', oaNo?, topProductCode?, asOfDate(YYYY-MM-DD)必填 }
  */
 export const flattenBom = (payload) =>
   request('/api/v1/bom/flatten', { method: 'POST', body: payload })
 
-// ===== 过滤规则 CRUD（bom_stop_drill_rule）=====
+// ===== BOM 结算规则 CRUD（lp_bom_settlement_rule）=====
 
-/**
- * 列表。可按 enabled / matchType 过滤；后端已按 priority asc 排序。
- */
-export const listDrillRules = (params = {}) =>
-  request('/api/v1/bom/drill-rules', { params })
+export const listSettlementRules = (params = {}) =>
+  request('/api/v1/bom/settlement-rules', { params })
 
-/**
- * 新增。
- * @param {object} payload { matchType, matchValue, drillAction, markSubtreeCostRequired?,
- *                           replaceToCode?, priority, enabled, effectiveFrom?, effectiveTo?,
- *                           businessUnitType?, remark? }
- */
-export const createDrillRule = (payload) =>
-  request('/api/v1/bom/drill-rules', { method: 'POST', body: payload })
+export const createSettlementRule = (payload) =>
+  request('/api/v1/bom/settlement-rules', { method: 'POST', body: payload })
 
-/**
- * 修改；id 不存在返 BAD_REQUEST。
- */
-export const updateDrillRule = (id, payload) =>
-  request(`/api/v1/bom/drill-rules/${id}`, { method: 'PUT', body: payload })
+export const updateSettlementRule = (id, payload) =>
+  request(`/api/v1/bom/settlement-rules/${id}`, { method: 'PUT', body: payload })
 
-/**
- * 软删（@TableLogic 置 deleted=1）。
- */
-export const deleteDrillRule = (id) =>
-  request(`/api/v1/bom/drill-rules/${id}`, { method: 'DELETE' })
+export const deleteSettlementRule = (id) =>
+  request(`/api/v1/bom/settlement-rules/${id}`, { method: 'DELETE' })
 
-/**
- * 切换启用 / 停用 —— enabled 在 0 ↔ 1 间翻转。
- */
-export const toggleDrillRule = (id) =>
-  request(`/api/v1/bom/drill-rules/${id}/toggle`, { method: 'POST' })
+export const toggleSettlementRule = (id) =>
+  request(`/api/v1/bom/settlement-rules/${id}/toggle`, { method: 'POST' })
 
-// ===== 常量（供前端 Select / Radio 使用，与后端 StopDrillRuleMatcher 保持同步）=====
-
-/** 规则 match_type 下拉选项（5 种老模式 + T8 COMPOSITE 占位）*/
-export const MATCH_TYPE_OPTIONS = [
-  { value: 'NAME_LIKE', label: 'NAME_LIKE（名称模糊匹配）' },
-  { value: 'MATERIAL_CODE_PREFIX', label: 'MATERIAL_CODE_PREFIX（料号前缀）' },
-  { value: 'MATERIAL_TYPE', label: 'MATERIAL_TYPE（主分类精确）' },
-  { value: 'CATEGORY_EQ', label: 'CATEGORY_EQ（生产类别精确）' },
-  { value: 'SHAPE_ATTR_EQ', label: 'SHAPE_ATTR_EQ（形态属性精确）' },
-  { value: 'COMPOSITE', label: 'COMPOSITE（T8：复合条件，走下方 JSON）' },
-]
-
-// ===== T8 复合条件 UI 下拉数据 =====
-
-/** 复合条件可选字段（对齐后端 CompositeRuleEvaluator.readFieldValue）*/
-export const CONDITION_FIELD_OPTIONS = [
-  { value: 'cost_element_code', label: '成本要素编码 (cost_element_code)' },
-  { value: 'material_category_1', label: '主分类 1 (material_category_1)' },
-  { value: 'material_category_2', label: '主分类 2 (material_category_2)' },
-  { value: 'material_code', label: '料号 (material_code)' },
-  { value: 'material_name', label: '品名 (material_name)' },
-  { value: 'shape_attr', label: '形态属性 (shape_attr)' },
-  { value: 'production_category', label: '生产分类 (production_category)' },
-]
-
-/** 操作符 */
-export const CONDITION_OP_OPTIONS = [
-  { value: 'EQ', label: 'EQ（等于，单值）' },
-  { value: 'IN', label: 'IN（列表，多值）' },
-  { value: 'LIKE', label: 'LIKE（包含子串，预留）' },
-  // T11：IN_DICT —— value 填字典 key（如 bom_leaf_rollup_codes），算法侧拉字典做 双路匹配
-  //   （编码 IN 命中 OR 名称 contains 命中），主要给 LEAF_ROLLUP_TO_PARENT 用
-  { value: 'IN_DICT', label: 'IN_DICT（按字典 key，编码 + 名称双路命中；用于 LEAF_ROLLUP）' },
-]
+export const listByproductCostRules = (params = {}) =>
+  request('/api/v1/bom/byproduct-cost-rules', { params })
 
 // ===== 字典查询（yudao 原生接口）=====
 
@@ -208,22 +158,26 @@ export const CONDITION_OP_OPTIONS = [
 export const fetchDictData = (dictType) =>
   request(`/api/v1/system/dict-data/type/${encodeURIComponent(dictType)}`)
 
-/**
- * drill_action 下拉选项。
- *
- * 业务模型已经简化（2026-04-27 业务确认）：唯一推荐使用的动作是 LEAF_ROLLUP_TO_PARENT。
- * 其他三种保留代码不删（已存历史规则可能引用），但 UI 标 "已废弃" 引导用户优先选新规则。
- */
-export const DRILL_ACTION_OPTIONS = [
-  // ⭐ 推荐：业务唯一在用的规则类型；只配 1 条 + 维护字典 bom_leaf_rollup_codes 即可
-  {
-    value: 'LEAF_ROLLUP_TO_PARENT',
-    label: '⭐ LEAF_ROLLUP_TO_PARENT（推荐：叶子上卷一层，命中叶子→直接父作结算）',
-  },
-  // 以下三种已废弃但保留代码，用于读取历史规则；新建规则不建议选
-  { value: 'STOP_AND_COST_ROW', label: 'STOP_AND_COST_ROW（已废弃：停止下钻并成为结算行）' },
-  { value: 'EXCLUDE', label: 'EXCLUDE（已废弃：整子树排除）' },
-  { value: 'ROLLUP_TO_PARENT', label: 'ROLLUP_TO_PARENT（已废弃：父节点作结算行，全部子件进 sub_ref）' },
+export const SETTLEMENT_RULE_CATEGORY_OPTIONS = [
+  { value: 'SPECIAL_PURCHASE_ROLLUP', label: '特殊采购分类上卷' },
+  { value: 'AUXILIARY_EXCLUDE', label: '辅料排除' },
+  { value: 'PACKAGE_STOP', label: '包装组件截断' },
+  { value: 'OUTSOURCED_PROCESS_FEE', label: '委外加工费' },
+]
+
+export const SETTLEMENT_ACTION_OPTIONS = [
+  { value: 'ROLLUP_TO_PARENT', label: '上卷父件结算' },
+  { value: 'EXCLUDE', label: '排除结算行' },
+  { value: 'STOP_AS_PACKAGE', label: '包装父件结算' },
+  { value: 'ADD_PROCESS_FEE', label: '追加加工费行' },
+]
+
+export const SETTLEMENT_ROW_TYPE_OPTIONS = [
+  { value: 'SPECIAL_ROLLUP_PARENT', label: '特殊采购上卷父件' },
+  { value: 'PACKAGE_PARENT', label: '包装父件' },
+  { value: 'OUTSOURCED_PROCESS_FEE', label: '委外加工费' },
+  { value: 'DEFAULT_LEAF', label: '默认叶子' },
+  { value: 'EXCLUDED', label: '排除' },
 ]
 
 /** 构建层级 mode 选项 */
@@ -238,200 +192,3 @@ export const FLATTEN_MODE_OPTIONS = [
   { value: 'BY_PRODUCT', label: '按产品（需填 topProductCode）' },
   { value: 'ALL', label: '全量（该 asOfDate 全部顶层）' },
 ]
-
-// ===== T10：规则向导模板（财务入口专用）=====
-//
-// 设计取自 T10-rule-ui-wizard.md —— 业务真相：规则唯一职责是决定结算行落在
-// 叶子还是父层；取价永远查叶子料号。目前只有两种"上提到父层"场景：
-//   1. SUBTREE_COMPOSITE — 接管类，父层作结算行 + 子树价走子树合成算法
-//   2. ROLLUP_TO_PARENT  — 铜管组件上卷，父层作结算行 + 子件清单写 sub_ref
-// 其他场景（EXCLUDE / MATERIAL_CODE_PREFIX 等）留给 IT 走"高级模式"。
-
-/**
- * 向导模板定义，控制 3 步向导每步展示什么字段、保存时拼什么 payload。
- * userFields 说明：
- *   - type 省略 = 文本输入（el-input）
- *   - type='dict-multi' = 从指定字典拉候选的 multi-select（el-select multiple + allow-create）
- */
-export const RULE_WIZARD_TEMPLATES = [
-  {
-    code: 'SUBTREE_COMPOSITE',
-    title: '接管类规则',
-    description:
-      '品名含指定关键字 → 此节点作结算行 不再往下拆；子树价由"子树合成算法"补回（典型场景：接管）',
-    defaults: {
-      matchType: 'NAME_LIKE',
-      drillAction: 'STOP_AND_COST_ROW',
-      markSubtreeCostRequired: 1,
-      priority: 10,
-    },
-    userFields: [
-      {
-        key: 'matchValue',
-        label: '品名关键字',
-        placeholder: '例如：接管',
-        required: true,
-        hint: '节点品名包含这个关键字就命中（SQL LIKE %xxx%）',
-      },
-    ],
-  },
-  {
-    code: 'ROLLUP_TO_PARENT',
-    title: '父层上卷规则',
-    description:
-      '本节点命中指定成本要素且至少一个子件属于指定主分类 → 此节点作结算行；子件清单写入 sub_ref，父件价 = Σ(子件联动价)。典型场景：紫铜盘管/紫铜直管的组件',
-    defaults: {
-      matchType: 'COMPOSITE',
-      drillAction: 'ROLLUP_TO_PARENT',
-      markSubtreeCostRequired: 0,
-      priority: 20,
-    },
-    userFields: [
-      {
-        key: 'parentCostElement',
-        label: '本节点 成本要素编码',
-        placeholder: '例如：No101',
-        required: true,
-        hint: '父节点的 cost_element_code 精确等于这个值时才会继续判子件',
-      },
-      {
-        key: 'childCategories',
-        label: '子件主分类（可多选）',
-        type: 'dict-multi',
-        dictType: 'bom_material_category',
-        required: true,
-        hint: '至少一个子件的 material_category_1 属于这些分类就命中（OR 语义）',
-      },
-    ],
-  },
-]
-
-/**
- * 反推规则对应的向导模板 code；无法匹配返 null（调用方应走高级模式）。
- *
- * 匹配规则：
- *   - NAME_LIKE + STOP_AND_COST_ROW + markSubtree=1 → SUBTREE_COMPOSITE
- *   - COMPOSITE + ROLLUP_TO_PARENT 且 JSON 结构符合
- *     (nodeConditions 单条 EQ cost_element_code
- *      + childConditions 单条 IN material_category_1
- *      + parentConditions 空) → ROLLUP_TO_PARENT
- *   - 其他 → null
- *
- * 反推时任何结构不符（JSON 解析失败、多条件、字段不对）都返 null；
- * 这是正常分支不是错误，由调用方决定弹向导还是高级。
- */
-export const matchTemplate = (rule) => {
-  if (!rule) return null
-  if (
-    rule.matchType === 'NAME_LIKE' &&
-    rule.drillAction === 'STOP_AND_COST_ROW' &&
-    Number(rule.markSubtreeCostRequired) === 1
-  ) {
-    return 'SUBTREE_COMPOSITE'
-  }
-  if (
-    rule.matchType === 'COMPOSITE' &&
-    rule.drillAction === 'ROLLUP_TO_PARENT' &&
-    rule.matchConditionJson
-  ) {
-    try {
-      const parsed =
-        typeof rule.matchConditionJson === 'string'
-          ? JSON.parse(rule.matchConditionJson)
-          : rule.matchConditionJson
-      const node = Array.isArray(parsed?.nodeConditions) ? parsed.nodeConditions : []
-      const parent = Array.isArray(parsed?.parentConditions) ? parsed.parentConditions : []
-      const child = Array.isArray(parsed?.childConditions) ? parsed.childConditions : []
-      const nodeOk =
-        node.length === 1 &&
-        node[0]?.field === 'cost_element_code' &&
-        node[0]?.op === 'EQ'
-      const childOk =
-        child.length === 1 &&
-        child[0]?.field === 'material_category_1' &&
-        child[0]?.op === 'IN' &&
-        Array.isArray(child[0]?.values)
-      if (nodeOk && childOk && parent.length === 0) {
-        return 'ROLLUP_TO_PARENT'
-      }
-    } catch (e) {
-      // JSON 解析失败 → 非标规则，走高级模式
-      return null
-    }
-  }
-  return null
-}
-
-/**
- * 从已有规则反推出向导用户字段的值（用于编辑回填）。
- * 未匹配到模板返 null。
- */
-export const extractTemplateUserValues = (rule) => {
-  const code = matchTemplate(rule)
-  if (!code) return null
-  if (code === 'SUBTREE_COMPOSITE') {
-    return { matchValue: rule.matchValue || '' }
-  }
-  if (code === 'ROLLUP_TO_PARENT') {
-    try {
-      const parsed =
-        typeof rule.matchConditionJson === 'string'
-          ? JSON.parse(rule.matchConditionJson)
-          : rule.matchConditionJson
-      return {
-        parentCostElement: parsed?.nodeConditions?.[0]?.value || '',
-        childCategories: parsed?.childConditions?.[0]?.values || [],
-      }
-    } catch (e) {
-      return null
-    }
-  }
-  return null
-}
-
-/**
- * 根据模板 code + 用户填写的 values 拼出后端 CRUD 所需的 payload。
- */
-export const buildPayloadFromTemplate = (templateCode, userValues, extras = {}) => {
-  const tpl = RULE_WIZARD_TEMPLATES.find((t) => t.code === templateCode)
-  if (!tpl) throw new Error(`未知模板：${templateCode}`)
-
-  const base = {
-    ...tpl.defaults,
-    enabled: 1,
-    businessUnitType: null,
-    matchValue: '',
-    matchConditionJson: null,
-    remark: '',
-    effectiveFrom: null,
-    effectiveTo: null,
-    ...extras, // 允许外部覆盖（编辑时保留原 priority/enabled/businessUnitType/remark 等）
-  }
-
-  if (templateCode === 'SUBTREE_COMPOSITE') {
-    base.matchValue = (userValues.matchValue || '').trim()
-  } else if (templateCode === 'ROLLUP_TO_PARENT') {
-    // matchValue 在 COMPOSITE 下无业务意义但表字段 NOT NULL —— 编辑保留原值，新建塞占位
-    if (!base.matchValue) base.matchValue = 'wizard-' + Date.now()
-    base.matchConditionJson = JSON.stringify({
-      nodeConditions: [
-        {
-          field: 'cost_element_code',
-          op: 'EQ',
-          value: (userValues.parentCostElement || '').trim(),
-        },
-      ],
-      parentConditions: [],
-      childConditions: [
-        {
-          field: 'material_category_1',
-          op: 'IN',
-          values: Array.isArray(userValues.childCategories)
-            ? userValues.childCategories
-            : [],
-        },
-      ],
-    })
-  }
-  return base
-}

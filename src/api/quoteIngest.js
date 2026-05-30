@@ -25,6 +25,18 @@ export const commitQuoteExcel = (file) =>
     body: toFileFormData(file),
   })
 
+export const previewQuotePdf = (file) =>
+  request('/api/v1/quote-ingest/pdf/preview', {
+    method: 'POST',
+    body: toFileFormData(file),
+  })
+
+export const commitQuotePdf = (file) =>
+  request('/api/v1/quote-ingest/pdf/commit', {
+    method: 'POST',
+    body: toFileFormData(file),
+  })
+
 export const fetchQuoteExcelTemplates = () =>
   request('/api/v1/quote-ingest/excel/templates')
 
@@ -60,20 +72,57 @@ export const checkQuoteBomStatus = (oaNo) =>
     body: { oaNo },
   })
 
-export const batchSyncQuoteBomStatus = (oaFormItemIds) =>
-  request('/api/v1/quote-ingest/bom-status/batch-sync', {
+export const fetchQuoteProductBomPage = (params) =>
+  request('/api/v1/quote-request-products/bom', { params })
+
+export const batchSyncQuoteProductBomStatus = (oaFormItemIds) =>
+  request('/api/v1/quote-request-products/bom/batch-sync', {
     method: 'POST',
     body: { oaFormItemIds },
   })
 
-export const batchCreateBomSupplementOaTasks = (quoteBomStatusIds, options = {}) =>
-  request('/api/v1/bom-supplement/tasks/batch-oa-task', {
+export const batchCreateQuoteProductBomOaTasks = (oaFormItemIds) =>
+  request('/api/v1/quote-request-products/bom/batch-oa-task', {
     method: 'POST',
-    body: {
-      quoteBomStatusIds,
-      dueAt: options.dueAt,
-      remark: options.remark || 'OA报价单无BOM，请补录',
-    },
+    body: { oaFormItemIds },
+  })
+
+export const prepareQuoteProductBom = (oaFormItemId) =>
+  request(`/api/v1/quote-product-bom-preparation/${encodePath(oaFormItemId)}/prepare`, {
+    method: 'POST',
+  })
+
+export const batchPrepareQuoteProductBom = (oaFormItemIds) =>
+  request('/api/v1/quote-product-bom-preparation/batch-prepare', {
+    method: 'POST',
+    body: { oaFormItemIds },
+  })
+
+export const createQuoteProductBomTasks = (oaFormItemIds, tokenExpireHours = 72) =>
+  request('/api/v1/quote-product-bom-preparation/tasks', {
+    method: 'POST',
+    body: { oaFormItemIds, tokenExpireHours },
+  })
+
+export const pushQuoteProductBomOaTodo = (taskId) =>
+  request(`/api/v1/quote-product-bom-preparation/tasks/${encodePath(taskId)}/oa-todo/push`, {
+    method: 'POST',
+  })
+
+export const queryQuoteProductBomOaTodoStatus = (taskId) =>
+  request(`/api/v1/quote-product-bom-preparation/tasks/${encodePath(taskId)}/oa-todo/status`)
+
+export const closeQuoteProductBomOaTodo = (taskId) =>
+  request(`/api/v1/quote-product-bom-preparation/tasks/${encodePath(taskId)}/oa-todo/close`, {
+    method: 'POST',
+  })
+
+export const fetchQuoteProductBomPreparationPreview = (oaFormItemId) =>
+  request(`/api/v1/quote-product-bom-preparation/${encodePath(oaFormItemId)}/preview`)
+
+export const buildQuoteProductBomCostingRows = (oaFormItemId) =>
+  request(`/api/v1/quote-product-bom-preparation/${encodePath(oaFormItemId)}/build-costing-rows`, {
+    method: 'POST',
   })
 
 export const fetchQuoteIngestLogs = (params) =>

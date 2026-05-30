@@ -208,7 +208,7 @@ async function handleFileChange(uploadFile) {
 }
 
 function goToTree() {
-  router.push('/base/bomTree')
+  router.push('/bom-data/details/hierarchy-tree')
 }
 
 function reset() {

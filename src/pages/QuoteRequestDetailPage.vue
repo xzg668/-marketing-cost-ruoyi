@@ -20,7 +20,7 @@
         {{ statusLabel('sourceType', detail.sourceType) }}
       </el-descriptions-item>
       <el-descriptions-item label="外部单号">{{ detail.externalFormNo || '-' }}</el-descriptions-item>
-      <el-descriptions-item label="流程编号">{{ detail.processCode || '-' }}</el-descriptions-item>
+      <el-descriptions-item label="流程类型">{{ detail.processCode || '-' }}</el-descriptions-item>
       <el-descriptions-item label="流程名称">{{ detail.processName || '-' }}</el-descriptions-item>
       <el-descriptions-item label="报价场景">
         {{ statusLabel('quoteScenario', detail.quoteScenario) }}
@@ -231,6 +231,7 @@ import {
   QUOTE_SCENARIO_OPTIONS,
   canConfirmClassification,
   formatDateTime,
+  isCostReadyBomStatus,
   mergeBomStatusToDetail,
   statusLabel,
   statusTagType,
@@ -334,7 +335,7 @@ function openSupplement(row) {
 }
 
 function canViewBom(row) {
-  return ['SYNCED', 'MANUAL_ENTERED'].includes(row?.bomStatus?.bomStatus) && Boolean(row?.materialNo)
+  return isCostReadyBomStatus(row?.bomStatus?.bomStatus) && Boolean(row?.materialNo)
 }
 
 function openBomTree(row) {

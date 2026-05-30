@@ -1,4 +1,4 @@
 <script>
-import Component from '../../../pages/BomFilterRulePage.vue'
+import Component from '../../../pages/BomSettlementRulePage.vue'
 export default Component
 </script>

@@ -26,13 +26,47 @@ export const SOURCE_TYPE_OPTIONS = [
 
 export const BOM_STATUS_OPTIONS = [
   { value: 'NOT_CHECKED', label: '未检查', type: 'info' },
+  { value: 'SYNCING', label: '同步中', type: 'warning' },
   { value: 'SYNCED', label: '已同步', type: 'success' },
+  { value: 'REUSED_CURRENT_MONTH', label: '已沿用', type: 'success' },
   { value: 'NO_BOM', label: '无 BOM', type: 'danger' },
   { value: 'ENTRY_PENDING', label: '待技术补录', type: 'warning' },
   { value: 'ENTRY_IN_PROGRESS', label: '技术录入中', type: 'warning' },
   { value: 'MANUAL_ENTERED', label: '已手工录入', type: 'success' },
   { value: 'EXPIRED', label: '手工 BOM 已过期', type: 'warning' },
   { value: 'CHECK_FAILED', label: '检查异常', type: 'danger' },
+]
+
+export const PRODUCT_TYPE_OPTIONS = [
+  { value: 'NON_BARE', label: '非裸品', type: 'success' },
+  { value: 'BARE', label: '裸品', type: 'warning' },
+  { value: 'UNKNOWN', label: '未识别', type: 'info' },
+]
+
+export const REVIEW_STATUS_OPTIONS = [
+  { value: 'NOT_SUBMITTED', label: '未提交', type: 'info' },
+  { value: 'PENDING', label: '待审核', type: 'warning' },
+  { value: 'APPROVED', label: '已通过', type: 'success' },
+  { value: 'RETURNED', label: '已退回', type: 'danger' },
+  { value: 'REJECTED', label: '已驳回', type: 'danger' },
+]
+
+export const PREPARATION_STATUS_OPTIONS = [
+  { value: 'INIT', label: '待准备', type: 'info' },
+  { value: 'READY', label: '已准备', type: 'success' },
+  { value: 'NEED_TECH', label: '需技术处理', type: 'warning' },
+  { value: 'TECH_SUBMITTED', label: '技术已提交', type: 'warning' },
+  { value: 'CONFIRMED', label: '已确认', type: 'success' },
+  { value: 'REJECTED', label: '已退回', type: 'danger' },
+]
+
+export const OA_TODO_PUSH_STATUS_OPTIONS = [
+  { value: 'NOT_CREATED', label: '未创建', type: 'info' },
+  { value: 'NOT_PUSHED', label: '未推送', type: 'info' },
+  { value: 'PUSHED', label: '已推送', type: 'success' },
+  { value: 'FAILED', label: '推送失败', type: 'danger' },
+  { value: 'CLOSED', label: '已关闭', type: 'info' },
+  { value: 'DONE', label: '已完成', type: 'success' },
 ]
 
 export const INGEST_STATUS_OPTIONS = [
@@ -65,6 +99,10 @@ const optionGroups = {
   sourceType: SOURCE_TYPE_OPTIONS,
   classificationStatus: CLASSIFICATION_STATUS_OPTIONS,
   bomStatus: BOM_STATUS_OPTIONS,
+  productType: PRODUCT_TYPE_OPTIONS,
+  reviewStatus: REVIEW_STATUS_OPTIONS,
+  preparationStatus: PREPARATION_STATUS_OPTIONS,
+  oaTodoPushStatus: OA_TODO_PUSH_STATUS_OPTIONS,
   ingestStatus: INGEST_STATUS_OPTIONS,
   calcStatus: CALC_STATUS_OPTIONS,
 }
@@ -147,14 +185,21 @@ function aggregateBomStatus(items) {
   const statuses = items.map((item) => item.bomStatus).filter(Boolean)
   if (statuses.length === 0) return 'NOT_CHECKED'
   if (statuses.includes('CHECK_FAILED')) return 'CHECK_FAILED'
+  if (statuses.includes('SYNCING')) return 'SYNCING'
   if (statuses.includes('ENTRY_IN_PROGRESS')) return 'ENTRY_IN_PROGRESS'
   if (statuses.includes('ENTRY_PENDING')) return 'ENTRY_PENDING'
   if (statuses.includes('NO_BOM')) return 'NO_BOM'
   if (statuses.includes('EXPIRED')) return 'EXPIRED'
   if (statuses.every((status) => status === 'SYNCED')) return 'SYNCED'
+  if (statuses.every((status) => status === 'REUSED_CURRENT_MONTH')) return 'REUSED_CURRENT_MONTH'
   if (statuses.every((status) => status === 'MANUAL_ENTERED')) return 'MANUAL_ENTERED'
-  if (statuses.every((status) => ['SYNCED', 'MANUAL_ENTERED'].includes(status))) return 'SYNCED'
+  // 前端聚合只负责展示；成本试算最终仍以后端检查为准。
+  if (statuses.every((status) => isCostReadyBomStatus(status))) return 'SYNCED'
   return 'NOT_CHECKED'
+}
+
+export function isCostReadyBomStatus(status) {
+  return ['SYNCED', 'REUSED_CURRENT_MONTH', 'MANUAL_ENTERED'].includes(status)
 }
 
 export function formatDateTime(value) {

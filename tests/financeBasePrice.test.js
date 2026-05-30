@@ -106,6 +106,7 @@ describe('financeBasePrice.js', () => {
     assert.match(content, /content-disposition/)
     assert.match(content, /factor-adjust-template-/)
     assert.match(content, /export\s+const\s+importFactorAdjustExcel\b/)
+    assert.match(content, /append\(['"]adjustType['"]\s*,\s*options\.adjustType\)/)
     assert.match(content, /append\(['"]usageScope['"]\s*,\s*options\.usageScope\)/)
     assert.match(content, /\/api\/v1\/price-linked\/factor-adjust\/import/)
     assert.match(content, /method:\s*['"]POST['"]/)
