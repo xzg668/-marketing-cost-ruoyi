@@ -56,7 +56,7 @@
             </el-select>
           </el-form-item>
           <el-form-item label="BOM 状态">
-            <el-select v-model="filters.bomStatuses" multiple collapse-tags clearable placeholder="默认待处理">
+            <el-select v-model="filters.bomStatuses" multiple collapse-tags clearable :placeholder="bomStatusPlaceholder">
               <el-option
                 v-for="item in BOM_STATUS_OPTIONS"
                 :key="item.value"
@@ -345,8 +345,9 @@ const router = useRouter()
 const route = useRoute()
 
 const defaultBomStatuses = ['NO_BOM', 'NOT_CHECKED', 'ENTRY_PENDING', 'ENTRY_IN_PROGRESS']
+const initialOaNo = String(route.query.oaNo || '').trim()
 const filters = reactive({
-  oaNo: String(route.query.oaNo || ''),
+  oaNo: initialOaNo,
   customer: '',
   productCode: '',
   productType: '',
@@ -354,7 +355,7 @@ const filters = reactive({
   technicianName: '',
   needTechnicianTask: '',
   reviewStatus: '',
-  bomStatuses: [...defaultBomStatuses],
+  bomStatuses: initialOaNo ? [] : [...defaultBomStatuses],
 })
 
 const loading = ref(false)
@@ -384,6 +385,7 @@ const costingWarnings = computed(() => {
   const warnings = costingResult.value?.warnings || []
   return warnings.length ? warnings.join('；') : ''
 })
+const bomStatusPlaceholder = computed(() => (filters.oaNo ? '全部状态' : '默认待处理'))
 
 async function loadRows() {
   loading.value = true
@@ -414,6 +416,9 @@ async function loadRows() {
 }
 
 function applyFilters() {
+  if (filters.oaNo && isDefaultBomStatusFilter()) {
+    filters.bomStatuses = []
+  }
   pageNo.value = 1
   loadRows()
 }
@@ -589,6 +594,13 @@ function parseBooleanFilter(value) {
   if (value === 'true') return true
   if (value === 'false') return false
   return undefined
+}
+
+function isDefaultBomStatusFilter() {
+  if (filters.bomStatuses.length !== defaultBomStatuses.length) {
+    return false
+  }
+  return defaultBomStatuses.every((status) => filters.bomStatuses.includes(status))
 }
 
 watch([pageNo, pageSize], () => {

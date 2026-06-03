@@ -521,7 +521,7 @@ const parseExecutionPeriod = (value) => {
   if (!text) {
     return { effectiveFrom: null, effectiveTo: null }
   }
-  const matches = [...text.matchAll(/(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/g)]
+  const matches = [...text.matchAll(/(\d{4})(?:[-/.年])(\d{1,2})(?:[-/.月])(\d{1,2})(?:日)?/g)]
   const toDate = (match) => match
     ? `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`
     : null
@@ -530,6 +530,8 @@ const parseExecutionPeriod = (value) => {
     effectiveTo: toDate(matches[1]),
   }
 }
+
+const isU9ProcessNo = (value) => String(value || '').trim().toUpperCase().startsWith('U9')
 
 const handleFileChange = async (uploadFile) => {
   const rawFile = uploadFile.raw
@@ -650,7 +652,6 @@ const handleFileChange = async (uploadFile) => {
       ElMessage.error(`缺少表头：${names.join('、')}`)
       return
     }
-    let skippedU9 = 0
     let skippedInvalid = 0
     const dataRows = rows.slice(headerIndex + 1).map((row, offset) => {
       const processNo = String(row[fieldIndex.processNo] || '').trim()
@@ -658,6 +659,7 @@ const handleFileChange = async (uploadFile) => {
       const { effectiveFrom, effectiveTo } = parseExecutionPeriod(executionPeriodText)
       const srmDocNo = String(row[fieldIndex.srmDocNo] || '').trim()
       const currentTaxExcludedPrice = parseNumber(row[fieldIndex.fixedPrice])
+      const u9Source = isU9ProcessNo(processNo)
       return {
         externalRowId: String(row[fieldIndex.externalRowId] || '').trim(),
         processStatus: String(row[fieldIndex.processStatus] || '').trim(),
@@ -701,19 +703,16 @@ const handleFileChange = async (uploadFile) => {
         trackingDate: normalizeDate(row[fieldIndex.trackingDate]) || null,
         printFlag: String(row[fieldIndex.printFlag] || '').trim(),
         sourceType: FIXED_PURCHASE_SOURCE_TYPE,
-        sourceSystem: srmDocNo ? 'SRM' : 'EXCEL',
+        sourceSystem: u9Source ? 'U9' : srmDocNo ? 'SRM' : 'EXCEL',
         sourceSheetName: sheetName,
         sourceRowNo: headerIndex + offset + 2,
         pricingMonth: filters.value.pricingMonth || '2026-03',
         taxIncluded: false,
       }
     }).filter((row) => {
-      // 固定采购价5 里的 U9 行属于结算固定价来源，本页导入时跳过，FPT-05 归入结算固定价。
-      if (row.processNo === 'U9') {
-        skippedU9 += 1
-        return false
-      }
-      const valid = row.externalRowId && row.materialCode && row.materialName && row.fixedPrice !== null
+      // U9C-应付单列表没有稳定 id，按料号幂等导入；SRM/OA 行仍要求 id。
+      const hasStableKey = row.sourceSystem === 'U9' ? row.materialCode : row.externalRowId
+      const valid = hasStableKey && row.materialCode && row.materialName && row.fixedPrice !== null
       if (!valid) {
         skippedInvalid += 1
       }
@@ -730,7 +729,7 @@ const handleFileChange = async (uploadFile) => {
     })
     const created = result?.createdCount ?? 0
     const updated = result?.updatedCount ?? 0
-    const skipped = (result?.skippedCount ?? 0) + skippedU9 + skippedInvalid
+    const skipped = (result?.skippedCount ?? 0) + skippedInvalid
     ElMessage.success(`固定采购价导入完成：新增${created}条，更新${updated}条，跳过${skipped}条`)
     if (currentPage.value === 1) {
       fetchList()

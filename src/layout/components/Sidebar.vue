@@ -1,13 +1,13 @@
 <template>
-  <div class="sidebar" :class="{ collapsed: appStore.sidebarCollapsed }">
+  <div class="sidebar" :class="{ collapsed: effectiveCollapsed }">
     <div class="sidebar-logo">
-      <span v-if="!appStore.sidebarCollapsed">产品成本核算</span>
+      <span v-if="!effectiveCollapsed">产品成本核算</span>
       <span v-else>成本</span>
     </div>
     <el-scrollbar>
       <div v-if="displayRoutes.length === 0" class="sidebar-empty">
         <el-empty
-          v-if="!appStore.sidebarCollapsed"
+          v-if="!effectiveCollapsed"
           description="当前账号无菜单权限"
           :image-size="60"
         />
@@ -16,7 +16,7 @@
         v-else
         class="sidebar-menu"
         :default-active="activeMenu"
-        :collapse="appStore.sidebarCollapsed"
+        :collapse="effectiveCollapsed"
         :collapse-transition="false"
         :unique-opened="false"
         background-color="#ffffff"
@@ -35,7 +35,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { usePermissionStore } from '../../store/modules/permission'
 import { useAppStore } from '../../store/modules/app'
@@ -44,6 +44,7 @@ import SidebarItem from './SidebarItem.vue'
 const route = useRoute()
 const appStore = useAppStore()
 const permissionStore = usePermissionStore()
+const isNarrowViewport = ref(false)
 
 // T9/V61：200 是新的“数据接入”顶级菜单；旧 BOM 入口已收敛到“BOM 数据管理”。
 // 旧 OA 报价单入口由“报价单接入”替代，按常见旧 ID 和路径双重兜底隐藏。
@@ -91,6 +92,20 @@ const displayRoutes = computed(() =>
 )
 
 const activeMenu = computed(() => route.meta?.activeMenu || route.path)
+const effectiveCollapsed = computed(() => appStore.sidebarCollapsed || isNarrowViewport.value)
+
+function syncViewport() {
+  isNarrowViewport.value = window.innerWidth <= 768
+}
+
+onMounted(() => {
+  syncViewport()
+  window.addEventListener('resize', syncViewport)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', syncViewport)
+})
 </script>
 
 <style scoped>

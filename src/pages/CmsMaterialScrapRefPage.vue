@@ -91,6 +91,7 @@
 
 <script setup>
 import { onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   DocumentChecked,
@@ -107,8 +108,14 @@ import {
   normalizeCmsMaterialScrapRefPage,
 } from '../api/cmsMaterialScrapRef'
 
+const route = useRoute()
+const queryString = (key, fallback = '') => {
+  const value = route.query?.[key]
+  return Array.isArray(value) ? String(value[0] || fallback) : String(value || fallback)
+}
+
 const filters = reactive({
-  materialCode: '',
+  materialCode: queryString('materialCode', ''),
   scrapCode: '',
   keyword: '',
 })
@@ -197,6 +204,17 @@ async function submitImport() {
 }
 
 watch([currentPage, pageSize], fetchRows)
+watch(
+  () => route.query.materialCode,
+  (value) => {
+    const materialCode = Array.isArray(value) ? String(value[0] || '') : String(value || '')
+    if (materialCode !== filters.materialCode) {
+      filters.materialCode = materialCode
+      currentPage.value = 1
+      fetchRows()
+    }
+  }
+)
 onMounted(fetchRows)
 </script>
 

@@ -90,7 +90,7 @@
     <el-dialog v-model="importDialogVisible" title="导入供应商供货比例" width="720px">
       <div class="import-panel">
         <el-alert
-          title="导入去重口径：物料代码 + 物料名称 + 供应商 + 型号。重复导入同一业务键会更新已有行。"
+          title="导入去重口径：业务单元 + 物料代码 + 供应商。重复导入同一业务键会更新已有行。"
           type="info"
           show-icon
           :closable="false"
@@ -335,7 +335,7 @@ async function submitImport() {
   }
   importing.value = true
   try {
-    // 当前 Excel 导入按“物料代码+物料名称+供应商+型号”在后端做幂等 upsert，前端只负责传原始文件。
+    // 当前 Excel 导入按“业务单元+物料代码+供应商”在后端做幂等 upsert，前端只负责传原始文件。
     importResult.value = await importSupplierSupplyRatioExcel({ file: uploadFile.value })
     ElMessage.success('供应商供货比例导入完成')
     currentPage.value = 1

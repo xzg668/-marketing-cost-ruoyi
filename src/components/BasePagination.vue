@@ -60,4 +60,22 @@ const emitPageSize = (value) => {
   font-size: 12px;
   color: #6b7280;
 }
+
+@media (max-width: 600px) {
+  .base-pagination {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .base-pagination :deep(.el-pagination) {
+    width: 100%;
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+
+  .base-pagination :deep(.el-pagination__jump) {
+    display: none;
+  }
+}
 </style>

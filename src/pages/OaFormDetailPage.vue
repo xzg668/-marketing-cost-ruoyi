@@ -69,7 +69,7 @@
         <el-table-column prop="validDate" label="成本有效期" min-width="120" />
         <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" link :disabled="isAudited" @click="goCostRun(row)">
+            <el-button type="primary" link @click="goCostRun(row)">
               成本试算
             </el-button>
           </template>
@@ -80,15 +80,13 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { fetchOaFormDetail } from '../api/oaForms'
 
 const route = useRoute()
 const router = useRouter()
-
-const isAudited = computed(() => route.query.status === '已核算')
 
 const emptyKey = () => ({
   oaNo: '',
@@ -147,6 +145,9 @@ const goCostRun = (row) => {
   const query = {
     oaNo: detail.value.key.oaNo,
   }
+  if (row.id) {
+    query.itemIds = String(row.id)
+  }
 
   if (detail.value.key.customer) {
     query.customer = detail.value.key.customer
@@ -167,8 +168,8 @@ const goCostRun = (row) => {
     query.customerDrawing = row.customerDrawing
   }
 
-  if (route.query.status) {
-    query.status = String(route.query.status)
+  if (row.calcStatus) {
+    query.status = String(row.calcStatus)
   }
 
   router.push({

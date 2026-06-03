@@ -251,10 +251,13 @@
       </el-tabs>
     </section>
 
-    <el-dialog v-model="generateDialogVisible" title="生成包装组件价格" width="560px">
+    <el-dialog v-model="generateDialogVisible" title="生成包装组件价格" width="640px">
       <el-form :model="generateForm" label-width="116px">
-        <el-form-item label="包装父料号" required>
-          <el-input v-model="generateForm.packageMaterialCode" clearable placeholder="9830000026238" />
+        <el-form-item label="OA单号" required>
+          <el-input v-model="generateForm.oaNo" clearable placeholder="输入 OA 单号" />
+        </el-form-item>
+        <el-form-item label="成品料号">
+          <el-input v-model="generateForm.topProductCode" clearable placeholder="不填则生成整张 OA 下全部产品" />
         </el-form-item>
         <el-form-item label="期间">
           <el-date-picker
@@ -265,12 +268,6 @@
             placeholder="默认当前月份"
             style="width: 100%"
           />
-        </el-form-item>
-        <el-form-item label="OA单号">
-          <el-input v-model="generateForm.oaNo" clearable placeholder="可选" />
-        </el-form-item>
-        <el-form-item label="顶层产品" required>
-          <el-input v-model="generateForm.topProductCode" clearable placeholder="参考/顶层料号" />
         </el-form-item>
         <el-form-item label="来源类型">
           <el-input v-model="generateForm.sourceType" clearable placeholder="U9" />
@@ -287,6 +284,19 @@
           />
         </el-form-item>
       </el-form>
+      <el-table v-if="bulkResultRows.length" :data="bulkResultRows" border stripe size="small" class="bulk-result-table">
+        <el-table-column prop="oaNo" label="OA单号" min-width="140" show-overflow-tooltip />
+        <el-table-column prop="topProductCode" label="成品料号" min-width="130" show-overflow-tooltip />
+        <el-table-column prop="packageMaterialCode" label="包装父料号" min-width="140" show-overflow-tooltip />
+        <el-table-column label="状态" width="120">
+          <template #default="{ row }">
+            <el-tag size="small" :type="priceStatusTag(row.status)">
+              {{ priceStatusLabel(row.status) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="message" label="说明" min-width="180" show-overflow-tooltip />
+      </el-table>
       <template #footer>
         <el-button @click="generateDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="generating" @click="submitGenerate">生成</el-button>
@@ -405,6 +415,7 @@ import {
   fetchPackageComponentSnapshotDetails,
   fetchPackageComponentSnapshots,
   generatePackageComponentPrice,
+  generatePackageComponentPriceByOa,
   normalizePackagePage,
 } from '../../../api/packageComponentPrice.js'
 
@@ -465,8 +476,8 @@ const snapshotDetail = reactive({ snapshot: null, details: [] })
 const generateDialogVisible = ref(false)
 const generating = ref(false)
 const regeneratingId = ref(null)
+const bulkResultRows = ref([])
 const generateForm = reactive({
-  packageMaterialCode: '',
   periodMonth: '',
   oaNo: '',
   topProductCode: '',
@@ -628,7 +639,6 @@ const detailStats = (row) => detailCache.value[row.id]?.stats || { childCount: '
 
 const openGenerateDialog = (row) => {
   Object.assign(generateForm, {
-    packageMaterialCode: row?.packageMaterialCode || priceFilters.packageMaterialCode || '',
     periodMonth: row?.periodMonth || priceFilters.periodMonth || currentMonthText(),
     oaNo: '',
     topProductCode: row?.sourceTopProductCode || priceFilters.topProductCode || '',
@@ -636,15 +646,15 @@ const openGenerateDialog = (row) => {
     sourceType: 'U9',
     asOfDate: '',
   })
+  bulkResultRows.value = []
   generateDialogVisible.value = true
 }
 
 const buildGenerateBody = () => {
   const body = {
-    packageMaterialCode: String(generateForm.packageMaterialCode || '').trim(),
+    oaNo: String(generateForm.oaNo || '').trim(),
     periodMonth: generateForm.periodMonth || currentMonthText(),
-    oaNo: generateForm.oaNo,
-    topProductCode: generateForm.topProductCode,
+    topProductCode: String(generateForm.topProductCode || '').trim(),
     bomPurpose: DEFAULT_BOM_PURPOSE,
     sourceType: generateForm.sourceType || 'U9',
     asOfDate: generateForm.asOfDate,
@@ -658,25 +668,23 @@ const buildGenerateBody = () => {
 
 const submitGenerate = async () => {
   const body = buildGenerateBody()
-  if (!body.packageMaterialCode) {
-    ElMessage.warning('请输入包装父料号')
-    return
-  }
-  if (!body.topProductCode) {
-    ElMessage.warning('请输入顶层产品料号')
+  if (!body.oaNo) {
+    ElMessage.warning('请输入 OA 单号')
     return
   }
   generating.value = true
   try {
-    const result = await generatePackageComponentPrice(body)
-    generateDialogVisible.value = false
-    priceFilters.packageMaterialCode = body.packageMaterialCode
+    const result = await generatePackageComponentPriceByOa(body)
+    bulkResultRows.value = Array.isArray(result?.records) ? result.records : []
     priceFilters.periodMonth = body.periodMonth
-    priceFilters.topProductCode = body.topProductCode
+    priceFilters.packageMaterialCode = bulkResultRows.value.length === 1
+      ? (bulkResultRows.value[0]?.packageMaterialCode || '')
+      : ''
+    priceFilters.topProductCode = body.topProductCode || ''
     activeTab.value = 'prices'
     pricePage.value = 1
     detailCache.value = {}
-    showGenerateResultMessage(result)
+    ElMessage.success(`生成完成：成功 ${result?.successCount || 0} 个，失败 ${result?.failedCount || 0} 个`)
     await fetchPriceRows()
   } catch (error) {
     ElMessage.error(error?.message || '生成包装组件价格失败')
@@ -886,6 +894,10 @@ onMounted(fetchPriceRows)
 
 .package-table {
   width: 100%;
+}
+
+.bulk-result-table {
+  margin-top: 12px;
 }
 
 .danger {

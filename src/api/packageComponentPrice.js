@@ -46,6 +46,13 @@ export const generatePackageComponentPrice = (body) =>
     timeout: 120000,
   })
 
+export const generatePackageComponentPriceByOa = (body) =>
+  request(`${BASE_URL}/prices/generate-by-oa`, {
+    method: 'POST',
+    body,
+    timeout: 300000,
+  })
+
 export const fetchPackageComponentSnapshots = (params) =>
   request(`${BASE_URL}/snapshots`, { params })
 

@@ -100,7 +100,7 @@
 
 1100 基础数据 (M, /base)
   1101 BOM 层级树查看 (C, /base/bomTree, alias→pages:BomTreeViewerPage)
-  1102 BOM明细过滤规则 (C, /base/bomfilter, alias→pages:BomFilterRulePage)
+  1102 BOM 结算规则 (C, /bom-data/settlement-rules, alias→pages:BomSettlementRulePage)
   1103 BOM数据 (C, /base/material, alias→pages:BomManagePage)
   1104 物料价格类型对照表 (C, /base/map, component: base/map/index)
   1105 部门经费率对照表 (C, /base/fixed, component: base/fixed/index)
@@ -228,6 +228,6 @@
 位于 `src/store/modules/permission.js`。迁移后主要保留指向 `src/pages/` 的条目，因为这些组件在 `src/pages/` 下而非 `src/views/`：
 
 - `pages:OaFormListPage`、`pages:CostRunPage`、`pages:CostRunResultPage`、`pages:CostRunDetailPage`
-- `pages:BomManagePage`、`pages:BomFilterRulePage`、`pages:BomTreeViewerPage`、`pages:BomManualImportPage`、`pages:U9BomPage`
+- `pages:BomManagePage`、`pages:BomSettlementRulePage`、`pages:BomTreeViewerPage`、`pages:BomManualImportPage`、`pages:U9BomPage`
 - `pages:PriceLinkedFinanceBasePage`、`pages:PriceVariableAdminPage`、`pages:PriceLinkedResultPage`、`pages:PriceLinkedOaResultPage`
 - 其他 views 下已存在的路径无需别名

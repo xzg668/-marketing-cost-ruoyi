@@ -52,4 +52,25 @@ describe('PPR-13 价格准备候选行入口', () => {
     assert.match(pageContent, /高级：粘贴 OA 单号/)
     assert.match(pageContent, /oaNos:\s*targets\.length \? undefined : oaNos/)
   })
+
+  it('页面查询和生成统一使用当前核算月', () => {
+    assert.match(pageContent, /const currentMonthText = \(\) =>/)
+    assert.match(pageContent, /v-model="generateForm\.periodMonth"[\s\S]*disabled/)
+    assert.match(pageContent, /periodMonth: currentMonthText\(\),/)
+    assert.match(
+      pageContent,
+      /periodMonth: selectedCandidate\.value\?\.periodMonth \|\| currentMonthText\(\),/
+    )
+    assert.match(pageContent, /periodMonth: currentMonthText\(\),[\s\S]*targets:/)
+  })
+
+  it('NSC-05：缺废料映射行提供可审计处理动作', () => {
+    assert.match(apiContent, /MISSING_SCRAP_MAPPING/)
+    assert.match(pageContent, /displayGapTypeLabel\(row\)/)
+    assert.match(pageContent, /补充废料映射/)
+    assert.match(pageContent, /确认无废料，按0处理/)
+    assert.match(pageContent, /确认状态/)
+    assert.match(pageContent, /noScrapConfirmationLabel/)
+    assert.match(pageContent, /confirmPricePrepareNoScrap/)
+  })
 })

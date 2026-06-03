@@ -309,6 +309,14 @@ const normalizeHeader = (value) =>
 const normalizeSheetName = (value) =>
   normalizeHeader(value).replace(/[-_－—]/g, '')
 
+const normalizeImportPriceType = (value) => {
+  const text = String(value || '').trim()
+  if (['固定采购价', '采购固定价'].includes(text)) {
+    return '固定价'
+  }
+  return text
+}
+
 const formatPeriod = (value) => {
   if (!value) {
     return ''
@@ -368,14 +376,15 @@ const handleFileChange = async (uploadFile) => {
     })
     const headerAliases = {
       rowNo: ['行号', '序号'],
-      materialCode: ['物料代码', '物料编码', '物料编号', '料号'],
+      materialCode: ['物料代码', '物料编码', '物料编号', '物料料号', '料号'],
       materialName: ['物料名称', '名称'],
-      materialModel: ['型号'],
-      unit: ['单位'],
-      materialShape: ['物料形态属性', '形态属性'],
+      materialSpec: ['物料规格', '规格'],
+      materialModel: ['物料型号', '型号', '规格型号'],
+      unit: ['计量单位', '单位'],
+      materialShape: ['U9物料形态属性', '物料形态属性', '物料形态', '形态属性'],
       categoryCode: ['主分类编码', '主分类代码', '分类编码'],
       categoryName: ['主分类名称', '分类名称'],
-      priceType: ['价格类型', '价格类别'],
+      priceType: ['价格类型', '价格类别', '采购件--价格类型', '采购件-价格类型', '采购件价格类型'],
       period: ['期间', '账期', '月份'],
     }
     const headerMap = Object.entries(headerAliases).reduce((acc, [key, values]) => {
@@ -434,13 +443,9 @@ const handleFileChange = async (uploadFile) => {
         fieldIndex[field] = index
       }
     })
-    const requiredFields = ['materialCode', 'materialName', 'materialModel', 'unit', 'materialShape', 'priceType']
+    const requiredFields = ['materialCode', 'priceType']
     const requiredLabels = {
       materialCode: '物料代码',
-      materialName: '物料名称',
-      materialModel: '型号',
-      unit: '单位',
-      materialShape: '物料形态属性',
       priceType: '价格类型',
     }
     const missing = requiredFields.filter((field) => fieldIndex[field] === undefined)
@@ -456,33 +461,27 @@ const handleFileChange = async (uploadFile) => {
           rowNo: parseNumber(row[fieldIndex.rowNo]),
           materialCode: String(row[fieldIndex.materialCode] || '').trim(),
           materialName: String(row[fieldIndex.materialName] || '').trim(),
+          materialSpec: String(row[fieldIndex.materialSpec] || '').trim(),
           materialModel: String(row[fieldIndex.materialModel] || '').trim(),
           unit: String(row[fieldIndex.unit] || '').trim(),
           materialShape: String(row[fieldIndex.materialShape] || '').trim(),
           categoryCode: String(row[fieldIndex.categoryCode] || '').trim(),
           categoryName: String(row[fieldIndex.categoryName] || '').trim(),
-          priceType: String(row[fieldIndex.priceType] || '').trim(),
+          priceType: normalizeImportPriceType(row[fieldIndex.priceType]),
           period: formatPeriod(row[fieldIndex.period]),
         }
       })
       .filter(
         (row) =>
           row.materialCode &&
-          row.materialName &&
-          row.materialModel &&
-          row.unit &&
-          row.materialShape &&
           row.priceType,
       )
     const dedupeMap = new Map()
     parsedRows.forEach((row) => {
-      // 导入去重口径与后台保持一致：同一期间内同一物料路由只保留一条。
+      // 导入去重口径与后台保持一致：同一物料同一价格类型只保留一条。
       const key = [
         row.materialCode,
-        row.materialModel,
-        row.materialShape,
         row.priceType,
-        row.period || '',
       ].join('\u0001')
       dedupeMap.set(key, row)
     })

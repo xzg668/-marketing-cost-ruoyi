@@ -78,11 +78,6 @@
             {{ formatAmount(row.unitCost) }}
           </template>
         </el-table-column>
-        <el-table-column label="成本金额(元)" width="150">
-          <template #default="{ row }">
-            {{ formatAmount(row.totalCost) }}
-          </template>
-        </el-table-column>
         <el-table-column label="操作" width="100" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link @click="goOaDetail(row)">
@@ -130,11 +125,40 @@ const POLL_TIMEOUT_MS = 30 * 1000
 
 const oaNo = computed(() => String(route.params.oaNo || route.query.oaNo || '').trim())
 const queryStatus = computed(() => String(route.query.status || '').trim())
+const forceRun = computed(() => String(route.query.forceRun || '').trim() === '1')
+const selectedItemIds = computed(() => {
+  const raw = String(route.query.itemIds || '').trim()
+  if (!raw) {
+    return []
+  }
+  return raw
+    .split(',')
+    .map((item) => Number(item))
+    .filter((item) => Number.isFinite(item) && item > 0)
+})
 
 const meta = computed(() => result.value.meta || {})
-const displayStatus = computed(
-  () => statusOverride.value || queryStatus.value || meta.value.status || '未核算',
-)
+const selectedStatus = computed(() => {
+  const itemIds = selectedItemIds.value
+  if (!itemIds.length) {
+    return ''
+  }
+  const items = Array.isArray(result.value.items) ? result.value.items : []
+  const selectedItems = items.filter((item) => itemIds.includes(Number(item.id)))
+  if (!selectedItems.length) {
+    return ''
+  }
+  return selectedItems.every((item) => item.calcStatus === '已核算') ? '已核算' : '未核算'
+})
+const displayStatus = computed(() => {
+  if (statusOverride.value) {
+    return statusOverride.value
+  }
+  if (selectedItemIds.value.length) {
+    return selectedStatus.value || '未核算'
+  }
+  return queryStatus.value || meta.value.status || '未核算'
+})
 
 const filteredItems = computed(() => {
   const items = Array.isArray(result.value.items) ? result.value.items : []
@@ -142,12 +166,16 @@ const filteredItems = computed(() => {
   const materialCode = String(route.query.materialCode || '').trim()
   const customerDrawing = String(route.query.customerDrawing || '').trim()
   const spec = String(route.query.spec || '').trim()
+  const itemIds = selectedItemIds.value
 
-  if (!productName && !materialCode && !customerDrawing && !spec) {
+  if (!itemIds.length && !productName && !materialCode && !customerDrawing && !spec) {
     return items
   }
 
   return items.filter((item) => {
+    if (itemIds.length && !itemIds.includes(Number(item.id))) {
+      return false
+    }
     if (productName && item.productName !== productName) {
       return false
     }
@@ -228,25 +256,17 @@ const formatQty = (value) => {
 
 const mapItems = (items) =>
   items.map((item) => ({
+    id: item.id ?? null,
     productName: item.productName || '',
     materialCode: item.materialNo || item.materialCode || '',
     customerDrawing: item.customerDrawing || '',
     spec: item.spec || '',
+    packageMethod: item.packageMethod || '',
+    packageComponentCode: item.packageComponentCode || '',
+    calcStatus: item.calcStatus || '未核算',
+    calcAt: item.calcAt || '',
     supportQty: item.supportQty ?? null,
-    unitCost:
-      item.unitCost ??
-      item.totalNoShip ??
-      item.totalWithShip ??
-      item.materialCost ??
-      item.laborCost ??
-      null,
-    totalCost:
-      item.costAmount ??
-      item.totalWithShip ??
-      item.totalNoShip ??
-      item.materialCost ??
-      item.laborCost ??
-      null,
+    unitCost: item.unitCost ?? item.totalCost ?? item.costAmount ?? null,
   }))
 
 const loadResult = async () => {
@@ -417,10 +437,10 @@ const resetFlow = async () => {
   }
 
   await loadResult()
-  if (displayStatus.value === '未核算') {
+  if (forceRun.value || displayStatus.value === '未核算') {
     startProgress()
     try {
-      await runCostTrial(oaNo.value)
+      await runCostTrial(oaNo.value, selectedItemIds.value)
       // 后端是异步执行，轮询进度直到 DONE 或 ERROR
       const finalStatus = await waitForCompletion()
       if (finalStatus === 'DONE') {
@@ -486,7 +506,7 @@ const goOaDetail = (row) => {
   })
 }
 
-watch([oaNo, queryStatus], () => {
+watch([oaNo, queryStatus, selectedItemIds, forceRun], () => {
   resetFlow()
 }, { immediate: true })
 

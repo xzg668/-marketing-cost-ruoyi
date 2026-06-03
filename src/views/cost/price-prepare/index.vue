@@ -210,7 +210,7 @@
             </el-table-column>
             <el-table-column label="缺口类型" width="110">
               <template #default="{ row }">
-                <el-tag size="small" :type="gapTypeTag(row.gapType)">{{ gapTypeLabel(row.gapType) }}</el-tag>
+                <el-tag size="small" :type="displayGapTypeTag(row)">{{ displayGapTypeLabel(row) }}</el-tag>
               </template>
             </el-table-column>
             <el-table-column prop="sourceTable" label="缺口来源" width="150" show-overflow-tooltip>
@@ -224,6 +224,55 @@
               </template>
             </el-table-column>
             <el-table-column prop="message" label="说明" min-width="260" show-overflow-tooltip />
+            <el-table-column label="建议处理" width="230" fixed="right">
+              <template #default="{ row }">
+                <div v-if="isMissingScrapMappingGap(row)" class="gap-action-buttons">
+                  <el-button
+                    link
+                    type="primary"
+                    :icon="Search"
+                    @click.stop="goSupplementScrapMapping(row)"
+                  >
+                    补充废料映射
+                  </el-button>
+                  <el-button
+                    v-if="canConfirmNoScrap(row)"
+                    link
+                    type="warning"
+                    :icon="Operation"
+                    @click.stop="openNoScrapConfirmDialog(row)"
+                  >
+                    确认无废料，按0处理
+                  </el-button>
+                  <el-button
+                    v-if="canRevokeNoScrap(row)"
+                    link
+                    type="danger"
+                    :icon="RefreshLeft"
+                    @click.stop="openNoScrapRevokeDialog(row)"
+                  >
+                    撤销确认
+                  </el-button>
+                </div>
+                <span v-else class="muted-text">按缺口说明处理</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="确认状态" min-width="210">
+              <template #default="{ row }">
+                <div v-if="isMissingScrapMappingGap(row)" class="confirmation-cell">
+                  <el-tag size="small" :type="noScrapConfirmationTag(row)">
+                    {{ noScrapConfirmationLabel(row) }}
+                  </el-tag>
+                  <div v-if="isNoScrapConfirmed(row)" class="confirmation-detail">
+                    {{ noScrapConfirmedBy(row) }} / {{ formatDateTime(noScrapConfirmedAt(row)) }}
+                  </div>
+                  <div v-if="isNoScrapConfirmed(row) && noScrapConfirmReason(row)" class="confirmation-reason">
+                    {{ noScrapConfirmReason(row) }}
+                  </div>
+                </div>
+                <span v-else class="muted-text">-</span>
+              </template>
+            </el-table-column>
             <template #empty>
               <el-empty :description="selectedCandidate ? '暂无价格准备缺口' : '请先选择候选行'" />
             </template>
@@ -256,7 +305,8 @@
             type="month"
             format="YYYY-MM"
             value-format="YYYY-MM"
-            placeholder="默认当前期间"
+            disabled
+            placeholder="当前核算月"
             style="width: 100%"
           />
         </el-form-item>
@@ -292,11 +342,76 @@
         <el-button type="primary" :loading="generating" @click="submitGenerate">生成</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="noScrapConfirmDialogVisible" title="确认无废料，按0处理" width="560px">
+      <el-alert
+        class="no-scrap-impact-alert"
+        type="warning"
+        show-icon
+        :closable="false"
+        title="确认后该料号废料抵扣按 0 处理，需重新生成价格准备后生效。"
+      />
+      <el-descriptions :column="1" border class="no-scrap-context">
+        <el-descriptions-item label="OA单号">{{ noScrapConfirmContext.oaNo || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="顶层产品">{{ noScrapConfirmContext.topProductCode || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="子项料号">{{ noScrapConfirmContext.materialNo || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="价格月份">{{ noScrapConfirmContext.periodMonth || '-' }}</el-descriptions-item>
+      </el-descriptions>
+      <el-form :model="noScrapConfirmForm" label-width="86px">
+        <el-form-item label="确认原因" required>
+          <el-input
+            v-model="noScrapConfirmForm.confirmReason"
+            type="textarea"
+            :rows="4"
+            maxlength="200"
+            show-word-limit
+            placeholder="请输入确认原因"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="noScrapConfirmDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="noScrapConfirming" @click="submitNoScrapConfirm">确认按0处理</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="noScrapRevokeDialogVisible" title="撤销无废料确认" width="520px">
+      <el-alert
+        class="no-scrap-impact-alert"
+        type="warning"
+        show-icon
+        :closable="false"
+        title="撤销后重新生成价格准备，该料号会重新进入缺废料映射缺口，除非已补充 CMS 废料映射。"
+      />
+      <el-descriptions :column="1" border class="no-scrap-context">
+        <el-descriptions-item label="确认ID">{{ noScrapRevokeContext.confirmationId || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="OA单号">{{ noScrapRevokeContext.oaNo || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="料号">{{ noScrapRevokeContext.materialNo || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="确认原因">{{ noScrapRevokeContext.confirmReason || '-' }}</el-descriptions-item>
+      </el-descriptions>
+      <el-form :model="noScrapRevokeForm" label-width="86px">
+        <el-form-item label="撤销原因" required>
+          <el-input
+            v-model="noScrapRevokeForm.revokeReason"
+            type="textarea"
+            :rows="4"
+            maxlength="200"
+            show-word-limit
+            placeholder="请输入撤销原因"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="noScrapRevokeDialogVisible = false">取消</el-button>
+        <el-button type="danger" :loading="noScrapRevoking" @click="submitNoScrapRevoke">撤销确认</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Operation, RefreshLeft, RefreshRight, Search } from '@element-plus/icons-vue'
 import BasePagination from '../../../components/BasePagination.vue'
@@ -309,12 +424,15 @@ import {
   fetchPricePrepareCandidates,
   fetchPricePrepareGaps,
   fetchPricePrepareItems,
+  confirmPricePrepareNoScrap,
+  revokePricePrepareNoScrap,
   generatePricePrepareBulk,
   normalizePricePreparePage,
 } from '../../../api/pricePrepare.js'
 import { useUserStore } from '../../../store/modules/user'
 
 const userStore = useUserStore()
+const router = useRouter()
 const activeTab = ref('items')
 const candidateTableRef = ref(null)
 const candidateRows = ref([])
@@ -341,6 +459,12 @@ const itemLoading = ref(false)
 const gapLoading = ref(false)
 const generating = ref(false)
 const generateDialogVisible = ref(false)
+const noScrapConfirmDialogVisible = ref(false)
+const noScrapConfirming = ref(false)
+const noScrapRevokeDialogVisible = ref(false)
+const noScrapRevoking = ref(false)
+const currentNoScrapGap = ref(null)
+const currentNoScrapRevokeGap = ref(null)
 
 const hasPermission = (permission) => {
   const permissions = Array.isArray(userStore.permissions) ? userStore.permissions : []
@@ -358,8 +482,25 @@ const candidateFilters = reactive({
 const itemFilters = reactive({ materialCode: '', itemType: '', status: '' })
 const gapFilters = reactive({ materialCode: '', gapMaterialCode: '', itemType: '', gapType: '' })
 const generateForm = reactive({ targetKeys: [], oaNosText: '', periodMonth: '' })
+const noScrapConfirmForm = reactive({ confirmReason: '' })
+const noScrapRevokeForm = reactive({ revokeReason: '' })
+const noScrapConfirmContext = reactive({
+  oaNo: '',
+  topProductCode: '',
+  materialNo: '',
+  materialName: '',
+  periodMonth: '',
+})
+const noScrapRevokeContext = reactive({
+  confirmationId: '',
+  oaNo: '',
+  materialNo: '',
+  confirmReason: '',
+})
 
 const loadingAny = computed(() => candidateLoading.value || itemLoading.value || gapLoading.value)
+const canConfirmNoScrapPermission = computed(() => hasPermission('cost:price-prepare:no-scrap-confirm'))
+const canRevokeNoScrapPermission = computed(() => hasPermission('cost:price-prepare:no-scrap-revoke'))
 const detailScopeText = computed(() => {
   if (!selectedCandidate.value) return '未选择候选行'
   return `${selectedCandidate.value.oaNo} / ${selectedCandidate.value.topProductCode}`
@@ -445,6 +586,12 @@ const normalizeSummaryStatus = (status) => {
   return status || 'NOT_PREPARED'
 }
 
+const GAP_TYPE_MISSING_SCRAP_MAPPING = 'MISSING_SCRAP_MAPPING'
+const ACTION_SUPPLEMENT_SCRAP_MAPPING = 'SUPPLEMENT_SCRAP_MAPPING'
+const ACTION_CONFIRM_NO_SCRAP = 'CONFIRM_NO_SCRAP'
+const NO_SCRAP_STATUS_ACTIVE = 'ACTIVE'
+const NO_SCRAP_STATUS_REVOKED = 'REVOKED'
+
 const sourceLabel = (value) => {
   const map = {
     lp_bom_costing_row: 'BOM结算明细',
@@ -461,6 +608,76 @@ const sourceLabel = (value) => {
   }
   return map[value] || value || '-'
 }
+
+const isScrapMappingSource = (row) => row?.sourceTable === 'lp_material_scrap_ref'
+const isMissingScrapMappingGap = (row) =>
+  row?.gapType === GAP_TYPE_MISSING_SCRAP_MAPPING ||
+  row?.actionType === ACTION_SUPPLEMENT_SCRAP_MAPPING ||
+  row?.actionType === ACTION_CONFIRM_NO_SCRAP ||
+  row?.canConfirmNoScrap === true ||
+  isScrapMappingSource(row)
+
+const displayGapTypeLabel = (row) =>
+  isMissingScrapMappingGap(row) ? '缺废料映射' : gapTypeLabel(row?.gapType)
+
+const displayGapTypeTag = (row) =>
+  isMissingScrapMappingGap(row) ? 'warning' : gapTypeTag(row?.gapType)
+
+const actionMaterialNo = (row) =>
+  row?.actionMaterialNo || row?.materialNo || row?.gapMaterialCode || row?.materialCode || ''
+
+const actionPeriodMonth = (row) =>
+  row?.periodMonth || row?.priceMonth || row?.effectiveFromMonth || selectedCandidate.value?.periodMonth || currentMonthText()
+
+const noScrapConfirmation = (row) => row?.noScrapConfirmation || {}
+const noScrapConfirmationStatus = (row) =>
+  row?.noScrapConfirmationStatus ||
+  row?.confirmationStatus ||
+  row?.noScrapStatus ||
+  noScrapConfirmation(row).status ||
+  (row?.noScrapConfirmationId ? NO_SCRAP_STATUS_ACTIVE : '')
+
+const isNoScrapConfirmed = (row) => noScrapConfirmationStatus(row) === NO_SCRAP_STATUS_ACTIVE
+const canConfirmNoScrap = (row) =>
+  isMissingScrapMappingGap(row) &&
+  canConfirmNoScrapPermission.value &&
+  row?.canConfirmNoScrap !== false &&
+  !isNoScrapConfirmed(row)
+
+const noScrapConfirmationId = (row) =>
+  row?.noScrapConfirmationId || noScrapConfirmation(row).id || ''
+
+const canRevokeNoScrap = (row) =>
+  isMissingScrapMappingGap(row) &&
+  canRevokeNoScrapPermission.value &&
+  isNoScrapConfirmed(row) &&
+  Boolean(noScrapConfirmationId(row))
+
+const noScrapConfirmationLabel = (row) => {
+  const status = noScrapConfirmationStatus(row)
+  if (status === NO_SCRAP_STATUS_ACTIVE) return '已确认'
+  if (status === NO_SCRAP_STATUS_REVOKED) return '已撤销'
+  return '未确认'
+}
+
+const noScrapConfirmationTag = (row) => {
+  const status = noScrapConfirmationStatus(row)
+  if (status === NO_SCRAP_STATUS_ACTIVE) return 'success'
+  if (status === NO_SCRAP_STATUS_REVOKED) return 'info'
+  return 'warning'
+}
+
+const noScrapConfirmedBy = (row) =>
+  row?.confirmedBy || noScrapConfirmation(row).confirmedBy || '-'
+
+const noScrapConfirmedAt = (row) =>
+  row?.confirmedAt || noScrapConfirmation(row).confirmedAt || ''
+
+const noScrapConfirmReason = (row) =>
+  row?.confirmReason || noScrapConfirmation(row).confirmReason || ''
+
+const noScrapSourceOaNo = (row) =>
+  row?.sourceOaNo || noScrapConfirmation(row).sourceOaNo || row?.oaNo || selectedCandidate.value?.oaNo || ''
 
 const priceSourceLabel = (value) => {
   if (!value) return '-'
@@ -489,8 +706,110 @@ const formatMoney = (value) => {
   return number.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 6 })
 }
 
+const goSupplementScrapMapping = (row) => {
+  const materialCode = actionMaterialNo(row)
+  router.push({
+    path: '/base/cms-cost/material-scrap-refs',
+    query: materialCode ? { materialCode } : {},
+  })
+}
+
+const openNoScrapConfirmDialog = (row) => {
+  currentNoScrapGap.value = row
+  Object.assign(noScrapConfirmContext, {
+    oaNo: row?.oaNo || selectedCandidate.value?.oaNo || '',
+    topProductCode: row?.topProductCode || selectedCandidate.value?.topProductCode || '',
+    materialNo: actionMaterialNo(row),
+    materialName: row?.materialName || row?.gapMaterialName || '',
+    periodMonth: actionPeriodMonth(row),
+  })
+  noScrapConfirmForm.confirmReason = ''
+  noScrapConfirmDialogVisible.value = true
+}
+
+const mergeNoScrapConfirmation = (row, response) => {
+  if (!row || !response) return
+  row.noScrapConfirmationId = response.id
+  row.noScrapConfirmationStatus = response.status || NO_SCRAP_STATUS_ACTIVE
+  row.noScrapConfirmation = response
+  row.confirmedBy = response.confirmedBy
+  row.confirmedAt = response.confirmedAt
+  row.confirmReason = response.confirmReason
+  row.revokedBy = response.revokedBy
+  row.revokedAt = response.revokedAt
+  row.revokeReason = response.revokeReason
+}
+
+const submitNoScrapConfirm = async () => {
+  const reason = noScrapConfirmForm.confirmReason.trim()
+  if (!reason) {
+    ElMessage.warning('请输入确认原因')
+    return
+  }
+  const row = currentNoScrapGap.value
+  noScrapConfirming.value = true
+  try {
+    const response = await confirmPricePrepareNoScrap({
+      businessUnitType: row?.businessUnitType || userStore.businessUnitType || '',
+      materialNo: noScrapConfirmContext.materialNo,
+      materialName: noScrapConfirmContext.materialName,
+      effectiveFromMonth: noScrapConfirmContext.periodMonth,
+      confirmReason: reason,
+      sourceOaNo: noScrapConfirmContext.oaNo,
+      sourceGapId: row?.id,
+    })
+    mergeNoScrapConfirmation(row, response)
+    noScrapConfirmDialogVisible.value = false
+    ElMessage.success('确认完成，需重新生成价格准备后生效')
+  } catch (error) {
+    ElMessage.error(error?.message || '确认无废料失败')
+  } finally {
+    noScrapConfirming.value = false
+  }
+}
+
+const openNoScrapRevokeDialog = (row) => {
+  currentNoScrapRevokeGap.value = row
+  Object.assign(noScrapRevokeContext, {
+    confirmationId: noScrapConfirmationId(row),
+    oaNo: noScrapSourceOaNo(row),
+    materialNo: actionMaterialNo(row),
+    confirmReason: noScrapConfirmReason(row),
+  })
+  noScrapRevokeForm.revokeReason = ''
+  noScrapRevokeDialogVisible.value = true
+}
+
+const submitNoScrapRevoke = async () => {
+  const reason = noScrapRevokeForm.revokeReason.trim()
+  if (!reason) {
+    ElMessage.warning('请输入撤销原因')
+    return
+  }
+  const row = currentNoScrapRevokeGap.value
+  const confirmationId = noScrapConfirmationId(row)
+  if (!confirmationId) {
+    ElMessage.warning('缺少确认记录ID')
+    return
+  }
+  noScrapRevoking.value = true
+  try {
+    const response = await revokePricePrepareNoScrap(confirmationId, {
+      revokeReason: reason,
+    })
+    mergeNoScrapConfirmation(row, response)
+    noScrapRevokeDialogVisible.value = false
+    ElMessage.success('撤销完成，重新生成价格准备后缺口会按最新状态刷新')
+  } catch (error) {
+    ElMessage.error(error?.message || '撤销无废料确认失败')
+  } finally {
+    noScrapRevoking.value = false
+  }
+}
+
 const buildCandidateParams = () => ({
   ...candidateFilters,
+  periodMonth: currentMonthText(),
   page: candidatePage.value,
   pageSize: candidatePageSize.value,
 })
@@ -516,7 +835,8 @@ const fetchGenerateCandidates = async () => {
   dialogCandidatesLoading.value = true
   try {
     const baseParams = {
-    keyword: candidateFilters.keyword,
+      keyword: candidateFilters.keyword,
+      periodMonth: currentMonthText(),
       calcStatus: candidateFilters.calcStatus,
       prepareStatus: candidateFilters.prepareStatus,
       onlyPending: candidateFilters.onlyPending,
@@ -549,6 +869,7 @@ const fetchGenerateCandidates = async () => {
 const buildItemParams = () => ({
   ...itemFilters,
   oaNo: selectedCandidate.value?.oaNo,
+  periodMonth: selectedCandidate.value?.periodMonth || currentMonthText(),
   topProductCode: selectedCandidate.value?.topProductCode,
   page: itemPage.value,
   pageSize: itemPageSize.value,
@@ -557,6 +878,7 @@ const buildItemParams = () => ({
 const buildGapParams = () => ({
   ...gapFilters,
   oaNo: selectedCandidate.value?.oaNo,
+  periodMonth: selectedCandidate.value?.periodMonth || currentMonthText(),
   topProductCode: selectedCandidate.value?.topProductCode,
   page: gapPage.value,
   pageSize: gapPageSize.value,
@@ -716,7 +1038,7 @@ const submitGenerate = async () => {
     const result = await generatePricePrepareBulk({
       targets: targets.length ? targets : undefined,
       oaNos: targets.length ? undefined : oaNos,
-      periodMonth: generateForm.periodMonth || currentMonthText(),
+      periodMonth: currentMonthText(),
     })
     bulkResultRows.value = Array.isArray(result?.records) ? result.records : []
     ElMessage.success(`生成完成：成功 ${result?.successCount || 0} 个，失败 ${result?.failedCount || 0} 个`)
@@ -856,6 +1178,41 @@ onMounted(fetchCandidates)
   font-size: 13px;
 }
 
+.gap-action-buttons {
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.confirmation-cell {
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.confirmation-detail,
+.confirmation-reason,
+.muted-text {
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.confirmation-reason {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.no-scrap-impact-alert,
+.no-scrap-context {
+  margin-bottom: 14px;
+}
+
 .advanced-generate {
   border-top: 0;
   border-bottom: 0;
@@ -872,6 +1229,73 @@ onMounted(fetchCandidates)
 
   .page-toolbar {
     align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 600px) {
+  .price-prepare-page {
+    padding: 8px;
+  }
+
+  .page-toolbar,
+  .query-panel,
+  .table-panel {
+    border-radius: 6px;
+  }
+
+  .page-toolbar {
+    padding: 14px;
+  }
+
+  .toolbar-actions,
+  .tab-filter-row {
+    width: 100%;
+  }
+
+  .toolbar-actions :deep(.el-button),
+  .tab-filter-row :deep(.el-button) {
+    flex: none;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .query-panel {
+    padding: 12px 12px 0;
+  }
+
+  .query-form {
+    display: block;
+  }
+
+  .query-form :deep(.el-form-item) {
+    display: block;
+    margin-right: 0;
+  }
+
+  .query-form :deep(.el-form-item__label) {
+    display: block;
+    width: auto !important;
+    margin-bottom: 6px;
+    text-align: left;
+  }
+
+  .query-form :deep(.el-form-item__content),
+  .query-form :deep(.el-input),
+  .query-form :deep(.el-select),
+  .query-form :deep(.el-date-editor),
+  .tab-filter-row :deep(.el-input),
+  .tab-filter-row :deep(.el-select) {
+    width: 100%;
+  }
+
+  .section-title {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .tab-filter-row {
+    align-items: stretch;
     flex-direction: column;
   }
 }

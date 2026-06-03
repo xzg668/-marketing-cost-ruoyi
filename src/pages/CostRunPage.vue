@@ -87,8 +87,11 @@
           </template>
         </el-table-column>
         <el-table-column prop="oaNo" label="OA单号" min-width="180" />
+        <el-table-column prop="productName" label="产品名称" min-width="160" />
+        <el-table-column prop="materialNo" label="产品料号" min-width="140" />
         <el-table-column prop="customer" label="客户名称" min-width="200" />
-        <el-table-column prop="formType" label="表单类型" min-width="160" />
+        <el-table-column prop="packageMethod" label="包装方式" min-width="130" />
+        <el-table-column prop="formType" label="表单类型" min-width="140" />
         <el-table-column prop="applyDate" label="日期" min-width="120" />
         <el-table-column label="状态" width="120">
           <template #default="{ row }">
@@ -97,7 +100,7 @@
           </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="170" fixed="right">
+        <el-table-column label="操作" width="220" fixed="right">
           <template #default="{ row }">
             <el-button
               type="primary"
@@ -105,7 +108,15 @@
               :disabled="isCostRunLocked(row)"
               @click="goTrial(row)"
             >
-              {{ getFormStatus(row) === '未核算' ? '试算' : '查看' }}
+              {{ getFormStatus(row) === '未核算' ? '试算' : '重算' }}
+            </el-button>
+            <el-button
+              v-if="getFormStatus(row) === '已核算'"
+              type="primary"
+              link
+              @click="goViewResult(row)"
+            >
+              查看
             </el-button>
             <!-- T13：查看明细 → 弹窗轻量预览部品 4 列 + 缺价红字 -->
             <el-button type="primary" link @click="openDetail(row)">
@@ -138,7 +149,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { fetchOaForms } from '../api/oaForms'
+import { fetchOaFormDetail, fetchOaForms } from '../api/oaForms'
 import { fetchMonthlyRepriceActiveLock } from '../api/monthlyReprice'
 import CostRunPartDetailDialog from '../components/CostRunPartDetailDialog.vue'
 
@@ -150,7 +161,6 @@ const loadingForms = ref(false)
 const oaForms = ref([])
 const tableRows = ref([])
 const activeRepriceLock = ref({ locked: false })
-
 const form = ref({
   customer: '',
   month: '',
@@ -277,9 +287,6 @@ const buildParams = () => {
   if (form.value.customer) {
     params.customer = form.value.customer
   }
-  if (form.value.status) {
-    params.status = form.value.status
-  }
   if (!isCompleted.value && form.value.month) {
     const range = getMonthRange(form.value.month)
     if (range) {
@@ -290,11 +297,52 @@ const buildParams = () => {
   return params
 }
 
+const buildProductRows = async (forms) => {
+  const safeForms = Array.isArray(forms) ? forms : []
+  const details = await Promise.all(
+    safeForms.map(async (row) => {
+      try {
+        const detail = await fetchOaFormDetail(row.oaNo)
+        return { row, detail }
+      } catch (error) {
+        return { row, detail: null }
+      }
+    }),
+  )
+  const rows = []
+  details.forEach(({ row, detail }) => {
+    const key = detail?.key || {}
+    const items = Array.isArray(detail?.items) ? detail.items : []
+    items
+      .filter((item) => item?.id && item?.materialNo)
+      .forEach((item) => {
+        rows.push({
+          ...row,
+          id: item.id,
+          itemId: item.id,
+          oaNo: key.oaNo || row.oaNo,
+          customer: key.customer || row.customer || '',
+          formType: key.formType || row.formType || '',
+          applyDate: key.applyDate || row.applyDate || '',
+          calcStatus: item.calcStatus || '未核算',
+          productName: item.productName || '',
+          materialNo: item.materialNo || '',
+          productCode: item.materialNo || '',
+          customerDrawing: item.customerDrawing || '',
+          spec: item.spec || '',
+          packageMethod: item.packageMethod || '',
+          packageComponentCode: item.packageComponentCode || '',
+        })
+      })
+  })
+  return rows
+}
+
 const fetchList = async () => {
   loading.value = true
   try {
     const data = await fetchOaForms(buildParams())
-    let rows = Array.isArray(data) ? data : []
+    let rows = await buildProductRows(data)
     if (form.value.status) {
       rows = rows.filter((row) => getFormStatus(row) === form.value.status)
     }
@@ -324,14 +372,56 @@ const goTrial = (row) => {
   if (!oaNo) {
     return
   }
+  if (getFormStatus(row) === '未核算') {
+    router.push({
+      path: `/cost/run/${oaNo}`,
+      query: buildProductQuery(row),
+    })
+    return
+  }
   router.push({
     path: `/cost/run/${oaNo}`,
-    query: {
-      status: getFormStatus(row),
-      customer: row?.customer || '',
-      formType: row?.formType || '',
-    },
+    query: buildProductQuery(row, true),
   })
+}
+
+const goViewResult = (row) => {
+  if (!row?.oaNo) {
+    return
+  }
+  router.push({
+    path: `/cost/run/${row.oaNo}`,
+    query: buildProductQuery(row, false),
+  })
+}
+
+const buildProductQuery = (row, forceRun = false) => {
+  const query = {
+    status: getFormStatus(row),
+    itemIds: String(row.itemId || row.id),
+  }
+  if (forceRun) {
+    query.forceRun = '1'
+  }
+  if (row.customer) {
+    query.customer = row.customer
+  }
+  if (row.formType) {
+    query.formType = row.formType
+  }
+  if (row.productName) {
+    query.productName = row.productName
+  }
+  if (row.materialNo || row.productCode) {
+    query.materialCode = row.materialNo || row.productCode
+  }
+  if (row.customerDrawing) {
+    query.customerDrawing = row.customerDrawing
+  }
+  if (row.spec) {
+    query.spec = row.spec
+  }
+  return query
 }
 
 // T13：弹窗状态。productCode 留空，弹窗自己拉 OA 详情解析多产品下拉
@@ -457,5 +547,13 @@ onMounted(() => {
 
 .lock-alert {
   order: -1;
+}
+
+.trial-dialog-meta {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 12px;
+  color: #606266;
+  font-size: 13px;
 }
 </style>

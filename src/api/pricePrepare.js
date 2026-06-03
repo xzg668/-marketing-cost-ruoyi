@@ -32,6 +32,7 @@ export const PRICE_PREPARE_ITEM_STATUS_OPTIONS = [
 export const PRICE_PREPARE_GAP_TYPE_OPTIONS = [
   { value: 'MISSING_MASTER', label: '缺主档', tag: 'danger' },
   { value: 'MISSING_STRUCTURE', label: '缺结构', tag: 'danger' },
+  { value: 'MISSING_SCRAP_MAPPING', label: '缺废料映射', tag: 'warning' },
   { value: 'MISSING_PRICE', label: '缺价格', tag: 'warning' },
 ]
 
@@ -81,3 +82,15 @@ export const fetchPricePrepareItems = (params) =>
 
 export const fetchPricePrepareGaps = (params) =>
   request(`${BASE_URL}/gaps`, { params })
+
+export const confirmPricePrepareNoScrap = (body) =>
+  request(`${BASE_URL}/no-scrap-confirmations`, {
+    method: 'POST',
+    body,
+  })
+
+export const revokePricePrepareNoScrap = (id, body) =>
+  request(`${BASE_URL}/no-scrap-confirmations/${id}/revoke`, {
+    method: 'POST',
+    body,
+  })

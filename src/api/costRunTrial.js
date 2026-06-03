@@ -1,9 +1,9 @@
 import { request } from './http'
 
-export const runCostTrial = (oaNo) =>
+export const runCostTrial = (oaNo, oaFormItemIds = []) =>
   request('/api/v1/cost-run/trial', {
     method: 'POST',
-    body: { oaNo },
+    body: { oaNo, oaFormItemIds },
   })
 
 export const fetchCostRunProgress = (oaNo) =>

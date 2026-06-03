@@ -31,4 +31,10 @@ import Navbar from './components/Navbar.vue'
   overflow-y: auto;
   background: #f5f7fb;
 }
+
+@media (max-width: 768px) {
+  .app-main {
+    padding: 8px;
+  }
+}
 </style>

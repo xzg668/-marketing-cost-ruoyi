@@ -74,6 +74,13 @@ describe('T8 CMS 原材料对应回收废料页面', () => {
     assert.doesNotMatch(pageContent, /label="原始行ID"/)
   })
 
+  it('NSC-05：支持价格准备缺口页携带 materialCode 跳转过滤', () => {
+    assert.match(pageContent, /useRoute/)
+    assert.match(pageContent, /queryString\('materialCode',\s*''\)/)
+    assert.match(pageContent, /\(\) => route\.query\.materialCode/)
+    assert.match(pageContent, /filters\.materialCode = materialCode/)
+  })
+
   it('菜单入口留在 CMS 成本数据页面，排查接口不暴露为业务页签', () => {
     assert.doesNotMatch(pageContent, /fetchCmsMaterialScrapMissingPrices/)
     assert.doesNotMatch(pageContent, /fetchCmsMaterialScrapMultiRefs/)
