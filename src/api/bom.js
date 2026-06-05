@@ -20,7 +20,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
  * 和 {@link importBomExcel} 的区别：importBomExcel 只做阶段 A（原始数据入库），
  * 这个合成版会连带做完阶段 B（展开层级树）；财务界面默认用这个，不需要再手工点构建。
  *
- * 超时同样开到 15 分钟（导入 2 分钟 + 构建若干分钟）。
+ * 超时开到 60 分钟（导入 2 分钟 + 大批量 BOM 层级构建可能超过 15 分钟）。
  *
  * @param {File} file 浏览器 File 对象（来自 el-upload 的 raw）
  * @returns {Promise<{importResult, builds, totalRawRowsWritten, purposesBuilt, status, errorMessage}>}
@@ -33,7 +33,7 @@ export const importAndBuildBom = (file) => {
   return axios
     .post(`${API_BASE_URL}/api/v1/bom/import-and-build`, formData, {
       headers,
-      timeout: 15 * 60 * 1000,
+      timeout: 60 * 60 * 1000,
     })
     .then((resp) => {
       const payload = resp.data
