@@ -3,7 +3,7 @@
     <div class="page-head">
       <div>
         <h1>报价单接入</h1>
-        <p>单据维度工作台，用于查看报价单、确认分类和检查 BOM 汇总状态。</p>
+        <p>单据维度工作台，用于查看报价单和处理完成状态。</p>
       </div>
       <div class="head-actions">
         <el-button :icon="Operation" @click="goProductBom">产品 BOM 准备</el-button>
@@ -43,30 +43,10 @@
           <el-form-item label="客户名称">
             <el-input v-model="filters.customer" clearable placeholder="客户名称" @keyup.enter="applyFilters" />
           </el-form-item>
-          <el-form-item label="分类状态">
-            <el-select v-model="filters.classificationStatus" clearable placeholder="全部">
-              <el-option
-                v-for="item in CLASSIFICATION_STATUS_OPTIONS"
-                :key="item.value"
-                :label="item.label"
-                :value="item.value"
-              />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="BOM 状态">
-            <el-select v-model="filters.bomAggregateStatus" clearable placeholder="全部">
-              <el-option
-                v-for="item in BOM_STATUS_OPTIONS"
-                :key="item.value"
-                :label="item.label"
-                :value="item.value"
-              />
-            </el-select>
-          </el-form-item>
           <el-form-item label="核算状态">
-            <el-select v-model="filters.calcStatus" clearable placeholder="全部">
+            <el-select v-model="filters.completionStatus" clearable placeholder="全部">
               <el-option
-                v-for="item in CALC_STATUS_OPTIONS"
+                v-for="item in QUOTE_REQUEST_COMPLETION_OPTIONS"
                 :key="item.value"
                 :label="item.label"
                 :value="item.value"
@@ -100,31 +80,10 @@
       <el-table-column prop="applicantDept" label="申请部门" min-width="140" />
       <el-table-column prop="applicantOffice" label="申请处室" min-width="140" />
       <el-table-column prop="productCount" label="产品数量" width="100" />
-      <el-table-column prop="ingestStatus" label="接入状态" width="130">
+      <el-table-column label="核算状态" width="120">
         <template #default="{ row }">
-          <el-tag :type="statusTagType('ingestStatus', row.ingestStatus)" effect="plain">
-            {{ statusLabel('ingestStatus', row.ingestStatus) }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column prop="classificationStatus" label="分类状态" width="120">
-        <template #default="{ row }">
-          <el-tag :type="statusTagType('classificationStatus', row.classificationStatus)" effect="plain">
-            {{ statusLabel('classificationStatus', row.classificationStatus) }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column prop="bomAggregateStatus" label="BOM 状态" width="140">
-        <template #default="{ row }">
-          <el-tag :type="statusTagType('bomStatus', row.bomAggregateStatus)" effect="plain">
-            {{ statusLabel('bomStatus', row.bomAggregateStatus) }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column prop="calcStatus" label="核算状态" width="120">
-        <template #default="{ row }">
-          <el-tag :type="statusTagType('calcStatus', row.calcStatus || '未核算')" effect="plain">
-            {{ statusLabel('calcStatus', row.calcStatus || '未核算') }}
+          <el-tag :type="quoteRequestCompletionTagType(row)" effect="plain">
+            {{ quoteRequestCompletionLabel(row) }}
           </el-tag>
         </template>
       </el-table-column>
@@ -141,12 +100,6 @@
             @click="openConfirmDialog(row)"
           >
             确认分类
-          </el-button>
-          <el-button link type="primary" :loading="checkingOaNo === row.oaNo" @click="handleCheckBom(row)">
-            检查 BOM
-          </el-button>
-          <el-button v-if="hasNoBom(row)" link type="warning" @click="goProductBom(row)">
-            处理 BOM
           </el-button>
         </template>
       </el-table-column>
@@ -198,18 +151,16 @@ import {
   confirmQuoteRequestClassification,
   fetchQuoteRequests,
 } from '../../../api/quoteRequests'
-import { checkQuoteBomStatus } from '../../../api/quoteIngest'
 import {
-  BOM_STATUS_OPTIONS,
-  CALC_STATUS_OPTIONS,
-  CLASSIFICATION_STATUS_OPTIONS,
+  QUOTE_REQUEST_COMPLETION_OPTIONS,
   QUOTE_SCENARIO_OPTIONS,
   SOURCE_TYPE_OPTIONS,
   canConfirmClassification,
   filterQuoteRequestRows,
   formatDateTime,
-  hasNoBom,
   normalizeQuoteRequestPage,
+  quoteRequestCompletionLabel,
+  quoteRequestCompletionTagType,
   statusLabel,
   statusTagType,
 } from '../../../utils/quoteRequestWorkbench'
@@ -222,14 +173,11 @@ const filters = reactive({
   sourceType: '',
   quoteScenario: '',
   customer: '',
-  classificationStatus: '',
-  bomAggregateStatus: '',
-  calcStatus: '',
+  completionStatus: '',
 })
 
 const loading = ref(false)
 const confirming = ref(false)
-const checkingOaNo = ref('')
 const rows = ref([])
 const total = ref(0)
 const pageNo = ref(1)
@@ -255,7 +203,6 @@ async function loadRows() {
       oaNo: filters.oaNo,
       processCode: filters.processCode,
       sourceType: filters.sourceType,
-      classificationStatus: filters.classificationStatus,
     })
     const page = normalizeQuoteRequestPage(data)
     rows.value = page.list
@@ -297,9 +244,7 @@ function resetFilters() {
     sourceType: '',
     quoteScenario: '',
     customer: '',
-    classificationStatus: '',
-    bomAggregateStatus: '',
-    calcStatus: '',
+    completionStatus: '',
   })
   applyFilters()
 }
@@ -329,19 +274,6 @@ async function submitClassification() {
     ElMessage.error(error?.message || '确认分类失败')
   } finally {
     confirming.value = false
-  }
-}
-
-async function handleCheckBom(row) {
-  checkingOaNo.value = row.oaNo
-  try {
-    await checkQuoteBomStatus(row.oaNo)
-    ElMessage.success('BOM 状态已刷新')
-    await loadRows()
-  } catch (error) {
-    ElMessage.error(error?.message || '检查 BOM 失败')
-  } finally {
-    checkingOaNo.value = ''
   }
 }
 

@@ -113,8 +113,8 @@ describe('T12 CMS 成本数据菜单和路由', () => {
     assert.doesNotMatch(migrationContent, /辅料管理'\s*,\s*40230/)
   })
 
-  it('侧边栏隐藏原始明细叶子菜单，原始明细改由追溯页 tab 切换', () => {
-    assert.match(sidebarContent, /CMS_RAW_DETAIL_MENU_IDS = new Set\(\[40233,\s*40234,\s*40235\]\)/)
+  it('侧边栏展示 CMS 原始明细叶子菜单，追溯页仍支持 tab 切换', () => {
+    assert.doesNotMatch(sidebarContent, /CMS_RAW_DETAIL_MENU_IDS/)
     assert.match(pageShellContent, /traceNav: \{ type: Boolean, default: false \}/)
     assert.match(pageShellContent, /v-if="traceNav"/)
     assert.match(pageShellContent, /label: '计划成本'/)

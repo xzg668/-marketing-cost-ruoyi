@@ -4,6 +4,9 @@
       <div class="filter-header">
         <div class="filter-title">物料价格类型对照表</div>
         <div class="filter-actions">
+          <el-button v-if="returnToWorkbenchVisible" @click="returnToWorkbench">
+            返回核算工作台
+          </el-button>
           <el-upload
             class="upload-btn"
             :show-file-list="false"
@@ -113,6 +116,7 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import BasePagination from '../components/BasePagination.vue'
 import {
@@ -123,6 +127,8 @@ import {
   deleteMaterialPriceType,
 } from '../api/materialPriceTypes'
 
+const route = useRoute()
+const router = useRouter()
 const loading = ref(false)
 const importing = ref(false)
 const dialogVisible = ref(false)
@@ -153,6 +159,13 @@ const pageSize = ref(20)
 const dialogTitle = computed(() =>
   editingId.value ? '编辑物料价格类型' : '新增物料价格类型',
 )
+const returnToWorkbenchVisible = computed(() => Boolean(route.query.returnTo))
+
+const returnToWorkbench = () => {
+  const target = String(route.query.returnTo || '')
+  if (!target) return
+  router.push(target)
+}
 
 const buildParams = () => ({
   materialCode: filters.value.materialCode.trim(),
@@ -160,6 +173,15 @@ const buildParams = () => ({
   page: currentPage.value,
   pageSize: pageSize.value,
 })
+
+const applyRouteMaterialCode = () => {
+  const materialCode = String(route.query.materialCode || '').trim()
+  if (!materialCode || filters.value.materialCode === materialCode) {
+    return false
+  }
+  filters.value.materialCode = materialCode
+  return true
+}
 
 const fetchList = async () => {
   loading.value = true
@@ -181,6 +203,17 @@ watch(currentPage, () => {
 })
 
 watch(pageSize, () => {
+  if (currentPage.value === 1) {
+    fetchList()
+  } else {
+    currentPage.value = 1
+  }
+})
+
+watch(() => route.query.materialCode, () => {
+  if (!applyRouteMaterialCode()) {
+    return
+  }
   if (currentPage.value === 1) {
     fetchList()
   } else {
@@ -506,6 +539,7 @@ const handleFileChange = async (uploadFile) => {
 }
 
 onMounted(() => {
+  applyRouteMaterialCode()
   fetchList()
 })
 </script>

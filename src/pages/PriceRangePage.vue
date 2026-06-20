@@ -4,6 +4,9 @@
       <div class="filter-header">
         <div class="filter-title">区间价</div>
         <div class="filter-actions">
+          <el-button v-if="returnToWorkbenchVisible" @click="returnToWorkbench">
+            返回核算工作台
+          </el-button>
           <el-upload
             class="upload-btn"
             :show-file-list="false"
@@ -137,6 +140,7 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import BasePagination from '../components/BasePagination.vue'
 import {
@@ -147,6 +151,8 @@ import {
   deleteRangeItem,
 } from '../api/priceRangeItems'
 
+const route = useRoute()
+const router = useRouter()
 const loading = ref(false)
 const importing = ref(false)
 const dialogVisible = ref(false)
@@ -156,6 +162,20 @@ const filters = ref({
   materialCode: '',
   effectiveFrom: '',
 })
+const returnToWorkbenchVisible = computed(() => Boolean(route.query.returnTo))
+
+const returnToWorkbench = () => {
+  const target = String(route.query.returnTo || '')
+  if (!target) return
+  router.push(target)
+}
+
+const applyRouteContext = () => {
+  const materialCode = String(route.query.materialCode || '').trim()
+  const pricingMonth = String(route.query.pricingMonth || route.query.periodMonth || '').trim()
+  if (materialCode) filters.value.materialCode = materialCode
+  if (pricingMonth) filters.value.effectiveFrom = pricingMonth
+}
 
 const emptyForm = () => ({
   materialName: '',
@@ -652,7 +672,10 @@ const handleFileChange = async (uploadFile) => {
   }
 }
 
-onMounted(fetchList)
+onMounted(() => {
+  applyRouteContext()
+  fetchList()
+})
 </script>
 
 <style scoped>

@@ -29,6 +29,8 @@ export const BOM_STATUS_OPTIONS = [
   { value: 'SYNCING', label: '同步中', type: 'warning' },
   { value: 'SYNCED', label: '已同步', type: 'success' },
   { value: 'REUSED_CURRENT_MONTH', label: '已沿用', type: 'success' },
+  { value: 'CURRENT_MONTH_QUOTED', label: 'BOM 当月发起过报价', type: 'success' },
+  { value: 'U9_BOM_EXISTS', label: 'U9 有此 BOM', type: 'success' },
   { value: 'NO_BOM', label: '无 BOM', type: 'danger' },
   { value: 'ENTRY_PENDING', label: '待技术补录', type: 'warning' },
   { value: 'ENTRY_IN_PROGRESS', label: '技术录入中', type: 'warning' },
@@ -82,6 +84,11 @@ export const CALC_STATUS_OPTIONS = [
   { value: '未核算', label: '未核算', type: 'info' },
   { value: '试算中', label: '试算中', type: 'warning' },
   { value: '已核算', label: '已核算', type: 'success' },
+]
+
+export const QUOTE_REQUEST_COMPLETION_OPTIONS = [
+  { value: 'DONE', label: '已完成', type: 'success' },
+  { value: 'NOT_DONE', label: '未完成', type: 'warning' },
 ]
 
 const calcStatusAliases = {
@@ -148,6 +155,7 @@ export function filterQuoteRequestRows(rows, filters = {}) {
     if (filters.classificationStatus && row.classificationStatus !== filters.classificationStatus) return false
     if (filters.bomAggregateStatus && row.bomAggregateStatus !== filters.bomAggregateStatus) return false
     if (filters.calcStatus && normalizeCalcStatus(row.calcStatus) !== filters.calcStatus) return false
+    if (filters.completionStatus && quoteRequestCompletionValue(row) !== filters.completionStatus) return false
     return true
   })
 }
@@ -192,6 +200,8 @@ function aggregateBomStatus(items) {
   if (statuses.includes('EXPIRED')) return 'EXPIRED'
   if (statuses.every((status) => status === 'SYNCED')) return 'SYNCED'
   if (statuses.every((status) => status === 'REUSED_CURRENT_MONTH')) return 'REUSED_CURRENT_MONTH'
+  if (statuses.every((status) => status === 'CURRENT_MONTH_QUOTED')) return 'CURRENT_MONTH_QUOTED'
+  if (statuses.every((status) => status === 'U9_BOM_EXISTS')) return 'U9_BOM_EXISTS'
   if (statuses.every((status) => status === 'MANUAL_ENTERED')) return 'MANUAL_ENTERED'
   // 前端聚合只负责展示；成本试算最终仍以后端检查为准。
   if (statuses.every((status) => isCostReadyBomStatus(status))) return 'SYNCED'
@@ -199,10 +209,29 @@ function aggregateBomStatus(items) {
 }
 
 export function isCostReadyBomStatus(status) {
-  return ['SYNCED', 'REUSED_CURRENT_MONTH', 'MANUAL_ENTERED'].includes(status)
+  return ['SYNCED', 'REUSED_CURRENT_MONTH', 'CURRENT_MONTH_QUOTED', 'U9_BOM_EXISTS', 'MANUAL_ENTERED'].includes(status)
 }
 
 export function formatDateTime(value) {
   if (!value) return '-'
   return String(value).replace('T', ' ').slice(0, 19)
+}
+
+export function quoteRequestCompletionValue(row) {
+  if (!row) return 'NOT_DONE'
+  const calcStatus = normalizeCalcStatus(row.calcStatus)
+  const costRunStatus = normalizeText(row.costRunStatus || row.costStatus || row.runStatus).toUpperCase()
+  if (calcStatus === '已核算') return 'DONE'
+  if (['DONE', 'SUCCESS', 'COMPLETED', 'FINISHED'].includes(costRunStatus)) return 'DONE'
+  return 'NOT_DONE'
+}
+
+export function quoteRequestCompletionLabel(row) {
+  const value = quoteRequestCompletionValue(row)
+  return QUOTE_REQUEST_COMPLETION_OPTIONS.find((item) => item.value === value)?.label || '未完成'
+}
+
+export function quoteRequestCompletionTagType(row) {
+  const value = quoteRequestCompletionValue(row)
+  return QUOTE_REQUEST_COMPLETION_OPTIONS.find((item) => item.value === value)?.type || 'warning'
 }

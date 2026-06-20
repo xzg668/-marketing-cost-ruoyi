@@ -54,7 +54,7 @@ const staticRoutes = [
   {
     path: '/',
     component: MainLayout,
-    redirect: '/cost/run',
+    redirect: '/ingest/quote-requests',
     children: [
       {
         path: '/cost/run/:oaNo',
@@ -85,6 +85,12 @@ const staticRoutes = [
         name: 'ingest-quote-request-detail',
         component: () => import('../pages/QuoteRequestDetailPage.vue'),
         meta: { title: '报价单详情', activeMenu: '/ingest/quote-requests' },
+      },
+      {
+        path: '/ingest/quote-requests/:oaNo/items/:itemId/costing',
+        name: 'ingest-quote-product-costing',
+        component: () => import('../pages/QuoteProductCostingWorkbenchPage.vue'),
+        meta: { title: '单产品核算工作台', activeMenu: '/ingest/quote-requests' },
       },
       {
         path: '/price/linked',

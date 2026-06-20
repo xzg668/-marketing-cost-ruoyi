@@ -56,7 +56,7 @@ describe('SSR-07 供应商供货比例页面', () => {
   })
 
   it('导入弹窗展示去重口径和导入结果明细', () => {
-    assert.match(pageContent, /导入去重口径：物料代码 \+ 物料名称 \+ 供应商 \+ 型号/)
+    assert.match(pageContent, /导入去重口径：业务单元 \+ 物料代码 \+ 供应商/)
     assert.match(pageContent, /totalRows/)
     assert.match(pageContent, /insertedRows/)
     assert.match(pageContent, /updatedRows/)

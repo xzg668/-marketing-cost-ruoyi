@@ -24,6 +24,9 @@
           </el-tag>
         </div>
         <div class="filter-actions">
+          <el-button v-if="returnToWorkbenchVisible" @click="returnToWorkbench">
+            返回核算工作台
+          </el-button>
           <el-button
             v-hasPermi="['price:linked-item:import']"
             :loading="importing"
@@ -913,6 +916,13 @@ const showImportLogs = ref(false)
 const importDetailTab = ref('conflicts')
 const importHistoryRows = ref([])
 const bindingLogRows = ref([])
+const returnToWorkbenchVisible = computed(() => Boolean(route.query.returnTo))
+
+const returnToWorkbench = () => {
+  const target = String(route.query.returnTo || '')
+  if (!target) return
+  router.push(target)
+}
 const importHistoryLoading = ref(false)
 const importProgressActiveStep = ref(0)
 const editingId = ref(null)

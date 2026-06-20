@@ -44,13 +44,13 @@ describe('动态菜单路由契约', () => {
   })
 })
 
-describe('T9 数据接入菜单路由契约', () => {
+describe('T9 报价需求菜单路由契约', () => {
   it('新增报价单接入 API 模块', () => {
     assert.ok(fs.existsSync(path.join(API_DIR, 'quoteRequests.js')))
     assert.ok(fs.existsSync(path.join(API_DIR, 'quoteIngest.js')))
   })
 
-  it('新增四个数据接入菜单组件', () => {
+  it('新增四个报价需求菜单组件', () => {
     assert.ok(fs.existsSync(path.join(VIEWS_DIR, 'ingest/quote-requests/index.vue')))
     assert.ok(fs.existsSync(path.join(VIEWS_DIR, 'ingest/quote-request-products/bom/index.vue')))
     assert.ok(fs.existsSync(path.join(VIEWS_DIR, 'ingest/quote-requests/import/index.vue')))
@@ -63,7 +63,7 @@ describe('T9 数据接入菜单路由契约', () => {
     assert.match(routerContent, /activeMenu:\s*['"]\/ingest\/quote-requests['"]/)
   })
 
-  it('侧边栏保留 200 数据接入顶级菜单，隐藏旧 OA 报价单但保留旧 BOM 接入子入口', () => {
+  it('侧边栏保留 200 报价需求顶级菜单，隐藏旧 OA 报价单但保留旧 BOM 接入子入口', () => {
     assert.match(sidebarContent, /LEGACY_MENU_IDS/)
     assert.match(sidebarContent, /201,\s*300,\s*400,\s*500,\s*40166/)
     assert.match(sidebarContent, /LEGACY_OA_PATHS/)

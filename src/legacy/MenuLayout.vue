@@ -84,7 +84,7 @@ const menus = [
   },
   {
     index: 'ingest',
-    title: '数据接入',
+    title: '报价需求',
     children: [
       { index: 'ingest-u9', title: 'U9 数据：BOM 明细、料品档案、厂商价目表' },
       { index: 'ingest-oa', title: 'OA 数据：产品主数据、报价单、结算价' },

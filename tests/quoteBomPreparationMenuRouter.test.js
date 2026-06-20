@@ -25,7 +25,7 @@ const productBomPageContent = fs.readFileSync(PRODUCT_BOM_PAGE, 'utf-8')
 const quoteRequestPageContent = fs.readFileSync(QUOTE_REQUEST_PAGE, 'utf-8')
 
 describe('QBP-01 报价产品 BOM 准备菜单和路由', () => {
-  it('数据接入下的产品 BOM 入口改名为准备工作台', () => {
+  it('报价需求下的产品 BOM 入口改名为准备工作台', () => {
     assert.match(menuContent, /menu_name = '报价产品 BOM 准备'/)
     assert.match(menuContent, /WHERE menu_id = 208/)
     assert.match(menuContent, /quote-request-products\/bom/)

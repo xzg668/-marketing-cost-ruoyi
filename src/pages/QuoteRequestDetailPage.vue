@@ -31,16 +31,6 @@
       <el-descriptions-item label="申请部门">{{ detail.applicantDept || '-' }}</el-descriptions-item>
       <el-descriptions-item label="申请处室">{{ detail.applicantOffice || '-' }}</el-descriptions-item>
       <el-descriptions-item label="申请人">{{ detail.applicantName || '-' }}</el-descriptions-item>
-      <el-descriptions-item label="分类状态">
-        <el-tag :type="statusTagType('classificationStatus', detail.classificationStatus)" effect="plain">
-          {{ statusLabel('classificationStatus', detail.classificationStatus) }}
-        </el-tag>
-      </el-descriptions-item>
-      <el-descriptions-item label="BOM 状态">
-        <el-tag :type="statusTagType('bomStatus', detail.bomAggregateStatus)" effect="plain">
-          {{ statusLabel('bomStatus', detail.bomAggregateStatus) }}
-        </el-tag>
-      </el-descriptions-item>
       <el-descriptions-item label="核算状态">
         <el-tag :type="statusTagType('calcStatus', detail.calcStatus || '未核算')" effect="plain">
           {{ statusLabel('calcStatus', detail.calcStatus || '未核算') }}
@@ -51,11 +41,37 @@
 
     <el-tabs v-model="activeTab" class="detail-tabs">
       <el-tab-pane label="产品明细" name="items">
-        <el-table :data="detail.items || []" border stripe>
-          <el-table-column prop="seq" label="行号" width="80" />
-          <el-table-column prop="productName" label="产品名称" min-width="160" />
-          <el-table-column prop="materialNo" label="产品料号" min-width="150" />
-          <el-table-column prop="sunlModel" label="三花型号" min-width="150" />
+        <div class="table-toolbar">
+          <div class="table-toolbar__meta">已选择 {{ selectedItems.length }} 行</div>
+          <el-button
+            type="warning"
+            :disabled="selectedItems.length === 0"
+            :loading="tasking"
+            @click="handleBatchSupplement"
+          >
+            批量发起补录
+          </el-button>
+        </div>
+        <el-table
+          :data="detail.items || []"
+          border
+          stripe
+          row-key="id"
+          class="items-table"
+          @selection-change="selectedItems = $event"
+        >
+          <el-table-column type="selection" width="48" fixed="left" :selectable="canSelectForSupplement" />
+          <el-table-column prop="seq" label="行号" width="72" fixed="left" />
+          <el-table-column prop="materialNo" label="产品料号" min-width="160" fixed="left" show-overflow-tooltip />
+          <el-table-column label="BOM 状态" width="180" fixed="left">
+            <template #default="{ row }">
+              <el-tag :type="statusTagType('bomStatus', row.bomStatus?.bomStatus)" effect="plain">
+                {{ statusLabel('bomStatus', row.bomStatus?.bomStatus) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="productName" label="产品名称" min-width="160" show-overflow-tooltip />
+          <el-table-column prop="sunlModel" label="三花型号" min-width="150" show-overflow-tooltip />
           <el-table-column prop="businessType" label="业务类型" width="130" />
           <el-table-column prop="packageType" label="包装类型" width="120" />
           <el-table-column prop="packageMethod" label="包装方式" width="120" />
@@ -65,26 +81,32 @@
           <el-table-column prop="totalWithShip" label="含运费总价" width="120" />
           <el-table-column prop="totalNoShip" label="不含运费总价" width="130" />
           <el-table-column prop="technicianName" label="技术员" width="120" />
-          <el-table-column label="BOM 状态" width="150">
-            <template #default="{ row }">
-              <el-tag :type="statusTagType('bomStatus', row.bomStatus?.bomStatus)" effect="plain">
-                {{ statusLabel('bomStatus', row.bomStatus?.bomStatus) }}
-              </el-tag>
-            </template>
-          </el-table-column>
           <el-table-column label="BOM 来源" width="120">
-            <template #default="{ row }">{{ row.bomStatus?.bomSource || '-' }}</template>
+            <template #default="{ row }">{{ bomSourceLabel(row.bomStatus?.bomSource) }}</template>
           </el-table-column>
           <el-table-column label="最近检查时间" width="180">
             <template #default="{ row }">{{ formatDateTime(row.bomStatus?.checkedAt) }}</template>
           </el-table-column>
           <el-table-column label="操作" width="140" fixed="right">
             <template #default="{ row }">
-              <el-button v-if="row.bomStatus?.bomStatus === 'NO_BOM'" link type="warning" @click="openSupplement(row)">
+              <el-button
+                v-if="canSelectForSupplement(row)"
+                link
+                type="warning"
+                :loading="actionLoadingId === rowActionKey(row)"
+                @click="openSupplement(row)"
+              >
                 发起补录
               </el-button>
-              <el-button v-else link type="primary" :disabled="!canViewBom(row)" @click="openBomTree(row)">
-                查看 BOM
+              <el-button
+                v-else
+                link
+                :type="costingActionType(row)"
+                :disabled="!canStartCosting(row)"
+                :loading="actionLoadingId === costingActionKey(row)"
+                @click="startCosting(row)"
+              >
+                {{ costingActionText(row) }}
               </el-button>
             </template>
           </el-table-column>
@@ -94,88 +116,7 @@
         </el-table>
       </el-tab-pane>
 
-      <el-tab-pane label="额外费用" name="fees">
-        <el-table :data="detail.extraFees || []" border stripe>
-          <el-table-column prop="feeCode" label="费用编码" min-width="150" />
-          <el-table-column prop="feeName" label="费用名称" min-width="180" />
-          <el-table-column prop="feeScope" label="费用粒度" width="100" />
-          <el-table-column label="关联产品行" width="110">
-            <template #default="{ row }">{{ row.oaFormItemId || '-' }}</template>
-          </el-table-column>
-          <el-table-column prop="feeCategory" label="费用分类" width="130" />
-          <el-table-column prop="amount" label="金额" width="120" />
-          <el-table-column prop="unit" label="单位" width="100" />
-          <el-table-column prop="allocationMethod" label="分摊方式" width="120" />
-          <el-table-column prop="sourceFieldPath" label="来源路径" min-width="180" />
-          <el-table-column prop="remark" label="备注" min-width="180" />
-          <template #empty>
-            <el-empty description="暂无额外费用" />
-          </template>
-        </el-table>
-      </el-tab-pane>
-
-      <el-tab-pane label="核算维度" name="accounting">
-        <el-descriptions :column="2" border>
-          <el-descriptions-item label="核算月份">{{ detail.accountingPeriodMonth || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="事业部类型">{{ detail.businessUnitType || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="费用产品口径">{{ detail.expenseProductCategory || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="所属公司">{{ detail.sourceCompany || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="所属事业部">{{ detail.sourceBusinessDivision || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="申请部门">{{ detail.applicantDept || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="申请处室">{{ detail.applicantOffice || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="贸易条款">{{ detail.tradeTerms || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="汇率">{{ detail.exchangeRate || '-' }}</el-descriptions-item>
-        </el-descriptions>
-      </el-tab-pane>
-
-      <el-tab-pane label="表头扩展字段" name="headerFields">
-        <el-table :data="headerExtraFields" border stripe>
-          <el-table-column prop="fieldCode" label="字段编码" min-width="160" />
-          <el-table-column prop="fieldName" label="字段名称" min-width="160" />
-          <el-table-column prop="fieldValue" label="字段值" min-width="200" />
-          <el-table-column prop="sourceFieldName" label="来源字段" min-width="160" />
-          <template #empty>
-            <el-empty description="暂无表头扩展字段" />
-          </template>
-        </el-table>
-      </el-tab-pane>
-
-      <el-tab-pane label="产品行扩展字段" name="itemFields">
-        <el-table :data="itemExtraFields" border stripe>
-          <el-table-column prop="oaFormItemId" label="产品行 ID" width="110" />
-          <el-table-column prop="productLabel" label="产品行" min-width="180" />
-          <el-table-column prop="fieldCode" label="字段编码" min-width="160" />
-          <el-table-column prop="fieldName" label="字段名称" min-width="160" />
-          <el-table-column prop="fieldValue" label="字段值" min-width="200" />
-          <el-table-column prop="sourceFieldName" label="来源字段" min-width="160" />
-          <template #empty>
-            <el-empty description="暂无产品行扩展字段" />
-          </template>
-        </el-table>
-      </el-tab-pane>
-
-      <el-tab-pane label="接入原文" name="raw">
-        <div class="raw-grid">
-          <div>
-            <div class="section-title">接入摘要</div>
-            <pre>{{ detail.ingestLog?.payloadSummary || '-' }}</pre>
-          </div>
-          <div>
-            <div class="section-title">归一化摘要</div>
-            <pre>{{ detail.ingestLog?.normalizedSummary || '-' }}</pre>
-          </div>
-          <div>
-            <div class="section-title">错误信息</div>
-            <pre>{{ detail.ingestLog?.validationErrors || detail.ingestLog?.errorMessage || '-' }}</pre>
-          </div>
-          <div>
-            <div class="section-title">提醒信息</div>
-            <pre>{{ detail.ingestLog?.warningMessages || '-' }}</pre>
-          </div>
-        </div>
-      </el-tab-pane>
-
-      <el-tab-pane label="操作记录" name="logs">
+      <el-tab-pane label="操作日志" name="logs">
         <el-descriptions :column="2" border>
           <el-descriptions-item label="流水 ID">{{ detail.ingestLog?.id || '-' }}</el-descriptions-item>
           <el-descriptions-item label="请求 ID">{{ detail.ingestLog?.requestId || '-' }}</el-descriptions-item>
@@ -226,7 +167,11 @@ import {
   confirmQuoteRequestClassification,
   fetchQuoteRequestDetail,
 } from '../api/quoteRequests'
-import { checkQuoteBomStatus } from '../api/quoteIngest'
+import {
+  checkQuoteBomStatus,
+  createQuoteProductBomTasks,
+  pushQuoteProductBomOaTodo,
+} from '../api/quoteIngest'
 import {
   QUOTE_SCENARIO_OPTIONS,
   canConfirmClassification,
@@ -244,8 +189,11 @@ const oaNo = computed(() => String(route.params.oaNo || ''))
 const loading = ref(false)
 const checking = ref(false)
 const confirming = ref(false)
+const tasking = ref(false)
+const actionLoadingId = ref('')
 const activeTab = ref('items')
 const detail = ref({})
+const selectedItems = ref([])
 const confirmDialog = reactive({
   visible: false,
   form: {
@@ -254,30 +202,12 @@ const confirmDialog = reactive({
   },
 })
 
-const headerExtraFields = computed(() =>
-  (detail.value.extraFields || []).filter((field) => field.oaFormItemId == null),
-)
-
-const itemExtraFields = computed(() => {
-  const labelByItemId = new Map(
-    (detail.value.items || []).map((item) => [
-      item.id,
-      `#${item.seq || '-'} ${item.materialNo || item.sunlModel || item.productName || ''}`.trim(),
-    ]),
-  )
-  return (detail.value.extraFields || [])
-    .filter((field) => field.oaFormItemId != null)
-    .map((field) => ({
-      ...field,
-      productLabel: labelByItemId.get(field.oaFormItemId) || '-',
-    }))
-})
-
 async function loadDetail() {
   if (!oaNo.value) return
   loading.value = true
   try {
     detail.value = await fetchQuoteRequestDetail(oaNo.value)
+    selectedItems.value = []
   } catch (error) {
     detail.value = {}
     ElMessage.error(error?.message || '获取报价单详情失败')
@@ -295,7 +225,7 @@ async function handleCheckBom() {
   try {
     const response = await checkQuoteBomStatus(oaNo.value)
     detail.value = mergeBomStatusToDetail(detail.value, response)
-    ElMessage.success('BOM 状态已刷新')
+    ElMessage.success('BOM 已刷新')
   } catch (error) {
     ElMessage.error(error?.message || '检查 BOM 失败')
   } finally {
@@ -330,35 +260,120 @@ async function submitClassification() {
   }
 }
 
-function openSupplement(row) {
-  ElMessage.info(`后续将为 ${row.materialNo || row.sunlModel || oaNo.value} 发起 OA 技术补录待办`)
+async function openSupplement(row) {
+  if (!canSelectForSupplement(row)) return
+  actionLoadingId.value = rowActionKey(row)
+  try {
+    await createAndPushSupplementTasks([row])
+    await loadDetail()
+  } catch (error) {
+    ElMessage.error(error?.message || '发起补录失败')
+  } finally {
+    actionLoadingId.value = ''
+  }
 }
 
-function canViewBom(row) {
+async function handleBatchSupplement() {
+  const rows = selectedItems.value.filter(canSelectForSupplement)
+  if (rows.length === 0) {
+    ElMessage.warning('请选择无 BOM 的产品行')
+    return
+  }
+  tasking.value = true
+  try {
+    await createAndPushSupplementTasks(rows)
+    await loadDetail()
+  } catch (error) {
+    ElMessage.error(error?.message || '批量发起补录失败')
+  } finally {
+    tasking.value = false
+  }
+}
+
+async function createAndPushSupplementTasks(rows) {
+  const ids = [...new Set(rows.map((row) => row.id).filter(Boolean))]
+  if (ids.length === 0) {
+    throw new Error('未找到可发起补录的产品行')
+  }
+  const result = await createQuoteProductBomTasks(ids)
+  const taskIds = [...new Set((result?.tasks || []).map((item) => item?.taskId).filter(Boolean))]
+  const pushResults = []
+  for (const taskId of taskIds) {
+    pushResults.push(await pushQuoteProductBomOaTodo(taskId))
+  }
+  const failed = pushResults.filter((item) => item?.pushStatus === 'FAILED').length
+  const created = (result?.createdTaskCount || 0) + (result?.reusedTaskCount || 0)
+  if (failed > 0) {
+    ElMessage.warning(`补录任务已创建/复用 ${created} 个，${failed} 个 OA 待办推送失败`)
+  } else {
+    ElMessage.success(`补录任务已创建/复用 ${created} 个，OA 待办已推送 ${pushResults.length} 个`)
+  }
+}
+
+function canSelectForSupplement(row) {
+  return row?.bomStatus?.bomStatus === 'NO_BOM' && Boolean(row?.id)
+}
+
+function rowActionKey(row) {
+  return `supplement:${row?.id || row?.materialNo || ''}`
+}
+
+function costingActionKey(row) {
+  return `costing:${row?.id || row?.materialNo || ''}`
+}
+
+function canStartCosting(row) {
   return isCostReadyBomStatus(row?.bomStatus?.bomStatus) && Boolean(row?.materialNo)
 }
 
-function openBomTree(row) {
-  if (!canViewBom(row)) {
-    ElMessage.warning('请先刷新 BOM 状态，确认该产品已有可用 BOM')
-    return
-  }
-  const status = row.bomStatus || {}
+function openCostingWorkbench(row, query = {}) {
   router.push({
-    path: '/base/bomTree',
-    query: {
-      topProductCode: row.materialNo,
-      bomPurpose: status.bomPurpose || undefined,
-      asOfDate: status.effectiveFrom || undefined,
-      sourceType: normalizeBomSource(status.bomSource),
-    },
+    path: `/ingest/quote-requests/${encodeURIComponent(oaNo.value)}/items/${encodeURIComponent(row.id)}/costing`,
+    query,
   })
 }
 
-function normalizeBomSource(source) {
+async function startCosting(row) {
+  if (!canStartCosting(row)) {
+    ElMessage.warning('请先确认该产品已有可用 BOM')
+    return
+  }
+  openCostingWorkbench(row)
+}
+
+function normalizedCalcStatus(value) {
+  const text = String(value || '未核算').trim()
+  if (['CALCULATED', 'DONE', 'SUCCESS', '已核算'].includes(text)) return '已核算'
+  if (['CALCULATING', 'RUNNING', '试算中'].includes(text)) return '试算中'
+  if (['NEED_RECALC', 'STALE', 'DIRTY', '需重新核算', '重新核算'].includes(text)) return '重新核算'
+  return '未核算'
+}
+
+function hasCostingResult(row) {
+  return Boolean(row?.calcAt || row?.unitCost || row?.costAmount)
+}
+
+function costingActionText(row) {
+  const status = normalizedCalcStatus(row?.calcStatus)
+  if (status === '试算中') return '试算中'
+  if (status === '重新核算') return '重新核算'
+  if (status === '已核算' || hasCostingResult(row)) return '重新核算'
+  return '发起核算'
+}
+
+function costingActionType(row) {
+  const text = costingActionText(row)
+  if (text === '已核算') return 'success'
+  if (text === '重新核算') return 'warning'
+  return 'primary'
+}
+
+function bomSourceLabel(source) {
   const value = String(source || '').trim()
-  if (['U9', 'MANUAL', 'E_DRAWING'].includes(value)) return value
-  return 'U9'
+  if (!value) return '-'
+  if (value === 'COSTING_SNAPSHOT') return '核算快照'
+  if (value === 'U9_SOURCE') return 'U9'
+  return value
 }
 
 watch(oaNo, loadDetail)
@@ -406,44 +421,27 @@ onMounted(loadDetail)
   background: #ffffff;
 }
 
-.raw-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+.table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 
-.section-title {
-  margin-bottom: 8px;
-  color: #374151;
+.table-toolbar__meta {
+  color: #6b7280;
   font-size: 13px;
-  font-weight: 600;
 }
 
-pre {
-  min-height: 120px;
-  max-height: 320px;
-  overflow: auto;
-  margin: 0;
-  padding: 12px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #f9fafb;
-  color: #111827;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 12px;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  word-break: break-word;
+.items-table {
+  width: 100%;
 }
 
 @media (max-width: 860px) {
   .page-head {
     align-items: flex-start;
     flex-direction: column;
-  }
-
-  .raw-grid {
-    grid-template-columns: 1fr;
   }
 }
 </style>

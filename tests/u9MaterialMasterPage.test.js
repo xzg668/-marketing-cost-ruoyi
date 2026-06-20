@@ -13,11 +13,12 @@ const pageContent = fs.readFileSync(PAGE_FILE, 'utf-8')
 describe('U9MM-08 U9 料品主档 API', () => {
   it('封装 U9 料品主档页面所需后端接口', () => {
     assert.match(apiContent, /\/api\/v1\/base\/u9\/material-master/)
-    assert.match(apiContent, /fetchU9MaterialBatches/)
     assert.match(apiContent, /importU9MaterialExcel/)
     assert.match(apiContent, /fetchU9MaterialRaw/)
     assert.match(apiContent, /fetchU9MaterialTemplateMapping/)
     assert.match(apiContent, /\/template-mapping/)
+    assert.doesNotMatch(apiContent, /fetchU9MaterialBatches/)
+    assert.doesNotMatch(apiContent, /normalizeU9MaterialBatches/)
     assert.doesNotMatch(apiContent, /compareU9Material/)
     assert.doesNotMatch(apiContent, /syncU9Material/)
   })
@@ -27,8 +28,10 @@ describe('U9MM-08 U9 料品主档 API', () => {
     assert.match(apiContent, /U9_MATERIAL_IMPORT_TIMEOUT = 10 \* 60 \* 1000/)
     assert.match(apiContent, /validateU9MaterialFile/)
     assert.match(apiContent, /仅支持 \.xlsx \/ \.xls 文件/)
+    assert.match(apiContent, /U9_MATERIAL_ORGANIZATIONS/)
     assert.match(apiContent, /toU9MaterialImportFormData/)
     assert.match(apiContent, /formData\.append\('file', file\)/)
+    assert.match(apiContent, /formData\.append\('organizationCode', organizationCode\)/)
     assert.match(apiContent, /timeout:\s*U9_MATERIAL_IMPORT_TIMEOUT/)
     assert.match(apiContent, /normalizeU9MaterialRawPage/)
     assert.match(apiContent, /normalizeU9MaterialImportResult/)
@@ -37,19 +40,20 @@ describe('U9MM-08 U9 料品主档 API', () => {
 })
 
 describe('U9MM-08 U9 料品主档页面', () => {
-  it('页面加载时拉取批次列表和 raw 分页数据', () => {
+  it('页面加载时拉取 raw 分页数据，不暴露批次入口', () => {
     assert.match(pageContent, /onMounted\(refreshAll\)/)
-    assert.match(pageContent, /async function fetchBatches/)
     assert.match(pageContent, /async function fetchRows/)
-    assert.match(pageContent, /fetchU9MaterialBatches/)
     assert.match(pageContent, /fetchU9MaterialRaw\(queryParams\(\)\)/)
     assert.match(pageContent, /BasePagination/)
     assert.match(pageContent, /pageSize = ref\(50\)/)
+    assert.doesNotMatch(pageContent, /fetchU9MaterialBatches/)
+    assert.doesNotMatch(pageContent, /批次列表/)
   })
 
   it('查询条件和表格字段覆盖任务要求', () => {
     ;[
       'label="料号"',
+      'label="组织"',
       'label="名称"',
       'label="规格"',
       'label="型号"',
@@ -59,7 +63,6 @@ describe('U9MM-08 U9 料品主档页面', () => {
       'label="成本要素"',
       'label="事业部"',
       'label="部门"',
-      'label="批次"',
       'prop="materialCode" label="料号"',
       'prop="materialName" label="名称"',
       'prop="materialSpec" label="规格"',
@@ -71,13 +74,16 @@ describe('U9MM-08 U9 料品主档页面', () => {
       'prop="costElement" label="成本要素"',
       'prop="productionDivision" label="事业部"',
       'prop="departmentName" label="部门"',
-      'prop="importBatchId" label="批次"',
+      'organizationLabel\\(row.organizationCode\\)',
       '更新时间',
     ].forEach((text) => assert.match(pageContent, new RegExp(text)))
+    assert.doesNotMatch(pageContent, /label="批次"/)
+    assert.doesNotMatch(pageContent, /prop="importBatchId"/)
   })
 
   it('上传成功和失败路径都有明确反馈', () => {
     assert.match(pageContent, /handleUploadChange/)
+    assert.match(pageContent, /importOrganizationCode/)
     assert.match(pageContent, /validateU9MaterialFile/)
     assert.match(pageContent, /ElMessage\.warning\(validation\.message\)/)
     assert.match(pageContent, /submitImport/)

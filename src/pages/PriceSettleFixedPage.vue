@@ -4,6 +4,9 @@
       <div class="filter-header">
         <div class="filter-title">结算固定价</div>
         <div class="filter-actions">
+          <el-button v-if="returnToWorkbenchVisible" @click="returnToWorkbench">
+            返回核算工作台
+          </el-button>
           <el-upload
             class="upload-btn"
             :show-file-list="false"
@@ -70,13 +73,16 @@
 </template>
 
 <script setup>
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import BasePagination from '../components/BasePagination.vue'
 import { fetchFixedItems, importFixedItems } from '../api/priceFixedItems'
 
 const SETTLE_FIXED_SOURCE_TYPE = 'SETTLE_FIXED'
 
+const route = useRoute()
+const router = useRouter()
 const loading = ref(false)
 const importing = ref(false)
 const tableRows = ref([])
@@ -88,6 +94,20 @@ const filters = ref({
   pricingMonth: '2026-03',
   materialCode: '',
 })
+const returnToWorkbenchVisible = computed(() => Boolean(route.query.returnTo))
+
+const returnToWorkbench = () => {
+  const target = String(route.query.returnTo || '')
+  if (!target) return
+  router.push(target)
+}
+
+const applyRouteContext = () => {
+  const materialCode = String(route.query.materialCode || '').trim()
+  const pricingMonth = String(route.query.pricingMonth || route.query.periodMonth || '').trim()
+  if (materialCode) filters.value.materialCode = materialCode
+  if (pricingMonth) filters.value.pricingMonth = pricingMonth
+}
 
 const buildParams = () => ({
   sourceType: SETTLE_FIXED_SOURCE_TYPE,
@@ -332,7 +352,10 @@ const handleFileChange = async (uploadFile) => {
   }
 }
 
-onMounted(fetchList)
+onMounted(() => {
+  applyRouteContext()
+  fetchList()
+})
 </script>
 
 <style scoped>

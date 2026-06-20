@@ -5,6 +5,10 @@ const BASE_URL = '/api/v1/base/u9/material-master'
 export const U9_MATERIAL_ACCEPTED_EXTENSIONS = ['.xlsx', '.xls']
 export const U9_MATERIAL_MAX_FILE_SIZE = 150 * 1024 * 1024
 export const U9_MATERIAL_IMPORT_TIMEOUT = 10 * 60 * 1000
+export const U9_MATERIAL_ORGANIZATIONS = [
+  { label: '商用', value: 'COMMERCIAL' },
+  { label: '板换', value: 'PLATE' },
+]
 
 export function getU9MaterialUploadFile(uploadFile) {
   return uploadFile?.raw || uploadFile || null
@@ -38,14 +42,9 @@ export function normalizeU9MaterialRawPage(response) {
   }
 }
 
-export function normalizeU9MaterialBatches(response) {
-  return Array.isArray(response) ? response : []
-}
-
 export function normalizeU9MaterialImportResult(response) {
   const result = response || {}
   return {
-    batchNo: result.batchNo || '',
     datasetCode: result.datasetCode || '',
     sourceType: result.sourceType || '',
     mappingVersion: result.mappingVersion || '',
@@ -58,14 +57,12 @@ export function normalizeU9MaterialImportResult(response) {
   }
 }
 
-export function toU9MaterialImportFormData({ file }) {
+export function toU9MaterialImportFormData({ file, organizationCode = 'COMMERCIAL' }) {
   const formData = new FormData()
   formData.append('file', file)
+  formData.append('organizationCode', organizationCode)
   return formData
 }
-
-export const fetchU9MaterialBatches = () =>
-  request(`${BASE_URL}/batches`)
 
 export const importU9MaterialExcel = (payload) =>
   request(`${BASE_URL}/import`, {
@@ -76,6 +73,9 @@ export const importU9MaterialExcel = (payload) =>
 
 export const fetchU9MaterialRaw = (params) =>
   request(`${BASE_URL}/raw`, { params })
+
+export const fetchU9MaterialOptions = (keyword, limit = 20, organizationCode = 'COMMERCIAL') =>
+  request(`${BASE_URL}/options`, { params: { keyword, limit, organizationCode } })
 
 export const fetchU9MaterialTemplateMapping = () =>
   request(`${BASE_URL}/template-mapping`)

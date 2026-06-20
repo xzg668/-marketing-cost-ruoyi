@@ -25,32 +25,18 @@
       </div>
     </section>
 
-    <section class="batch-panel">
-      <div class="section-title">
-        <h2>批次列表</h2>
-      </div>
-      <el-table :data="batchRows" border stripe size="small" v-loading="batchLoading" max-height="220">
-        <el-table-column prop="batchNo" label="批次" min-width="210" show-overflow-tooltip />
-        <el-table-column prop="sourceType" label="来源" width="95" />
-        <el-table-column prop="mappingVersion" label="映射版本" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="totalCount" label="总行数" width="110" align="right" />
-        <el-table-column prop="successCount" label="成功" width="100" align="right" />
-        <el-table-column prop="failCount" label="失败" width="100" align="right" />
-        <el-table-column label="状态" width="110">
-          <template #default="{ row }">
-            <el-tag size="small" :type="batchStatusType(row.status)">
-              {{ row.status || '-' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <template #empty>
-          <el-empty description="暂无批次" />
-        </template>
-      </el-table>
-    </section>
-
     <section class="query-panel">
       <el-form class="query-form" :model="filters" :inline="true" label-width="78px">
+        <el-form-item label="组织">
+          <el-select v-model="filters.organizationCode" placeholder="组织" style="width: 120px">
+            <el-option
+              v-for="item in organizationOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item label="料号">
           <el-input v-model="filters.materialCode" clearable placeholder="301050066" />
         </el-form-item>
@@ -80,16 +66,6 @@
         </el-form-item>
         <el-form-item label="部门">
           <el-input v-model="filters.dept" clearable placeholder="部门" />
-        </el-form-item>
-        <el-form-item label="批次">
-          <el-select v-model="filters.batch" clearable filterable placeholder="最新有效批次" style="width: 220px">
-            <el-option
-              v-for="batch in batchRows"
-              :key="batch.batchNo"
-              :label="batch.batchNo"
-              :value="batch.batchNo"
-            />
-          </el-select>
         </el-form-item>
         <el-form-item class="query-actions">
           <el-button v-hasPermi="['base:u9-material:list']" type="primary" :icon="Search" @click="applyFilters">查询</el-button>
@@ -121,7 +97,11 @@
         <el-table-column prop="costElement" label="成本要素" min-width="150" show-overflow-tooltip />
         <el-table-column prop="productionDivision" label="事业部" min-width="150" show-overflow-tooltip />
         <el-table-column prop="departmentName" label="部门" min-width="140" show-overflow-tooltip />
-        <el-table-column prop="importBatchId" label="批次" min-width="190" show-overflow-tooltip />
+        <el-table-column label="组织" width="90">
+          <template #default="{ row }">
+            {{ organizationLabel(row.organizationCode) }}
+          </template>
+        </el-table-column>
         <el-table-column label="更新时间" width="165">
           <template #default="{ row }">
             {{ row.updatedAt || row.updateTime || row.createdAt || '-' }}
@@ -141,6 +121,11 @@
 
     <el-dialog v-model="importDialogVisible" title="导入 U9 料品主档" width="780px">
       <div class="import-panel">
+        <el-form label-width="78px">
+          <el-form-item label="导入组织">
+            <el-segmented v-model="importOrganizationCode" :options="organizationOptions" />
+          </el-form-item>
+        </el-form>
         <el-upload
           class="u9-upload"
           drag
@@ -165,7 +150,6 @@
             <div><span>失败</span><strong>{{ importResult.failCount }}</strong></div>
             <div><span>状态</span><strong>{{ importResult.status || '-' }}</strong></div>
           </div>
-          <div class="batch-line">批次：{{ importResult.batchNo || '-' }}</div>
           <el-table
             v-if="importResult.errors.length"
             :data="importResult.errors"
@@ -219,19 +203,21 @@ import {
 } from '@element-plus/icons-vue'
 import BasePagination from '../components/BasePagination.vue'
 import {
-  fetchU9MaterialBatches,
   fetchU9MaterialRaw,
   fetchU9MaterialTemplateMapping,
   getU9MaterialUploadFile,
   getU9MaterialUploadFileName,
   importU9MaterialExcel,
-  normalizeU9MaterialBatches,
   normalizeU9MaterialImportResult,
   normalizeU9MaterialRawPage,
+  U9_MATERIAL_ORGANIZATIONS,
   validateU9MaterialFile,
 } from '../api/u9MaterialMaster'
 
+const organizationOptions = U9_MATERIAL_ORGANIZATIONS
+
 const filters = reactive({
+  organizationCode: 'COMMERCIAL',
   materialCode: '',
   materialName: '',
   spec: '',
@@ -242,11 +228,8 @@ const filters = reactive({
   costElement: '',
   bizUnit: '',
   dept: '',
-  batch: '',
 })
 
-const batchRows = ref([])
-const batchLoading = ref(false)
 const rawRows = ref([])
 const total = ref(0)
 const currentPage = ref(1)
@@ -258,6 +241,7 @@ const uploadFile = ref(null)
 const uploadFileName = ref('')
 const importing = ref(false)
 const importResult = ref(null)
+const importOrganizationCode = ref('COMMERCIAL')
 
 const mappingDrawerVisible = ref(false)
 const mappingLoading = ref(false)
@@ -275,20 +259,9 @@ function queryParams() {
     costElement: filters.costElement.trim(),
     bizUnit: filters.bizUnit.trim(),
     dept: filters.dept.trim(),
-    batch: filters.batch,
+    organizationCode: filters.organizationCode,
     page: currentPage.value,
     pageSize: pageSize.value,
-  }
-}
-
-async function fetchBatches() {
-  batchLoading.value = true
-  try {
-    batchRows.value = normalizeU9MaterialBatches(await fetchU9MaterialBatches())
-  } catch (error) {
-    ElMessage.error(error.message || 'U9 料品主档批次查询失败')
-  } finally {
-    batchLoading.value = false
   }
 }
 
@@ -306,7 +279,6 @@ async function fetchRows() {
 }
 
 function refreshAll() {
-  fetchBatches()
   fetchRows()
 }
 
@@ -319,11 +291,13 @@ function resetFilters() {
   Object.keys(filters).forEach((key) => {
     filters[key] = ''
   })
+  filters.organizationCode = 'COMMERCIAL'
   applyFilters()
 }
 
 function openImportDialog() {
   importDialogVisible.value = true
+  importOrganizationCode.value = filters.organizationCode || 'COMMERCIAL'
 }
 
 function handleUploadChange(file) {
@@ -348,12 +322,14 @@ async function submitImport() {
   try {
     // 导入耗时可能较长，结果留在弹窗内展示，便于直接查看失败行。
     importResult.value = normalizeU9MaterialImportResult(
-      await importU9MaterialExcel({ file: uploadFile.value })
+      await importU9MaterialExcel({
+        file: uploadFile.value,
+        organizationCode: importOrganizationCode.value,
+      })
     )
     ElMessage.success('U9 料品主档导入完成')
     uploadFile.value = null
     uploadFileName.value = ''
-    await fetchBatches()
     currentPage.value = 1
     await fetchRows()
   } catch (error) {
@@ -361,6 +337,10 @@ async function submitImport() {
   } finally {
     importing.value = false
   }
+}
+
+function organizationLabel(code) {
+  return organizationOptions.find((item) => item.value === code)?.label || code || '商用'
 }
 
 async function openMappingDrawer() {
@@ -378,14 +358,6 @@ async function openMappingDrawer() {
   }
 }
 
-function batchStatusType(status) {
-  if (status === 'PARSED' || status === 'SUCCESS') return 'success'
-  if (status === 'PARTIAL_SUCCESS') return 'warning'
-  if (status === 'FAILED') return 'danger'
-  if (status === 'ARCHIVED') return 'info'
-  return undefined
-}
-
 watch([currentPage, pageSize], fetchRows)
 onMounted(refreshAll)
 </script>
@@ -397,7 +369,6 @@ onMounted(refreshAll)
 }
 
 .page-toolbar,
-.section-title,
 .table-meta {
   display: flex;
   align-items: center;
@@ -429,7 +400,6 @@ onMounted(refreshAll)
   gap: 8px;
 }
 
-.batch-panel,
 .query-panel,
 .table-panel {
   margin-bottom: 14px;
@@ -437,17 +407,6 @@ onMounted(refreshAll)
   background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
-}
-
-.section-title {
-  margin-bottom: 10px;
-}
-
-.section-title h2 {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: 0;
 }
 
 .query-form {
@@ -502,8 +461,7 @@ onMounted(refreshAll)
 }
 
 .upload-tip,
-.selected-file,
-.batch-line {
+.selected-file {
   color: #6b7280;
   font-size: 13px;
 }

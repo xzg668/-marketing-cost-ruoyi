@@ -2,14 +2,7 @@
   <div class="cost-run-detail">
     <div class="tool-row">
       <el-button @click="goBack">返回</el-button>
-      <!-- 财务可改"部品价格"列；改完点确认锁定 → 导出以确认值为准 -->
-      <el-button
-        :type="dirtyCount > 0 ? 'warning' : 'success'"
-        :disabled="dirtyCount === 0 && !confirmedAt"
-        @click="confirmEdits"
-      >
-        {{ dirtyCount > 0 ? `确认修改 (${dirtyCount})` : (confirmedAt ? '已确认' : '确认修改') }}
-      </el-button>
+      <el-button :disabled="!effectiveCostRunNo" @click="openTraceDrawer()">核算底稿</el-button>
       <el-button type="primary" @click="exportSheet">导出</el-button>
     </div>
 
@@ -32,7 +25,7 @@
             <td colspan="10">产品成本计算一览表</td>
           </tr>
           <tr class="blank-row no-left-strong">
-            <td colspan="10"></td>
+            <td colspan="10">核算批次：{{ displayCostRunNo || '-' }}</td>
           </tr>
           <tr>
             <td class="meta-label">OA单号</td>
@@ -105,18 +98,10 @@
             <td>{{ item.drawingNo }}</td>
             <td>{{ item.unitPrice }}</td>
             <td>{{ item.qty }}</td>
-            <!-- 部品价格列可编辑：dirty 黄底 / confirmed 绿底 -->
-            <td
-              :class="{
-                'amount-dirty': isAmountDirty(index),
-                'amount-confirmed': confirmedAt && !isAmountDirty(index) && originalAmounts[index] !== item.amount,
-              }"
-            >
-              <input
-                v-model="item.amount"
-                class="amount-input"
-                @input="markAmountTouched"
-              />
+            <td>
+              <button type="button" class="trace-link" @click="openPartTrace(item)">
+                {{ item.amount }}
+              </button>
             </td>
             <td>{{ item.material }}</td>
             <td>{{ item.shape }}</td>
@@ -129,7 +114,11 @@
             <td></td>
             <td></td>
             <td></td>
-            <td class="formula">{{ getCostAmount('OVERHAUL') }}</td>
+            <td class="formula">
+              <button type="button" class="trace-link" @click="openCostTrace('OVERHAUL')">
+                {{ getCostAmount('OVERHAUL') }}
+              </button>
+            </td>
             <td></td>
             <td></td>
             <td></td>
@@ -141,7 +130,11 @@
             <td></td>
             <td></td>
             <td></td>
-            <td class="formula">{{ getCostAmount('TOOLING_REPAIR') }}</td>
+            <td class="formula">
+              <button type="button" class="trace-link" @click="openCostTrace('TOOLING_REPAIR')">
+                {{ getCostAmount('TOOLING_REPAIR') }}
+              </button>
+            </td>
             <td></td>
             <td></td>
             <td></td>
@@ -153,7 +146,11 @@
             <td></td>
             <td></td>
             <td></td>
-            <td class="formula">{{ getCostAmount('WATER_POWER') }}</td>
+            <td class="formula">
+              <button type="button" class="trace-link" @click="openCostTrace('WATER_POWER')">
+                {{ getCostAmount('WATER_POWER') }}
+              </button>
+            </td>
             <td></td>
             <td></td>
             <td></td>
@@ -165,7 +162,11 @@
             <td></td>
             <td></td>
             <td></td>
-            <td class="formula">{{ getCostAmount('DEPT_OTHER') }}</td>
+            <td class="formula">
+              <button type="button" class="trace-link" @click="openCostTrace('DEPT_OTHER')">
+                {{ getCostAmount('DEPT_OTHER') }}
+              </button>
+            </td>
             <td></td>
             <td></td>
             <td></td>
@@ -177,7 +178,11 @@
             <td>{{ getAuxCode(item.costCode) }}</td>
             <td></td>
             <td></td>
-            <td class="formula">{{ formatAmount(item.amount) }}</td>
+            <td class="formula">
+              <button type="button" class="trace-link" @click="openCostTrace(item.costCode)">
+                {{ formatAmount(item.amount) }}
+              </button>
+            </td>
             <td></td>
             <td></td>
             <td></td>
@@ -187,7 +192,11 @@
             <td colspan="3" class="section-center">材料费</td>
             <td></td>
             <td></td>
-            <td class="amount">{{ getCostAmount('MATERIAL') }}</td>
+            <td class="amount">
+              <button type="button" class="trace-link strong" @click="openCostTrace('MATERIAL')">
+                {{ getCostAmount('MATERIAL') }}
+              </button>
+            </td>
             <td></td>
             <td></td>
             <td></td>
@@ -199,7 +208,11 @@
             <td></td>
             <td></td>
             <td></td>
-            <td>{{ getCostAmount('DIRECT_LABOR') }}</td>
+            <td>
+              <button type="button" class="trace-link" @click="openCostTrace('DIRECT_LABOR')">
+                {{ getCostAmount('DIRECT_LABOR') }}
+              </button>
+            </td>
             <td></td>
             <td></td>
             <td></td>
@@ -211,7 +224,11 @@
             <td></td>
             <td></td>
             <td></td>
-            <td>{{ getCostAmount('INDIRECT_LABOR') }}</td>
+            <td>
+              <button type="button" class="trace-link" @click="openCostTrace('INDIRECT_LABOR')">
+                {{ getCostAmount('INDIRECT_LABOR') }}
+              </button>
+            </td>
             <td></td>
             <td></td>
             <td></td>
@@ -223,7 +240,11 @@
             <td class="rate">{{ getCostRate('LOSS') }}</td>
             <td class="formula"></td>
             <td></td>
-            <td>{{ getCostAmount('LOSS') }}</td>
+            <td>
+              <button type="button" class="trace-link" @click="openCostTrace('LOSS')">
+                {{ getCostAmount('LOSS') }}
+              </button>
+            </td>
             <td></td>
             <td></td>
             <td></td>
@@ -235,7 +256,11 @@
             <td class="rate">{{ getCostRate('MANUFACTURE') }}</td>
             <td class="formula"></td>
             <td></td>
-            <td>{{ getCostAmount('MANUFACTURE') }}</td>
+            <td>
+              <button type="button" class="trace-link" @click="openCostTrace('MANUFACTURE')">
+                {{ getCostAmount('MANUFACTURE') }}
+              </button>
+            </td>
             <td></td>
             <td></td>
             <td></td>
@@ -245,7 +270,11 @@
             <td colspan="3" class="section-center">制造成本</td>
             <td class="formula"></td>
             <td></td>
-            <td class="amount">{{ getCostAmount('MANUFACTURE_COST') }}</td>
+            <td class="amount">
+              <button type="button" class="trace-link strong" @click="openCostTrace('MANUFACTURE_COST')">
+                {{ getCostAmount('MANUFACTURE_COST') }}
+              </button>
+            </td>
             <td></td>
             <td></td>
             <td></td>
@@ -257,7 +286,11 @@
             <td class="rate">{{ getCostCoefficient('ADJUSTED_MANUFACTURE_COST') }}</td>
             <td class="formula"></td>
             <td></td>
-            <td class="amount">{{ getCostAmount('ADJUSTED_MANUFACTURE_COST') }}</td>
+            <td class="amount">
+              <button type="button" class="trace-link strong" @click="openCostTrace('ADJUSTED_MANUFACTURE_COST')">
+                {{ getCostAmount('ADJUSTED_MANUFACTURE_COST') }}
+              </button>
+            </td>
             <td></td>
             <td></td>
             <td></td>
@@ -269,7 +302,11 @@
             <td>{{ getCostRate('MGMT_EXP') }}</td>
             <td></td>
             <td></td>
-            <td>{{ getCostAmount('MGMT_EXP') }}</td>
+            <td>
+              <button type="button" class="trace-link" @click="openCostTrace('MGMT_EXP')">
+                {{ getCostAmount('MGMT_EXP') }}
+              </button>
+            </td>
             <td></td>
             <td></td>
             <td></td>
@@ -280,7 +317,11 @@
             <td>{{ getCostRate('SALES_EXP') }}</td>
             <td></td>
             <td></td>
-            <td>{{ getCostAmount('SALES_EXP') }}</td>
+            <td>
+              <button type="button" class="trace-link" @click="openCostTrace('SALES_EXP')">
+                {{ getCostAmount('SALES_EXP') }}
+              </button>
+            </td>
             <td></td>
             <td></td>
             <td></td>
@@ -291,7 +332,11 @@
             <td>{{ getCostRate('FIN_EXP') }}</td>
             <td></td>
             <td></td>
-            <td>{{ getCostAmount('FIN_EXP') }}</td>
+            <td>
+              <button type="button" class="trace-link" @click="openCostTrace('FIN_EXP')">
+                {{ getCostAmount('FIN_EXP') }}
+              </button>
+            </td>
             <td></td>
             <td></td>
             <td></td>
@@ -307,7 +352,11 @@
             <td></td>
             <td></td>
             <td></td>
-            <td class="formula">{{ getCostAmount('OTHER_EXP_FREIGHT') || '-' }}</td>
+            <td class="formula">
+              <button type="button" class="trace-link" @click="openCostTrace('OTHER_EXP_FREIGHT')">
+                {{ getCostAmount('OTHER_EXP_FREIGHT') || '-' }}
+              </button>
+            </td>
             <td></td>
             <td></td>
             <td></td>
@@ -319,7 +368,11 @@
             <td></td>
             <td></td>
             <td></td>
-            <td class="formula">{{ getOtherExpenseByName('模具费') || '-' }}</td>
+            <td class="formula">
+              <button type="button" class="trace-link" @click="openOtherExpenseTrace('模具费')">
+                {{ getOtherExpenseByName('模具费') || '-' }}
+              </button>
+            </td>
             <td></td>
             <td></td>
             <td></td>
@@ -331,7 +384,11 @@
             <td></td>
             <td></td>
             <td></td>
-            <td class="formula">{{ getOtherExpenseByName('认证费') || '-' }}</td>
+            <td class="formula">
+              <button type="button" class="trace-link" @click="openOtherExpenseTrace('认证费')">
+                {{ getOtherExpenseByName('认证费') || '-' }}
+              </button>
+            </td>
             <td></td>
             <td></td>
             <td></td>
@@ -341,7 +398,11 @@
             <td colspan="3" class="total-label">不含税总成本</td>
             <td></td>
             <td></td>
-            <td class="amount">{{ getCostAmount('TOTAL') }}</td>
+            <td class="amount">
+              <button type="button" class="trace-link strong" @click="openCostTrace('TOTAL')">
+                {{ getCostAmount('TOTAL') }}
+              </button>
+            </td>
             <td></td>
             <td></td>
             <td></td>
@@ -362,14 +423,21 @@
         </tbody>
       </table>
     </div>
+    <CostRunTraceDrawer
+      v-model="traceDrawerVisible"
+      :cost-run-no="effectiveCostRunNo"
+      :version-no="displayCostRunNo"
+      :initial-trace="selectedTrace"
+    />
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { fetchCostRunDetail } from '../api/costRunDetail'
+import CostRunTraceDrawer from '../components/CostRunTraceDrawer.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -379,7 +447,9 @@ const meta = computed(() => ({
   customerName: String(route.query.customer || ''),
   productName: String(route.query.productName || ''),
   productModel: String(route.query.productModel || route.query.sunlModel || ''),
-  productCode: String(route.query.materialCode || ''),
+  productCode: String(route.query.productCode || route.query.materialCode || ''),
+  costRunNo: String(route.query.costRunNo || ''),
+  versionNo: String(route.query.versionNo || ''),
   series: String(route.query.series || ''),
   customerDrawing: String(route.query.customerDrawing || ''),
   // 见机表 r2 col 4 是空给业务方手填；OA 表当前没 owner 字段，留空
@@ -396,40 +466,10 @@ const productName = ref('')
 const productModel = ref('')
 const copperPrice = ref('')
 const zincPrice = ref('')
-
-// 部品价格可编辑：originalAmounts 是 loadDetail 时备份的原始 amount，用来识别 dirty
-// confirmedAt 是用户点"确认修改"按钮时的时间戳（null=未确认）
-const originalAmounts = ref([])
-const confirmedAt = ref(null)
-const isAmountDirty = (index) => {
-  const orig = originalAmounts.value[index]
-  const cur = partItems.value[index]?.amount
-  return orig !== undefined && String(orig) !== String(cur)
-}
-const dirtyCount = computed(() =>
-  partItems.value.reduce(
-    (n, _item, i) => (isAmountDirty(i) && !confirmedAt.value ? n + 1 : n),
-    0,
-  ),
-)
-const markAmountTouched = () => {
-  // 用户改了任何一格 → 重置 confirmedAt（需要重新确认）
-  if (confirmedAt.value) confirmedAt.value = null
-}
-const confirmEdits = async () => {
-  if (dirtyCount.value === 0 && !confirmedAt.value) {
-    ElMessage.info('暂无修改可确认')
-    return
-  }
-  try {
-    await ElMessageBox.confirm(
-      `确认 ${dirtyCount.value} 处部品价格修改？确认后导出 Excel 将使用新值。`,
-      '确认修改', { type: 'warning' },
-    )
-  } catch (_) { return }
-  confirmedAt.value = Date.now()
-  ElMessage.success(`已确认 ${dirtyCount.value} 处部品价格修改`)
-}
+const currentCostRunNo = ref('')
+const currentVersionNo = ref('')
+const traceDrawerVisible = ref(false)
+const selectedTrace = ref(null)
 
 const partRows = computed(() => [...partItems.value])
 const costMap = computed(() => {
@@ -447,6 +487,10 @@ const auxItems = computed(() =>
 const otherExpenseItems = computed(() =>
   costItems.value.filter((item) => String(item?.costCode || '').startsWith('OTHER_EXP_'))
 )
+const displayCostRunNo = computed(() =>
+  currentVersionNo.value || currentCostRunNo.value || meta.value.versionNo || meta.value.costRunNo
+)
+const effectiveCostRunNo = computed(() => currentCostRunNo.value || meta.value.costRunNo)
 
 const toText = (value) => (value === null || value === undefined ? '' : String(value))
 const formatAmount = (value) => {
@@ -483,6 +527,7 @@ const getOtherExpenseByName = (name) => {
   const item = otherExpenseItems.value.find((i) => i.costName === name)
   return item ? formatAmount(item.amount) : ''
 }
+const getOtherExpenseItemByName = (name) => otherExpenseItems.value.find((i) => i.costName === name)
 // 派生 OTHER_EXP_<id> amount（按 costName）— 导出 Excel 时用
 const getOtherExpenseValueByName = (name) => {
   const item = otherExpenseItems.value.find((i) => i.costName === name)
@@ -522,7 +567,9 @@ const loadDetail = async () => {
     return
   }
   try {
-    const data = await fetchCostRunDetail(meta.value.oaNo, meta.value.productCode)
+    const data = await fetchCostRunDetail(meta.value.oaNo, meta.value.productCode, {
+      costRunNo: meta.value.costRunNo || undefined,
+    })
     const parts = Array.isArray(data?.partItems) ? data.partItems : []
     const costs = Array.isArray(data?.costItems) ? data.costItems : []
     productAttr.value = toText(data?.productAttr)
@@ -530,7 +577,10 @@ const loadDetail = async () => {
     productModel.value = toText(data?.productModel)
     copperPrice.value = toText(data?.copperPrice)
     zincPrice.value = toText(data?.zincPrice)
+    currentCostRunNo.value = toText(data?.costRunNo)
+    currentVersionNo.value = toText(data?.versionNo)
     partItems.value = parts.map((item) => ({
+      id: item.id,
       partName: toText(item.partName),
       partCode: toText(item.partCode),
       drawingNo: toText(item.partDrawingNo),
@@ -542,9 +592,6 @@ const loadDetail = async () => {
       priceSource: toText(item.priceSource),
       remark: toText(item.remark),
     }))
-    // 备份原始 amount 用于 dirty 比对；每次 reload 都重置确认状态
-    originalAmounts.value = partItems.value.map((p) => p.amount)
-    confirmedAt.value = null
     costItems.value = costs
   } catch (error) {
     ElMessage.error(error?.message || '试算结果加载失败')
@@ -553,6 +600,52 @@ const loadDetail = async () => {
 
 const goBack = () => {
   router.back()
+}
+
+const openTraceDrawer = (trace = null) => {
+  if (!effectiveCostRunNo.value) {
+    ElMessage.info('当前成本表缺少核算批次，无法查看底稿')
+    return
+  }
+  selectedTrace.value = trace
+  traceDrawerVisible.value = true
+}
+
+const openPartTrace = (item) => {
+  const trace = {
+    traceType: 'PART_PRICE',
+    partItemId: item?.id,
+    partCode: item?.partCode,
+  }
+  if (!trace.partItemId && !trace.partCode) {
+    trace.partName = item?.partName || '部品价格'
+  }
+  openTraceDrawer(trace)
+}
+
+const openCostTrace = (costCode) => {
+  const item = costMap.value?.[costCode]
+  openTraceDrawer({
+    traceType: costCode === 'TOTAL' ? 'TOTAL' : 'COST_ITEM',
+    costItemId: item?.id,
+    costCode,
+  })
+}
+
+const openOtherExpenseTrace = (name) => {
+  const item = getOtherExpenseItemByName(name)
+  if (!item) {
+    openTraceDrawer({
+      traceType: 'COST_ITEM',
+      expenseName: name,
+    })
+    return
+  }
+  openTraceDrawer({
+    traceType: 'COST_ITEM',
+    costItemId: item.id,
+    costCode: item.costCode,
+  })
 }
 
 const exportSheet = () => {
@@ -765,6 +858,7 @@ const exportSheet = () => {
     }
 
     setCellValue(rowIndexFinal(3), 2, meta.value.oaNo || '')
+    setCellValue(rowIndexFinal(2), 1, displayCostRunNo.value ? `核算批次：${displayCostRunNo.value}` : '')
     sheet.getCell(rowIndexFinal(3), 2).font = {
       ...(sheet.getCell(rowIndexFinal(3), 2).font || {}),
       size: 10,
@@ -887,24 +981,6 @@ onMounted(() => {
 </script>
 
 <style scoped>
-/* 部品价格列可编辑 input —— 平时跟普通文本无视觉差异，hover/focus 才提示 */
-.amount-input {
-  width: 100%;
-  border: 0;
-  background: transparent;
-  outline: none;
-  padding: 0;
-  margin: 0;
-  font: inherit;
-  color: inherit;
-  text-align: inherit;
-  box-sizing: border-box;
-}
-.amount-input:hover { background: rgba(64, 158, 255, 0.06); }
-.amount-input:focus { background: #fff; box-shadow: inset 0 0 0 1px #409eff; }
-.amount-dirty { background: #fff8e1; }       /* 未确认黄底提示 */
-.amount-confirmed { background: #e8f5e9; }   /* 已确认绿底标记 */
-
 .cost-run-detail {
   display: flex;
   flex-direction: column;
@@ -1032,6 +1108,29 @@ td.left-blue {
 }
 
 .amount {
+  font-weight: 700;
+}
+
+.trace-link {
+  max-width: 100%;
+  border: 0;
+  background: transparent;
+  color: #1f2a37;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+}
+
+.trace-link:hover,
+.trace-link:focus {
+  color: #409eff;
+  outline: none;
+}
+
+.trace-link.strong {
   font-weight: 700;
 }
 

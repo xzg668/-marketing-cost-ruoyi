@@ -583,7 +583,7 @@ function canCreateTask(row) {
 function canBuildCosting(row) {
   if (!row?.oaFormItemId) return false
   if (row.reviewStatus === 'APPROVED') return true
-  return !row.taskId && Boolean(row.bodyBomReady || ['SYNCED', 'REUSED_CURRENT_MONTH', 'MANUAL_ENTERED'].includes(row.bomStatus))
+  return !row.taskId && Boolean(row.bodyBomReady || ['SYNCED', 'REUSED_CURRENT_MONTH', 'CURRENT_MONTH_QUOTED', 'U9_BOM_EXISTS', 'MANUAL_ENTERED'].includes(row.bomStatus))
 }
 
 function actionKey(row, action) {
