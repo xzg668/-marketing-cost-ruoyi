@@ -397,6 +397,15 @@
               </div>
               <div class="toolbar-actions">
                 <el-button
+                  v-if="!priceSourceChecked"
+                  type="primary"
+                  :loading="pricePrepareActionLoading || autoPriceSourceChecking"
+                  disabled
+                >
+                  {{ pricePrepareActionLoading || autoPriceSourceChecking ? '自动检查中' : '自动检查价格源' }}
+                </el-button>
+                <el-button
+                  v-else
                   type="primary"
                   :disabled="isBlockedTab(tab) || priceSourceGapSummary.total === 0"
                   @click="openPriceSource(pricePrepareGaps[0])"
@@ -428,8 +437,8 @@
                 <strong>{{ priceSourceGapSummary.range }}</strong>
               </div>
               <div class="source-gap-card">
-                <span>其他缺口</span>
-                <strong>{{ priceSourceGapSummary.other }}</strong>
+                <span>废料映射缺口</span>
+                <strong>{{ priceSourceGapSummary.scrapMapping }}</strong>
               </div>
             </div>
 
@@ -442,7 +451,15 @@
               class="inline-alert"
             />
             <el-alert
-              v-else-if="priceSourceGapSummary.total === 0"
+              v-else-if="!priceSourceChecked"
+              type="warning"
+              show-icon
+              :closable="false"
+              title="系统将自动检查价格源，完成后生成缺口清单"
+              class="inline-alert"
+            />
+            <el-alert
+              v-else-if="priceSourceReady"
               type="success"
               show-icon
               :closable="false"
@@ -470,11 +487,30 @@
               <el-table-column label="建议处理" min-width="180" show-overflow-tooltip>
                 <template #default="{ row }">{{ priceSourceGapActionText(row) }}</template>
               </el-table-column>
-              <el-table-column label="操作" width="150" fixed="right">
+              <el-table-column label="操作" width="260" fixed="right">
                 <template #default="{ row }">
-                  <el-button link type="primary" @click="openPriceSource(row)">
-                    {{ priceSourceGapButtonText(row) }}
-                  </el-button>
+                  <div class="row-actions">
+                    <template v-if="isMissingScrapMappingGap(row)">
+                      <el-button link type="primary" @click="goSupplementScrapMapping(row)">
+                        补充废料映射
+                      </el-button>
+                      <el-button
+                        v-if="canConfirmNoScrap(row)"
+                        link
+                        type="warning"
+                        :loading="noScrapConfirming && currentNoScrapGap === row"
+                        @click="openNoScrapConfirmDialog(row)"
+                      >
+                        确认无废料，按0处理
+                      </el-button>
+                      <el-tag v-else-if="isNoScrapConfirmed(row)" size="small" type="success" effect="plain">
+                        已确认按0处理
+                      </el-tag>
+                    </template>
+                    <el-button v-else link type="primary" @click="openPriceSource(row)">
+                      {{ priceSourceGapButtonText(row) }}
+                    </el-button>
+                  </div>
                 </template>
               </el-table-column>
               <template #empty>
@@ -852,6 +888,7 @@
         <el-form-item label="价格类型">
           <el-select v-model="priceTypeForm.priceType" placeholder="请选择价格类型" class="drawer-control">
             <el-option label="固定价" value="固定价" />
+            <el-option label="结算固定价" value="结算固定价" />
             <el-option label="联动价" value="联动价" />
             <el-option label="区间价" value="区间价" />
             <el-option label="自制件" value="自制件" />
@@ -876,6 +913,41 @@
         </div>
       </template>
     </el-drawer>
+
+    <el-dialog v-model="noScrapConfirmDialogVisible" title="确认无废料，按0处理" width="560px">
+      <el-alert
+        class="no-scrap-impact-alert"
+        type="warning"
+        show-icon
+        :closable="false"
+        title="确认后该料号在当前核算月份废料抵扣按 0 处理，系统会自动重新检查价格源。"
+      />
+      <el-descriptions :column="1" border class="no-scrap-context">
+        <el-descriptions-item label="OA单号">{{ noScrapConfirmContext.oaNo || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="顶层产品">{{ noScrapConfirmContext.topProductCode || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="子项料号">{{ noScrapConfirmContext.materialNo || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="业务单元">{{ noScrapConfirmContext.businessUnitType || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="核算月份">{{ noScrapConfirmContext.periodMonth || '-' }}</el-descriptions-item>
+      </el-descriptions>
+      <el-form :model="noScrapConfirmForm" label-width="86px">
+        <el-form-item label="确认原因" required>
+          <el-input
+            v-model="noScrapConfirmForm.confirmReason"
+            type="textarea"
+            :rows="4"
+            maxlength="200"
+            show-word-limit
+            placeholder="请输入确认原因"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="noScrapConfirmDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="noScrapConfirming" @click="submitNoScrapConfirm">
+          确认按0处理
+        </el-button>
+      </template>
+    </el-dialog>
 
     <CostRunTraceDrawer
       v-model="traceDrawerVisible"
@@ -911,6 +983,7 @@ import {
   trialQuoteCostRun,
   updateCostingBomRow,
 } from '../api/quoteRequests'
+import { confirmPricePrepareNoScrap } from '../api/pricePrepare'
 import { fetchU9MaterialOptions } from '../api/u9MaterialMaster'
 import { formatDateTime, statusLabel, statusTagType } from '../utils/quoteRequestWorkbench'
 
@@ -946,6 +1019,14 @@ const priceTypeDrawerMode = ref('ADJUST')
 const priceTypeForm = ref(emptyPriceTypeForm())
 const pricePrepareLoading = ref(false)
 const pricePrepareActionLoading = ref(false)
+const autoPriceSourceChecking = ref(false)
+const returnPriceSourceRefreshing = ref(false)
+const autoPriceSourceCheckedKey = ref('')
+const noScrapConfirmDialogVisible = ref(false)
+const noScrapConfirming = ref(false)
+const currentNoScrapGap = ref(null)
+const noScrapConfirmContext = ref(emptyNoScrapConfirmContext())
+const noScrapConfirmForm = ref({ confirmReason: '' })
 const pricePrepare = ref(emptyPricePrepareResponse())
 const costRunLoading = ref(false)
 const costRunActionLoading = ref(false)
@@ -1049,7 +1130,7 @@ const priceSourceGapSummary = computed(() => {
     settleFixed: rows.filter((row) => priceSourceGapKind(row) === 'SETTLE_FIXED').length,
     linked: rows.filter((row) => priceSourceGapKind(row) === 'LINKED').length,
     range: rows.filter((row) => priceSourceGapKind(row) === 'RANGE').length,
-    other: rows.filter((row) => !['FIXED', 'SETTLE_FIXED', 'LINKED', 'RANGE'].includes(priceSourceGapKind(row))).length,
+    scrapMapping: rows.filter((row) => priceSourceGapKind(row) === 'SCRAP_MAPPING').length,
   }
 })
 const pricePrepareReady = computed(() => {
@@ -1057,6 +1138,13 @@ const pricePrepareReady = computed(() => {
   const gapCount = Number(readiness.gapCount ?? pricePrepareGaps.value.length)
   return readiness.status === 'READY' && gapCount === 0
 })
+const priceSourceChecked = computed(() => {
+  const readiness = pricePrepare.value.readiness || {}
+  const status = String(readiness.status || '').toUpperCase()
+  if (status && status !== 'NOT_PREPARED') return true
+  return Boolean(latestPrepare.value.prepareNo || pricePrepareItems.value.length || pricePrepareGaps.value.length)
+})
+const priceSourceReady = computed(() => priceSourceChecked.value && pricePrepareReady.value && priceSourceGapSummary.value.total === 0)
 const costRunBlockingText = computed(() => {
   const reasons = costRun.value.blockingReasons || []
   if (reasons.length > 0) return displayBusinessText(reasons.join('；'))
@@ -1147,6 +1235,7 @@ async function loadWorkbench(options = {}) {
       await refreshAllTabData()
     }
     applyInputGapGuide()
+    applyRouteTab()
   } catch (error) {
     workbench.value = { header: {}, item: {}, bomRows: [], tabs: [], workflowStatus: {} }
     ElMessage.error(error?.message || '获取核算工作台失败')
@@ -1156,7 +1245,9 @@ async function loadWorkbench(options = {}) {
 }
 
 async function refreshWorkbench() {
+  autoPriceSourceCheckedKey.value = ''
   await loadWorkbench({ resetTab: false, loadChildren: true })
+  await ensurePriceSourceChecked()
 }
 
 async function refreshAllTabData() {
@@ -1184,6 +1275,15 @@ function applyInputGapGuide() {
   }
   const blockedStep = normalizeTabCode(workbench.value.workflowStatus?.currentBlockedStep)
   activeTab.value = blockedStep || 'COST_RUN'
+}
+
+function applyRouteTab() {
+  const requestedTab = normalizeTabCode(route.query.tab)
+  if (!requestedTab) return false
+  const exists = tabs.value.some((tab) => normalizeTabCode(tab.code) === requestedTab)
+  if (!exists) return false
+  activeTab.value = requestedTab
+  return true
 }
 
 async function refreshAfterAction(successText) {
@@ -1538,35 +1638,106 @@ async function confirmPriceTypes() {
   }
 }
 
-async function generatePricePrepare() {
+async function generatePricePrepare(successText = '最终价格已生成') {
   pricePrepareActionLoading.value = true
   try {
     await generateQuotePricePrepare(oaNo.value, itemId.value, {
       periodMonth: workbench.value.periodMonth,
       priceTypeConfirmNo: latestPriceType.value.confirmNo,
     })
-    await refreshAfterAction('最终价格已生成')
+    await refreshAfterAction(successText)
+    return true
   } catch (error) {
     ElMessage.error(error?.message || '生成最终价格失败')
+    return false
   } finally {
     pricePrepareActionLoading.value = false
   }
 }
 
+async function runPriceSourceCheck(successText = '价格源已自动检查') {
+  if (!latestPriceType.value.confirmNo || pricePrepareActionLoading.value || autoPriceSourceChecking.value) {
+    return false
+  }
+  autoPriceSourceChecking.value = true
+  try {
+    return await generatePricePrepare(successText)
+  } finally {
+    autoPriceSourceChecking.value = false
+  }
+}
+
+function currentPriceSourceTab() {
+  return tabs.value.find((tab) => normalizeTabCode(tab.code) === 'PRICE_SOURCE_SUPPLEMENT')
+}
+
+function priceSourceAutoCheckKey() {
+  return [
+    oaNo.value,
+    itemId.value,
+    workbench.value.periodMonth || '',
+    latestPriceType.value.confirmNo || '',
+  ].join('|')
+}
+
+async function ensurePriceSourceChecked() {
+  if (activeTab.value !== 'PRICE_SOURCE_SUPPLEMENT') return
+  if (route.query.refreshPriceSource === '1') return
+  const tab = currentPriceSourceTab()
+  if (isBlockedTab(tab)) return
+  const checkKey = priceSourceAutoCheckKey()
+  if (autoPriceSourceCheckedKey.value === checkKey) return
+  const checked = await runPriceSourceCheck('价格源已自动检查')
+  if (checked) {
+    autoPriceSourceCheckedKey.value = checkKey
+  }
+}
+
+function priceSourceReturnTo() {
+  const url = new URL(route.fullPath || '/', 'http://local')
+  url.searchParams.set('tab', 'PRICE_SOURCE_SUPPLEMENT')
+  url.searchParams.set('refreshPriceSource', '1')
+  return `${url.pathname}${url.search}${url.hash}`
+}
+
+async function refreshPriceSourceFromReturn() {
+  if (route.query.refreshPriceSource !== '1' || returnPriceSourceRefreshing.value) return
+  if (!latestPriceType.value.confirmNo) return
+  const tab = currentPriceSourceTab()
+  if (isBlockedTab(tab)) return
+  returnPriceSourceRefreshing.value = true
+  activeTab.value = 'PRICE_SOURCE_SUPPLEMENT'
+  const query = { ...route.query }
+  delete query.refreshPriceSource
+  query.tab = 'PRICE_SOURCE_SUPPLEMENT'
+  await router.replace({ path: route.path, query }).catch(() => {})
+  try {
+    autoPriceSourceCheckedKey.value = ''
+    const checked = await runPriceSourceCheck('价格源已自动刷新')
+    if (checked) {
+      autoPriceSourceCheckedKey.value = priceSourceAutoCheckKey()
+    }
+  } finally {
+    returnPriceSourceRefreshing.value = false
+  }
+}
+
 function openPriceSource(row) {
   const kind = priceSourceGapKind(row)
+  if (kind === 'SCRAP_MAPPING') {
+    ElMessage.info('该缺口请在缺口行选择“补充废料映射”或“确认无废料，按0处理”')
+    return
+  }
   const paths = {
     FIXED: '/price/fixed',
     SETTLE_FIXED: '/price/settle-fixed',
     LINKED: '/price/linked/result',
     RANGE: '/price/range',
     PRICE_TYPE: '/base/map',
-    PACKAGE_STRUCTURE: '/bom-data/details/package-structure',
-    PACKAGE_PRICE: '/price/package-component',
   }
   const path = paths[kind]
   if (!path) {
-    ElMessage.info('请根据缺口说明维护子件、原材料或废料的价格源')
+    ElMessage.info('该缺口未返回可维护价格源类型，请重新检查价格源或按说明处理')
     return
   }
   const materialCode = row?.gapMaterialCode || row?.materialCode || ''
@@ -1580,12 +1751,88 @@ function openPriceSource(row) {
       oaNo: oaNo.value,
       oaFormItemId: itemId.value,
       productCode: item.value.materialNo || '',
-      tab: kind === 'PACKAGE_STRUCTURE' ? 'gaps' : '',
-      returnTo: route.fullPath,
+      returnTo: priceSourceReturnTo(),
     },
   }).catch(() => {
     ElMessage.info('请到价格源管理下维护对应价格源')
   })
+}
+
+function goSupplementScrapMapping(row) {
+  const materialCode = actionMaterialNo(row)
+  router.push({
+    path: '/base/cms-cost/material-scrap-refs',
+    query: materialCode ? { materialCode } : {},
+  }).catch(() => {
+    ElMessage.info('请到基础数据下维护 CMS 回收废料映射')
+  })
+}
+
+function openNoScrapConfirmDialog(row) {
+  const materialNo = actionMaterialNo(row)
+  const periodMonth = actionPeriodMonth(row)
+  const businessUnitType = priceSourceBusinessUnitType(row)
+  if (!materialNo) {
+    ElMessage.warning('缺少无废料确认的料号')
+    return
+  }
+  if (!periodMonth) {
+    ElMessage.warning('缺少核算月份，无法确认无废料')
+    return
+  }
+  if (!businessUnitType) {
+    ElMessage.warning('缺少业务单元，无法确认无废料')
+    return
+  }
+  currentNoScrapGap.value = row
+  noScrapConfirmContext.value = {
+    oaNo: row?.oaNo || oaNo.value,
+    topProductCode: row?.topProductCode || item.value.materialNo || '',
+    materialNo,
+    materialName: row?.gapMaterialName || row?.materialName || '',
+    businessUnitType,
+    periodMonth,
+  }
+  noScrapConfirmForm.value = { confirmReason: '' }
+  noScrapConfirmDialogVisible.value = true
+}
+
+async function submitNoScrapConfirm() {
+  const reason = String(noScrapConfirmForm.value.confirmReason || '').trim()
+  if (!reason) {
+    ElMessage.warning('请输入确认原因')
+    return
+  }
+  const row = currentNoScrapGap.value
+  const context = noScrapConfirmContext.value
+  if (!row || !context.materialNo || !context.businessUnitType || !context.periodMonth) {
+    ElMessage.error('缺少无废料确认上下文，请刷新后重试')
+    return
+  }
+  noScrapConfirming.value = true
+  try {
+    await confirmPricePrepareNoScrap({
+      businessUnitType: context.businessUnitType,
+      materialNo: context.materialNo,
+      materialName: context.materialName,
+      effectiveFromMonth: context.periodMonth,
+      confirmReason: reason,
+      sourceOaNo: context.oaNo,
+      sourceGapId: row?.id,
+    })
+    noScrapConfirmDialogVisible.value = false
+    autoPriceSourceCheckedKey.value = ''
+    const checked = await runPriceSourceCheck('无废料已确认，价格源已刷新')
+    if (checked) {
+      autoPriceSourceCheckedKey.value = priceSourceAutoCheckKey()
+    } else {
+      await loadPricePrepare(false)
+    }
+  } catch (error) {
+    ElMessage.error(error?.message || '确认无废料失败')
+  } finally {
+    noScrapConfirming.value = false
+  }
 }
 
 function priceSourceSupplementText(tab) {
@@ -1593,45 +1840,42 @@ function priceSourceSupplementText(tab) {
     return tab.blockedReason || '请先确认价格类型，确认后系统才能判断需要补充哪类价格源'
   }
   if (priceSourceGapSummary.value.total > 0) {
-    return '请根据报价明细子件、原材料或废料的缺口类型维护对应价格源'
+    return '请根据缺口行的价格类型维护对应价格源'
+  }
+  if (!priceSourceChecked.value) {
+    return '系统将自动检查价格源；如果价格源已维护完整，会同时生成最终价格'
   }
   return '价格源已齐全，可生成最终价格'
 }
 
 function priceSourceGapKind(row) {
-  const text = [
-    row?.materialCode,
-    row?.gapMaterialCode,
-    row?.materialName,
-    row?.priceType,
-    row?.priceSource,
-    row?.gapType,
-    row?.sourceTable,
-    row?.actionType,
-    row?.actionTarget,
-    row?.message,
-  ].filter(Boolean).join(' ')
+  if (isMissingScrapMappingGap(row)) return 'SCRAP_MAPPING'
+  const kind = normalizePriceSourceKind(row?.priceType)
+  if (kind) return kind
+  const gapType = String(row?.gapType || '')
+  if (gapType.includes('MISSING_PRICE_TYPE')) return 'PRICE_TYPE'
+  return 'UNRESOLVED'
+}
 
-  if (isPackageGap(text) && text.includes('MISSING_STRUCTURE')) return 'PACKAGE_STRUCTURE'
-  if (isPackageGap(text)) return 'PACKAGE_PRICE'
-  if (isSettleFixedPriceSource(text)) return 'SETTLE_FIXED'
-  if (text.includes('固定')) return 'FIXED'
-  if (text.includes('联动')) return 'LINKED'
-  if (text.includes('区间')) return 'RANGE'
-  if (text.includes('价格类型')) return 'PRICE_TYPE'
-  return 'OTHER'
+function normalizePriceSourceKind(value) {
+  const text = String(value || '').trim()
+  if (!text) return ''
+  const upper = text.toUpperCase()
+  if (isSettleFixedPriceSource(text) || upper === 'SETTLE_FIXED') return 'SETTLE_FIXED'
+  if (['FIXED', 'PURCHASE_FIXED'].includes(upper) || text.includes('固定')) return 'FIXED'
+  if (upper === 'LINKED' || text.includes('联动')) return 'LINKED'
+  if (upper === 'RANGE' || text.includes('区间')) return 'RANGE'
+  if (upper === 'MAKE' || text.includes('自制')) return 'MAKE'
+  return ''
 }
 
 function isSettleFixedPriceSource(text) {
   return ['SETTLE_FIXED', '结算固定', '固定结算', '家用结算', '结算价'].some((token) => text.includes(token))
 }
 
-function isPackageGap(text) {
-  return ['PACKAGE', '包装', 'PackageComponent'].some((token) => text.includes(token))
-}
-
 function priceSourceGapTypeText(row) {
-  const type = row?.priceType || row?.priceSource
+  const type = row?.priceType
+  if (isMissingScrapMappingGap(row)) return '废料映射'
   if (type) return type
   const labels = {
     FIXED: '固定采购价',
@@ -1639,26 +1883,32 @@ function priceSourceGapTypeText(row) {
     LINKED: '联动价',
     RANGE: '区间价',
     PRICE_TYPE: '价格类型',
-    PACKAGE_STRUCTURE: '包装组件结构',
-    PACKAGE_PRICE: '包装组件价格',
-    OTHER: derivedPriceGapTypeText(row),
+    MAKE: '自制件',
+    SCRAP_MAPPING: '废料映射',
+    UNRESOLVED: '未返回价格类型',
   }
   return labels[priceSourceGapKind(row)] || '-'
 }
 
 function priceSourceGapActionText(row) {
   const materialCode = row?.gapMaterialCode || row?.materialCode || ''
+  if (isMissingScrapMappingGap(row)) {
+    const actionCode = actionMaterialNo(row) || materialCode
+    const label = isNoScrapConfirmed(row)
+      ? '已确认无废料，重新检查后按0处理'
+      : '补充废料映射；如确无废料可确认按0处理'
+    return actionCode ? `${label}：${actionCode}` : label
+  }
   const labels = {
     FIXED: '维护固定采购价价格源',
     SETTLE_FIXED: '维护结算固定价价格源',
     LINKED: '维护联动价结果',
     RANGE: '维护区间价价格源',
     PRICE_TYPE: '维护物料价格类型',
-    PACKAGE_STRUCTURE: '维护包装组件结构',
-    PACKAGE_PRICE: '生成或检查包装组件价格',
-    OTHER: derivedPriceGapActionText(row),
+    MAKE: '自制件价格由原材料/废料价格生成，请按缺口说明处理',
+    UNRESOLVED: '缺口未带价格类型，请重新检查价格源',
   }
-  const label = labels[priceSourceGapKind(row)] || labels.OTHER
+  const label = labels[priceSourceGapKind(row)] || labels.UNRESOLVED
   return materialCode ? `${label}：${materialCode}` : label
 }
 
@@ -1669,36 +1919,90 @@ function priceSourceGapButtonText(row) {
     LINKED: '去维护联动价',
     RANGE: '去维护区间价',
     PRICE_TYPE: '去维护价格类型',
-    PACKAGE_STRUCTURE: '去维护包装结构',
-    PACKAGE_PRICE: '去检查包装价格',
-    OTHER: '查看缺口说明',
+    MAKE: '查看说明',
+    SCRAP_MAPPING: '处理废料映射',
+    UNRESOLVED: '查看说明',
   }
-  return labels[priceSourceGapKind(row)] || labels.OTHER
+  return labels[priceSourceGapKind(row)] || labels.UNRESOLVED
 }
 
-function derivedPriceGapTypeText(row) {
-  const text = [row?.itemType, row?.sourceTable, row?.message].filter(Boolean).join(' ')
-  if (text.includes('PACKAGE') || text.includes('包装')) return '包装子件价格'
-  if (text.includes('MAKE') || text.includes('自制')) return '原材料/废料价格'
-  return '其他'
+function emptyNoScrapConfirmContext() {
+  return {
+    oaNo: '',
+    topProductCode: '',
+    materialNo: '',
+    materialName: '',
+    businessUnitType: '',
+    periodMonth: '',
+  }
 }
 
-function derivedPriceGapActionText(row) {
-  const text = [row?.itemType, row?.sourceTable, row?.message].filter(Boolean).join(' ')
-  if (text.includes('PACKAGE') || text.includes('包装')) return '检查包装子件价格源'
-  if (text.includes('MAKE') || text.includes('自制')) return '检查原材料或废料价格源'
-  return '按缺口说明补充价格源'
+function isScrapMappingSource(row) {
+  return row?.sourceTable === 'lp_material_scrap_ref'
+}
+
+function isMissingScrapMappingGap(row) {
+  const message = String(row?.message || '')
+  return row?.gapType === 'MISSING_SCRAP_MAPPING'
+    || row?.actionType === 'SUPPLEMENT_SCRAP_MAPPING'
+    || row?.actionType === 'CONFIRM_NO_SCRAP'
+    || row?.canConfirmNoScrap === true
+    || isScrapMappingSource(row)
+    || message.includes('缺废料映射')
+    || message.includes('MISSING_SCRAP_MAPPING')
+}
+
+function actionMaterialNo(row) {
+  return row?.actionMaterialNo || row?.gapMaterialCode || row?.materialCode || ''
+}
+
+function actionPeriodMonth(row) {
+  return row?.periodMonth || row?.priceMonth || row?.effectiveFromMonth || workbench.value.periodMonth || ''
+}
+
+function priceSourceBusinessUnitType(row) {
+  return row?.businessUnitType
+    || item.value.businessUnitType
+    || header.value.businessUnitType
+    || workbench.value.businessUnitType
+    || ''
+}
+
+function noScrapConfirmation(row) {
+  return row?.noScrapConfirmation || {}
+}
+
+function noScrapConfirmationStatus(row) {
+  return row?.noScrapConfirmationStatus
+    || row?.confirmationStatus
+    || row?.noScrapStatus
+    || noScrapConfirmation(row).status
+    || (row?.noScrapConfirmationId ? 'ACTIVE' : '')
+}
+
+function isNoScrapConfirmed(row) {
+  return noScrapConfirmationStatus(row) === 'ACTIVE'
+}
+
+function canConfirmNoScrap(row) {
+  return isMissingScrapMappingGap(row)
+    && row?.canConfirmNoScrap !== false
+    && !isNoScrapConfirmed(row)
 }
 
 async function trialCostRun() {
   costRunActionLoading.value = true
   try {
-    await trialQuoteCostRun(oaNo.value, itemId.value, {
+    const response = await trialQuoteCostRun(oaNo.value, itemId.value, {
       periodMonth: workbench.value.periodMonth,
       pricePrepareNo: latestPrepare.value.prepareNo || pricePrepare.value.readiness?.prepareNo,
     })
+    if (response) {
+      costRun.value = response
+    } else {
+      await loadCostRun(false)
+    }
     ElMessage.success('成本核算试算已完成')
-    await loadCostRun(false)
     const trialRow = costRunVersions.value.find((row) => row?.status === 'TRIAL') || costRunVersions.value[0]
     if (trialRow?.canViewSheet) openCostRunDetail(trialRow)
   } catch (error) {
@@ -1845,11 +2149,19 @@ function buildPriceSourceSupplementTab(priceTypeTab, prepareTab) {
     }
   }
   const hasGeneratedPrice = prepareTab?.status === 'DONE'
+  if (!priceSourceChecked.value) {
+    return {
+      code: 'PRICE_SOURCE_SUPPLEMENT',
+      name: '价格源维护',
+      status: 'PENDING',
+      blockedReason: '价格类型已确认，系统将自动检查价格源',
+    }
+  }
   return {
     code: 'PRICE_SOURCE_SUPPLEMENT',
     name: '价格源维护',
     status: hasGeneratedPrice ? 'DONE' : 'READY',
-    blockedReason: hasGeneratedPrice ? '' : '价格类型已确认，可检查价格源并生成最终价格',
+    blockedReason: hasGeneratedPrice ? '' : '价格类型已确认，可自动检查价格源并生成最终价格',
   }
 }
 
@@ -1890,8 +2202,9 @@ function tabBadgeLabel(tab) {
     const gapCount = currentPriceSourceGapCount()
     if (isBlockedTab(tab)) return '待价格类型'
     if (gapCount > 0) return `缺 ${gapCount} 项`
+    if (!priceSourceChecked.value) return '自动检查'
     if (tab?.status === 'DONE') return '已齐全'
-    return '待检查'
+    return '自动检查'
   }
   if (code === 'PRICE_PREPARE') {
     const gapCount = currentPriceSourceGapCount()
@@ -1918,6 +2231,7 @@ function tabBadgeType(tab) {
   if (code === 'PRICE_SOURCE_SUPPLEMENT') {
     if (isBlockedTab(tab)) return 'info'
     if (currentPriceSourceGapCount() > 0) return 'danger'
+    if (!priceSourceChecked.value) return 'warning'
     return tab?.status === 'DONE' ? 'success' : 'warning'
   }
   if (code === 'PRICE_PREPARE') {
@@ -2138,8 +2452,30 @@ function priceTypeTagType(row) {
   return row?.priceType ? 'success' : 'danger'
 }
 
-watch([oaNo, itemId], () => loadWorkbench({ resetTab: true, loadChildren: true }))
-onMounted(() => loadWorkbench({ resetTab: true, loadChildren: true }))
+async function initializeWorkbench() {
+  await loadWorkbench({ resetTab: true, loadChildren: true })
+  await refreshPriceSourceFromReturn()
+  await ensurePriceSourceChecked()
+}
+
+watch([oaNo, itemId], () => {
+  initializeWorkbench()
+})
+
+watch(activeTab, () => {
+  ensurePriceSourceChecked()
+})
+
+watch(() => route.query.tab, () => {
+  applyRouteTab()
+  ensurePriceSourceChecked()
+})
+
+watch(() => route.query.refreshPriceSource, () => {
+  refreshPriceSourceFromReturn()
+})
+
+onMounted(() => initializeWorkbench())
 </script>
 
 <style scoped>
@@ -2458,6 +2794,11 @@ onMounted(() => loadWorkbench({ resetTab: true, loadChildren: true }))
   gap: 8px;
   flex-wrap: wrap;
   margin-bottom: 12px;
+}
+
+.no-scrap-impact-alert,
+.no-scrap-context {
+  margin-bottom: 14px;
 }
 
 .version-cell {

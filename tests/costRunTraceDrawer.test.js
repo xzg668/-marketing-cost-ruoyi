@@ -24,16 +24,24 @@ describe('T10 成本一览表核算底稿抽屉', () => {
     assert.match(detailPageContent, /productCode \|\| route\.query\.materialCode/)
   })
 
+  it('完整成本表运费为 0 时隐藏页面行并在导出中删除模板行', () => {
+    assert.match(detailPageContent, /v-if="hasFreightCost" class="attr-row"/)
+    assert.match(detailPageContent, /const hasFreightCost = computed/)
+    assert.match(detailPageContent, /hasNonZeroAmount\(getCostAmountValue\('OTHER_EXP_FREIGHT'\)\)/)
+    assert.match(detailPageContent, /sheet\.spliceRows\(rowIndexAfterGap\(40\), 1\)/)
+    assert.match(detailPageContent, /if \(hasFreightCost\.value\) \{\s*setCellValue\(rowIndexFinal\(40\), 6, toNumber\(getCostAmountValue\('OTHER_EXP_FREIGHT'\)\)\)/s)
+  })
+
   it('底稿抽屉按 costRunNo 拉列表和详情并展示通用 JSON 区块', () => {
     assert.match(drawerContent, /fetchCostRunTraces/)
     assert.match(drawerContent, /fetchCostRunTraceDetail/)
     assert.match(drawerContent, /PART_PRICE/)
     assert.match(drawerContent, /COST_ITEM/)
     assert.match(drawerContent, /TOTAL/)
-    assert.match(drawerContent, /来源快照/)
-    assert.match(drawerContent, /计算口径/)
-    assert.match(drawerContent, /变量取值/)
-    assert.match(drawerContent, /计算步骤/)
+    assert.match(drawerContent, /取数说明/)
+    assert.match(drawerContent, /计算公式/)
+    assert.match(drawerContent, /关键取值/)
+    assert.match(drawerContent, /计算过程/)
     assert.match(drawerContent, /该版本未生成底稿快照/)
     assert.match(drawerContent, /findInitialTrace/)
     assert.match(drawerContent, /partItemId/)

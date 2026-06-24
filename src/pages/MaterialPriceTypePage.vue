@@ -28,6 +28,9 @@
             <el-option label="全部" value="" />
             <el-option label="联动价" value="联动价" />
             <el-option label="固定价" value="固定价" />
+            <el-option label="结算固定价" value="结算固定价" />
+            <el-option label="区间价" value="区间价" />
+            <el-option label="自制件" value="自制件" />
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -103,6 +106,9 @@
           <el-select v-model="formModel.priceType" placeholder="联动价">
             <el-option label="联动价" value="联动价" />
             <el-option label="固定价" value="固定价" />
+            <el-option label="结算固定价" value="结算固定价" />
+            <el-option label="区间价" value="区间价" />
+            <el-option label="自制件" value="自制件" />
           </el-select>
         </el-form-item>
       </el-form>
@@ -344,9 +350,16 @@ const normalizeSheetName = (value) =>
 
 const normalizeImportPriceType = (value) => {
   const text = String(value || '').trim()
-  if (['固定采购价', '采购固定价'].includes(text)) {
+  const upper = text.toUpperCase()
+  if (upper === 'FIXED' || ['固定采购价', '采购固定价'].includes(text)) {
     return '固定价'
   }
+  if (upper === 'SETTLE_FIXED' || ['结算价', '结算固定价', '家用结算价'].includes(text)) {
+    return '结算固定价'
+  }
+  if (upper === 'LINKED') return '联动价'
+  if (upper === 'RANGE') return '区间价'
+  if (upper === 'MAKE' || upper === 'MAKE_PART') return '自制件'
   return text
 }
 
