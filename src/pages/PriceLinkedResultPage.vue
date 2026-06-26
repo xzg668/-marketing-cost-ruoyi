@@ -370,7 +370,14 @@
     </el-card>
 
     <el-card shadow="never">
-      <el-table :data="visibleRows" stripe v-loading="loading">
+      <el-table
+        :data="visibleRows"
+        stripe
+        v-loading="loading"
+        class="linked-main-table"
+        max-height="calc(100vh - 360px)"
+        scrollbar-always-on
+      >
         <el-table-column prop="orgCode" label="组织" width="90" />
         <el-table-column prop="sourceName" label="来源" width="120" />
         <el-table-column prop="supplierName" label="供应商名称" min-width="140" />
@@ -2350,6 +2357,14 @@ onMounted(loadPending)
 .result-table,
 .result-tabs {
   margin-top: 14px;
+}
+
+.linked-main-table {
+  min-height: 320px;
+}
+
+.linked-main-table :deep(.el-scrollbar__bar.is-horizontal) {
+  height: 10px;
 }
 
 .history-filter {
