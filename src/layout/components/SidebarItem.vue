@@ -31,6 +31,22 @@ const props = defineProps({
 })
 
 const router = useRouter()
+const ICONLESS_MENU_TITLES = new Set([
+  'U9数据',
+  'U9基础数据',
+  'CMS数据',
+  'CMS成本数据',
+  '供应商供货比例',
+  '供应商供货比率',
+])
+const ICONLESS_MENU_PATHS = new Set([
+  '/base/u9',
+  'base/u9',
+  '/base/cms-cost',
+  'base/cms-cost',
+  '/base/supplier-relation/supply-ratio',
+  'base/supplier-relation/supply-ratio',
+])
 
 const fullPath = computed(() => resolveRoutePath(props.basePath, props.route.path))
 
@@ -40,9 +56,15 @@ const visibleChildren = computed(() => {
 })
 
 const iconComponent = computed(() => {
+  if (shouldHideIcon.value) return null
   const name = props.route.meta?.icon
   if (!name) return null
   return ElIcons[name] || null
+})
+
+const shouldHideIcon = computed(() => {
+  const title = String(props.route.meta?.title || '').replace(/\s/g, '')
+  return ICONLESS_MENU_TITLES.has(title) || ICONLESS_MENU_PATHS.has(fullPath.value)
 })
 
 function onClick() {

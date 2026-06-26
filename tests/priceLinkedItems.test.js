@@ -15,10 +15,20 @@ const FILE = path.resolve(import.meta.dirname, '../src/api/priceLinkedItems.js')
 const content = fs.readFileSync(FILE, 'utf-8')
 
 describe('priceLinkedItems.js 原有接口保留', () => {
-  it('fetchLinkedItems / createLinkedItem / updateLinkedItem / deleteLinkedItem 都导出', () => {
-    for (const name of ['fetchLinkedItems', 'createLinkedItem', 'updateLinkedItem', 'deleteLinkedItem']) {
+  it('fetchLinkedItems / fetchLinkedItemsPage / createLinkedItem / updateLinkedItem / deleteLinkedItem 都导出', () => {
+    for (const name of [
+      'fetchLinkedItems',
+      'fetchLinkedItemsPage',
+      'createLinkedItem',
+      'updateLinkedItem',
+      'deleteLinkedItem',
+    ]) {
       assert.match(content, new RegExp(`export\\s+const\\s+${name}\\b`), `缺少 ${name}`)
     }
+  })
+
+  it('fetchLinkedItemsPage 使用分页端点 /items/page', () => {
+    assert.match(content, /fetchLinkedItemsPage[\s\S]{0,120}\/items\/page/)
   })
 })
 

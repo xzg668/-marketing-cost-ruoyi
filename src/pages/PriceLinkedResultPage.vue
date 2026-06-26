@@ -103,7 +103,7 @@
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="fetchList">查询</el-button>
+          <el-button type="primary" @click="applyFilters">查询</el-button>
           <el-button @click="resetFilters">重置</el-button>
         </el-form-item>
       </el-form>
@@ -154,15 +154,15 @@
         </div>
       </div>
 
-      <div v-if="hasQuoteBaseDetectData" class="quote-base-panel">
-        <div class="quote-base-header">
-          <div>
-            <div class="section-title">公共基价识别</div>
-            <div class="section-subtitle">
-              只用于核对本次导入里哪些影响因素可被 OA 报价单铜/锌/铝基价覆盖。
-            </div>
+      <div v-if="hasQuoteBaseDetectData" class="quote-base-summary">
+        <div>
+          <div class="section-title">公共基价识别</div>
+          <div class="section-subtitle">
+            本次导入已完成 OA 公共基价识别，明细请到影响因素表查看和维护。
           </div>
-          <div class="quote-base-stats">
+        </div>
+        <div class="quote-base-stats">
+          <div>
             <el-tag type="success" effect="light">
               已识别 {{ quoteBaseRecognizedCount }} 条
             </el-tag>
@@ -173,29 +173,10 @@
               未识别 {{ quoteBaseUnrecognizedCount }} 条
             </el-tag>
           </div>
+          <el-button link type="primary" @click="goFactorMonthlySummary">
+            去影响因素表查看公共基价
+          </el-button>
         </div>
-        <el-table
-          :data="quoteBaseDetectRows"
-          class="result-table"
-          size="small"
-          border
-          empty-text="暂无公共基价识别明细"
-        >
-          <el-table-column prop="shortName" label="影响因素简称" width="130" />
-          <el-table-column prop="factorName" label="影响因素名称" min-width="170" />
-          <el-table-column prop="quoteBaseQuoteFieldName" label="命中报价单字段" width="150" />
-          <el-table-column prop="quoteBaseVariableCode" label="变量编码" width="100" />
-          <el-table-column prop="quoteBaseMatchedKeyword" label="命中关键词" width="130" />
-          <el-table-column prop="quoteBaseMatchSource" label="识别来源" width="100" />
-          <el-table-column label="状态" width="110">
-            <template #default="{ row }">
-              <el-tag :type="quoteBaseStatusTag(row.quoteBaseDetectStatus)" effect="light">
-                {{ quoteBaseStatusText(row.quoteBaseDetectStatus) }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="quoteBaseDetectMessage" label="说明" min-width="190" />
-        </el-table>
       </div>
 
       <el-table
@@ -510,6 +491,11 @@
           </template>
         </el-table-column>
       </el-table>
+      <BasePagination
+        v-model:current-page="currentPage"
+        v-model:page-size="pageSize"
+        :total="total"
+      />
     </el-card>
 
     <el-dialog
@@ -544,11 +530,12 @@
               保留已有价格，冲突行跳过
             </el-radio-button>
             <el-radio-button label="OVERWRITE">
-              使用本次 Excel 覆盖
+              仅覆盖冲突价格行
             </el-radio-button>
           </el-radio-group>
           <div class="strategy-help">
             <div>影响因素：缺失新增，相同跳过，价格不同按上方策略处理。</div>
+            <div>覆盖只更新本次 Excel 命中的冲突行，不会清空数据库，也不会删除 Excel 未包含的价格。</div>
             <div>联动公式：新料号新增，公式变化生成新版本，公式相同跳过。</div>
           </div>
         </el-form-item>
@@ -868,7 +855,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '../store/modules/user'
 import {
-  fetchLinkedItems,
+  fetchLinkedItemsPage,
   createLinkedItem,
   updateLinkedItem,
   deleteLinkedItem,
@@ -886,6 +873,7 @@ import {
   importBindings,
 } from '../api/priceLinkedBindings'
 import PriceLinkedBindingDrawer from '../components/PriceLinkedBindingDrawer.vue'
+import BasePagination from '../components/BasePagination.vue'
 // T24：trace drawer + 系统结果/Excel 金标/差异 所需的纯函数辅助层
 import {
   DIFF_THRESHOLD,
@@ -901,6 +889,9 @@ const router = useRouter()
 const route = useRoute()
 const loading = ref(false)
 const tableRows = ref([])
+const currentPage = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
 // 系统结果来自后端 /items/{id}/trace —— key=row.id，value={calcPrice, error, variables}
 // Plan B 改造后公式以 [code] 形式入库，JS new Function 无法解析 [xx] 语法（会被当数组字面量导致默默算错），
 // 所以不再客户端本地 eval，改为 fetchList 后并行拉 trace 展示后端口径的计算结果。
@@ -1098,17 +1089,39 @@ const filters = ref({
 const buildParams = () => ({
   pricingMonth: filters.value.pricingMonth,
   materialCode: filters.value.materialCode?.trim(),
+  page: currentPage.value,
+  pageSize: pageSize.value,
 })
+
+const normalizePageRows = (data) => {
+  if (Array.isArray(data)) {
+    return { rows: data, total: data.length }
+  }
+  const rows = data?.list || data?.records || []
+  return {
+    rows: Array.isArray(rows) ? rows : [],
+    total: Number(data?.total || 0),
+  }
+}
 
 const fetchList = async ({ loadLatestImport = true } = {}) => {
   loading.value = true
   try {
-    const data = await fetchLinkedItems(buildParams())
-    tableRows.value = Array.isArray(data) ? data : []
+    const data = await fetchLinkedItemsPage(buildParams())
+    const page = normalizePageRows(data)
+    tableRows.value = page.rows
+    total.value = page.total
+    if (tableRows.value.length === 0 && total.value > 0 && currentPage.value > 1) {
+      currentPage.value = Math.max(1, Math.ceil(total.value / pageSize.value))
+      return
+    }
     if (!filters.value.pricingMonth && tableRows.value.length > 0) {
       filters.value.pricingMonth = tableRows.value[0].pricingMonth || ''
     }
   } catch (error) {
+    tableRows.value = []
+    total.value = 0
+    rowTraceMap.value = {}
     ElMessage.error(error?.message || '获取联动价失败')
   } finally {
     loading.value = false
@@ -1190,6 +1203,14 @@ const fetchVariables = async () => {
   }
 }
 
+const applyFilters = () => {
+  if (currentPage.value === 1) {
+    fetchList()
+  } else {
+    currentPage.value = 1
+  }
+}
+
 const resetFilters = () => {
   filters.value = {
     businessUnitType: userStore.businessUnitType || '',
@@ -1198,7 +1219,7 @@ const resetFilters = () => {
     importStatus: '',
     bindingStatus: '',
   }
-  fetchList()
+  applyFilters()
 }
 
 const openCreate = () => {
@@ -1468,30 +1489,16 @@ const submitRow = async () => {
   }
   try {
     if (editingId.value) {
-      const updated = await updateLinkedItem(editingId.value, payload)
-      const nextRow = {
-        ...updated,
-        formulaExpr: normalizedFormula.formulaExpr,
-        formulaExprCn: normalizedFormula.formulaExprCn,
-      }
-      tableRows.value = tableRows.value.map((item) =>
-        item.id === editingId.value ? nextRow : item,
-      )
+      await updateLinkedItem(editingId.value, payload)
       ElMessage.success('已更新')
     } else {
-      const created = await createLinkedItem(payload)
-      const nextRow = {
-        ...created,
-        formulaExpr: normalizedFormula.formulaExpr,
-        formulaExprCn: normalizedFormula.formulaExprCn,
-      }
-      tableRows.value = [nextRow, ...tableRows.value]
+      await createLinkedItem(payload)
       ElMessage.success('已新增')
     }
     dialogVisible.value = false
-    // 这个 form 能改公式 / blankWeight / netWeight / taxIncluded，都影响后端 trace 口径，
-    // 保存后必须重拉，否则"系统结果"列和"缺少:"红提示还是旧的
-    loadRowTraces()
+    // 这个 form 能改公式 / blankWeight / netWeight / taxIncluded，都影响后端 trace 口径。
+    // 分页后保存统一重拉当前页，避免新增行硬塞到当前页导致顺序和总数不一致。
+    fetchList()
   } catch (error) {
     ElMessage.error(error?.message || '保存失败')
   }
@@ -1707,19 +1714,6 @@ const hasQuoteBaseDetectData = computed(() =>
   quoteBaseUnrecognizedCount.value > 0,
 )
 
-const quoteBaseDetectRows = computed(() => {
-  const rows = quoteBaseRowsWithStatus.value
-  if (rows.length === 0) {
-    return []
-  }
-  const priority = { CONFLICT: 1, RECOGNIZED: 2, UNRECOGNIZED: 3 }
-  // V3-09：普通未识别只是信息，不进入失败明细；这里按冲突、已识别、未识别排序便于核对。
-  return [...rows].sort((a, b) =>
-    (priority[String(a.quoteBaseDetectStatus).toUpperCase()] || 9) -
-    (priority[String(b.quoteBaseDetectStatus).toUpperCase()] || 9),
-  )
-})
-
 const importDetailRows = computed(() =>
   splitImportDetailRows(lastImportResult.value || {}, factorPreviewRows.value),
 )
@@ -1769,21 +1763,6 @@ const monthlyActionTag = (action) => {
   if (text === 'UPDATE') return 'warning'
   if (text.includes('CONFLICT')) return 'danger'
   if (text === 'UNCHANGED' || text === 'SKIP' || text === 'IMPORTED') return 'info'
-  return 'info'
-}
-
-const quoteBaseStatusText = (status) => {
-  const text = String(status || '').toUpperCase()
-  if (text === 'RECOGNIZED') return '已识别'
-  if (text === 'CONFLICT') return '冲突'
-  if (text === 'UNRECOGNIZED') return '未识别'
-  return status || '-'
-}
-
-const quoteBaseStatusTag = (status) => {
-  const text = String(status || '').toUpperCase()
-  if (text === 'RECOGNIZED') return 'success'
-  if (text === 'CONFLICT') return 'danger'
   return 'info'
 }
 
@@ -2173,6 +2152,18 @@ watch(
   },
 )
 
+watch(pageSize, () => {
+  if (currentPage.value === 1) {
+    fetchList()
+  } else {
+    currentPage.value = 1
+  }
+})
+
+watch(currentPage, () => {
+  fetchList()
+})
+
 onMounted(fetchList)
 onMounted(fetchVariables)
 onMounted(loadPending)
@@ -2327,22 +2318,29 @@ onMounted(loadPending)
   color: #111827;
 }
 
-.quote-base-panel {
+.quote-base-summary {
   margin-top: 14px;
   padding: 12px;
   border: 1px solid #e5e7eb;
   border-radius: 6px;
   background: #f9fafb;
-}
-
-.quote-base-header {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  align-items: flex-start;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 .quote-base-stats {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.quote-base-stats > div {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;

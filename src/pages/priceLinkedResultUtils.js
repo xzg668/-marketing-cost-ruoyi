@@ -120,7 +120,7 @@ export const pickImportResultValue = (result = {}, ...keys) => {
 
 export const importFactorPriceConflictStrategyText = (value) => {
   if (value === 'KEEP_EXISTING') return '保留已有价格，冲突行跳过'
-  if (value === 'OVERWRITE') return '使用本次 Excel 覆盖'
+  if (value === 'OVERWRITE') return '仅覆盖冲突价格行'
   return value || '-'
 }
 

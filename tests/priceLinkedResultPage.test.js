@@ -183,18 +183,32 @@ describe('PriceLinkedResultPage.vue V2-14 月度导入和结果页契约', () =>
     assert.match(content, /导入历史和日志/)
   })
 
-  it('V3-09：导入结果展示公共基价识别统计和明细', () => {
+  it('V4-11：联动价格主表使用服务端分页，不一次性加载全部料号', () => {
+    assert.match(content, /BasePagination/)
+    assert.match(content, /fetchLinkedItemsPage/)
+    assert.match(content, /const\s+currentPage\s*=\s*ref\(1\)/)
+    assert.match(content, /const\s+pageSize\s*=\s*ref\(20\)/)
+    assert.match(content, /const\s+total\s*=\s*ref\(0\)/)
+    assert.match(content, /page:\s*currentPage\.value/)
+    assert.match(content, /pageSize:\s*pageSize\.value/)
+    assert.match(content, /v-model:current-page="currentPage"/)
+    assert.match(content, /v-model:page-size="pageSize"/)
+    assert.match(content, /<el-table\s+:data="visibleRows"[\s\S]*?<BasePagination/)
+  })
+
+  it('V3-09：导入结果只展示公共基价识别摘要，并引导到影响因素表看明细', () => {
     assert.match(content, /公共基价识别/)
     assert.match(content, /quoteBaseRecognizedCount/)
     assert.match(content, /quoteBaseConflictCount/)
     assert.match(content, /quoteBaseUnrecognizedCount/)
-    assert.match(content, /quoteBaseDetectRows/)
-    assert.match(content, /label="影响因素简称"/)
-    assert.match(content, /label="影响因素名称"/)
-    assert.match(content, /label="命中报价单字段"/)
-    assert.match(content, /label="命中关键词"/)
-    assert.match(content, /label="识别来源"/)
-    assert.match(content, /quoteBaseStatusText/)
+    assert.match(content, /明细请到影响因素表查看和维护/)
+    assert.match(content, /去影响因素表查看公共基价/)
+    assert.doesNotMatch(content, /quoteBaseDetectRows/)
+    assert.doesNotMatch(content, /empty-text="暂无公共基价识别明细"/)
+    assert.doesNotMatch(content, /label="命中报价单字段"/)
+    assert.doesNotMatch(content, /label="命中关键词"/)
+    assert.doesNotMatch(content, /label="识别来源"/)
+    assert.doesNotMatch(content, /quoteBaseStatusText/)
   })
 
   it('V3-09：导入后不让历史详情覆盖本次公共基价识别结果', () => {

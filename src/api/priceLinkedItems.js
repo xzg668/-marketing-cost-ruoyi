@@ -3,6 +3,9 @@ import { request } from './http'
 export const fetchLinkedItems = (params) =>
   request('/api/v1/price-linked/items', { params })
 
+export const fetchLinkedItemsPage = (params) =>
+  request('/api/v1/price-linked/items/page', { params })
+
 export const createLinkedItem = (body) =>
   request('/api/v1/price-linked/items', { method: 'POST', body })
 
