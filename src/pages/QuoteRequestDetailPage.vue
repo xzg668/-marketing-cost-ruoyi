@@ -166,6 +166,7 @@ import { ArrowLeft } from '@element-plus/icons-vue'
 import {
   confirmQuoteRequestClassification,
   fetchQuoteRequestDetail,
+  launchQuoteCostingWorkbench,
 } from '../api/quoteRequests'
 import {
   checkQuoteBomStatus,
@@ -338,7 +339,18 @@ async function startCosting(row) {
     ElMessage.warning('请先确认该产品已有可用 BOM')
     return
   }
-  openCostingWorkbench(row)
+  actionLoadingId.value = costingActionKey(row)
+  try {
+    const response = await launchQuoteCostingWorkbench(oaNo.value, row.id)
+    if (response?.snapshotGenerated) {
+      ElMessage.success('已按最新结算规则刷新报价物料明细')
+    }
+    openCostingWorkbench(row)
+  } catch (error) {
+    ElMessage.error(error?.message || '发起核算失败')
+  } finally {
+    actionLoadingId.value = ''
+  }
 }
 
 function normalizedCalcStatus(value) {

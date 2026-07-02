@@ -65,16 +65,33 @@ const LEGACY_MENU_IDS = new Set([
   40183,
 ])
 const LEGACY_OA_PATHS = new Set(['/ingest/oa-form', 'ingest/oa-form', 'oa-form'])
+const TEMPORARILY_HIDDEN_MENU_IDS = new Set([
+  // 其他费用率对照表：暂时不展示侧边栏入口，后端 V176 同步隐藏菜单数据。
+  312,
+])
+const TEMPORARILY_HIDDEN_MENU_TITLES = new Set(['其他费用率对照表'])
+const TEMPORARILY_HIDDEN_MENU_PATHS = new Set(['other', '/base/other', 'base/other'])
+
 function isLegacyOaMenu(route) {
   const title = String(route?.meta?.title || '').replace(/\s/g, '')
   return LEGACY_OA_PATHS.has(route?.path) || title === 'OA报价单'
+}
+
+function isTemporarilyHiddenMenu(route) {
+  const title = String(route?.meta?.title || '').replace(/\s/g, '')
+  return (
+    TEMPORARILY_HIDDEN_MENU_IDS.has(route?.meta?.menuId) ||
+    TEMPORARILY_HIDDEN_MENU_TITLES.has(title) ||
+    TEMPORARILY_HIDDEN_MENU_PATHS.has(route?.path)
+  )
 }
 
 function pruneLegacyMenus(route) {
   if (
     !route ||
     LEGACY_MENU_IDS.has(route.meta?.menuId) ||
-    isLegacyOaMenu(route)
+    isLegacyOaMenu(route) ||
+    isTemporarilyHiddenMenu(route)
   ) {
     return null
   }

@@ -12,6 +12,11 @@ export const fetchQuoteRequestDetail = (oaNo) =>
 export const fetchQuoteCostingWorkbench = (oaNo, itemId) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/costing-workbench`)
 
+export const launchQuoteCostingWorkbench = (oaNo, itemId) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/costing-workbench/launch`, {
+    method: 'POST',
+  })
+
 export const updateCostingBomRow = (oaNo, itemId, rowId, body) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/costing-bom/rows/${encodePath(rowId)}`, {
     method: 'PUT',

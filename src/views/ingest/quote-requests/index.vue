@@ -6,7 +6,6 @@
         <p>单据维度工作台，用于查看报价单和处理完成状态。</p>
       </div>
       <div class="head-actions">
-        <el-button :icon="Operation" @click="goProductBom">产品 BOM 准备</el-button>
         <el-button type="primary" :icon="Upload" @click="goImport">导入</el-button>
       </div>
     </div>
@@ -145,7 +144,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Operation, Refresh, Search, Upload } from '@element-plus/icons-vue'
+import { Refresh, Search, Upload } from '@element-plus/icons-vue'
 import BasePagination from '../../../components/BasePagination.vue'
 import {
   confirmQuoteRequestClassification,
@@ -218,14 +217,6 @@ async function loadRows() {
 
 function goImport() {
   router.push('/ingest/quote-requests/import')
-}
-
-function goProductBom(row) {
-  const oaNo = row?.oaNo || filters.oaNo
-  router.push({
-    path: '/ingest/quote-request-products/bom',
-    query: oaNo ? { oaNo } : {},
-  })
 }
 
 function goDetail(oaNo) {

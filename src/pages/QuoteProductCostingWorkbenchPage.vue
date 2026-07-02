@@ -158,7 +158,12 @@
                     <span class="node-code">{{ data.materialCode }}</span>
                     <span class="node-name">{{ data.materialName || '' }}</span>
                     <span v-if="data.qtyPerParent" class="node-qty">x {{ data.qtyPerParent }}</span>
-                    <el-tag v-if="data.shapeAttr === '部品联动'" size="small" type="warning" effect="plain">部品联动</el-tag>
+                    <el-tag
+                      v-if="bomNodeShapeAttr(data)"
+                      size="small"
+                      :type="bomNodeShapeTagType(data)"
+                      effect="plain"
+                    >{{ bomNodeShapeAttr(data) }}</el-tag>
                     <el-tag v-if="isTakeoverNode(data)" size="small" type="warning">接管</el-tag>
                     <el-tag v-if="data.isLeaf === 1" size="small" type="success" effect="plain">叶子</el-tag>
                   </span>
@@ -1407,6 +1412,20 @@ function setBomTreeExpanded(expanded) {
 
 function isTakeoverNode(node) {
   return (node?.materialName || '').includes('接管')
+}
+
+function bomNodeShapeAttr(node) {
+  return node?.shapeAttr || ''
+}
+
+function bomNodeShapeTagType(node) {
+  const shapeAttr = bomNodeShapeAttr(node)
+  if (!shapeAttr) return 'info'
+  if (shapeAttr.includes('采购')) return 'success'
+  if (shapeAttr.includes('委外')) return 'warning'
+  if (shapeAttr.includes('部品联动')) return 'warning'
+  if (shapeAttr.includes('虚拟')) return 'info'
+  return ''
 }
 
 function emptyEditForm() {

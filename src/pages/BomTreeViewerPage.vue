@@ -102,11 +102,11 @@
               × {{ data.qtyPerParent }}
             </span>
             <el-tag
-              v-if="data.shapeAttr === '部品联动'"
+              v-if="nodeShapeAttr(data)"
               size="small"
-              type="warning"
+              :type="shapeTagType(nodeShapeAttr(data))"
               effect="plain"
-            >部品联动</el-tag>
+            >{{ nodeShapeAttr(data) }}</el-tag>
             <el-tag
               v-if="isTakeover(data)"
               size="small"
@@ -189,6 +189,19 @@ function onNodeClick(node) {
 /** 品名含"接管"视为接管节点（与后端 seed rule NAME_LIKE=接管 同口径） */
 function isTakeover(data) {
   return (data?.materialName || '').includes('接管')
+}
+
+function nodeShapeAttr(data) {
+  return data?.shapeAttr || ''
+}
+
+function shapeTagType(shapeAttr) {
+  if (!shapeAttr) return 'info'
+  if (shapeAttr.includes('采购')) return 'success'
+  if (shapeAttr.includes('委外')) return 'warning'
+  if (shapeAttr.includes('部品联动')) return 'warning'
+  if (shapeAttr.includes('虚拟')) return 'info'
+  return ''
 }
 
 /** 递归遍历整棵树收集所有 path，交给 el-tree 一次性展开/折叠 */
