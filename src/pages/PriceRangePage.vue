@@ -44,6 +44,11 @@
         <el-table-column prop="materialName" label="名称" min-width="140" />
         <el-table-column prop="materialCode" label="U9代码" width="160" />
         <el-table-column prop="specModel" label="图号" width="160" />
+        <el-table-column label="区间类型" width="120">
+          <template #default="{ row }">
+            {{ formatRangeType(row) }}
+          </template>
+        </el-table-column>
         <el-table-column label="区间" width="180">
           <template #default="{ row }">
             {{ formatRange(row) }}
@@ -52,6 +57,11 @@
         <el-table-column prop="priceExclTax" label="不含税价" width="120" />
         <el-table-column prop="priceInclTax" label="含税价" width="120" />
         <el-table-column prop="effectiveFrom" label="生效日期" width="120" />
+        <el-table-column label="状态" width="90">
+          <template #default="{ row }">
+            {{ formatCurrentStatus(row) }}
+          </template>
+        </el-table-column>
         <el-table-column prop="updatedAt" label="更新时间" width="160" />
         <el-table-column label="操作" width="140" fixed="right">
           <template #default="{ row }">
@@ -135,6 +145,28 @@
         <el-button type="primary" @click="submitRow">保存</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="factorDialogVisible"
+      title="选择区间类型"
+      width="360px"
+      :close-on-click-modal="false"
+      @close="cancelFactorSelection"
+    >
+      <el-radio-group v-model="factorChoice" class="factor-choice-list">
+        <el-radio
+          v-for="option in RANGE_IMPORT_TYPE_OPTIONS"
+          :key="option.code"
+          :value="option.code"
+        >
+          {{ option.label }}
+        </el-radio>
+      </el-radio-group>
+      <template #footer>
+        <el-button @click="cancelFactorSelection">取消</el-button>
+        <el-button type="primary" @click="confirmFactorSelection">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -150,12 +182,25 @@ import {
   updateRangeItem,
   deleteRangeItem,
 } from '../api/priceRangeItems'
+import { applyRangePriceTypes } from '../api/materialPriceTypes'
+import {
+  RANGE_IMPORT_TYPE_OPTIONS,
+  buildRangeImportPayload,
+  buildRangePriceTypeApplyPayload,
+  detectRangeFactorBySheetName,
+  formatCurrentStatus,
+  formatRangeType,
+  isQuantityRangeSheetName,
+} from './priceRangeImportUtils'
 
 const route = useRoute()
 const router = useRouter()
 const loading = ref(false)
 const importing = ref(false)
 const dialogVisible = ref(false)
+const factorDialogVisible = ref(false)
+const factorChoice = ref('CU')
+let factorSelectionResolver = null
 const editingId = ref(null)
 
 const filters = ref({
@@ -198,6 +243,71 @@ const pageSize = ref(20)
 const dialogTitle = computed(() => (
   editingId.value ? '编辑区间价' : '新增区间价'
 ))
+
+const chooseRangeFactor = () => new Promise((resolve) => {
+  factorChoice.value = 'CU'
+  factorSelectionResolver = resolve
+  factorDialogVisible.value = true
+})
+
+const finishFactorSelection = (factor) => {
+  factorDialogVisible.value = false
+  const resolver = factorSelectionResolver
+  factorSelectionResolver = null
+  if (resolver) {
+    resolver(factor)
+  }
+}
+
+const confirmFactorSelection = () => {
+  const importType = RANGE_IMPORT_TYPE_OPTIONS.find((option) => option.code === factorChoice.value) || null
+  finishFactorSelection(importType)
+}
+
+const cancelFactorSelection = () => {
+  finishFactorSelection(null)
+}
+
+const formatPriceTypeConflictLines = (conflicts) =>
+  conflicts
+    .slice(0, 5)
+    .map((item) => {
+      const currentType = item.currentPriceType || '未设置'
+      return `${item.materialCode} ${item.materialName || ''}：当前${currentType}`
+    })
+    .join('\n')
+
+const handlePriceTypeConflicts = async (conflicts) => {
+  if (!Array.isArray(conflicts) || conflicts.length === 0) {
+    return
+  }
+  const lines = formatPriceTypeConflictLines(conflicts)
+  const moreText = conflicts.length > 5 ? `\n另有${conflicts.length - 5}个物料未展示。` : ''
+  try {
+    await ElMessageBox.confirm(
+      `以下物料在价格类型表中不是区间价，但本次出现在区间价 sheet 中，是否改为区间价？\n\n${lines}${moreText}`,
+      '价格类型冲突',
+      {
+        type: 'warning',
+        confirmButtonText: '改为区间价',
+        cancelButtonText: '暂不修改',
+        distinguishCancelAndClose: true,
+      },
+    )
+    const payload = buildRangePriceTypeApplyPayload(conflicts)
+    if (payload.rows.length === 0) {
+      return
+    }
+    await applyRangePriceTypes(payload)
+    ElMessage.success(`已将${payload.rows.length}个物料改为区间价`)
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') {
+      ElMessage.warning('区间价已导入，但这些物料暂未改为区间价；后续核算仍会按原价格类型取价')
+      return
+    }
+    ElMessage.error(error?.message || '区间价已导入，但价格类型更新失败')
+  }
+}
 
 const buildParams = () => ({
   materialCode: filters.value.materialCode.trim(),
@@ -567,7 +677,8 @@ const handleFileChange = async (uploadFile) => {
 
     const buffer = await rawFile.arrayBuffer()
     const workbook = XLSX.read(buffer, { type: 'array' })
-    const sheet = workbook.Sheets[workbook.SheetNames[0]]
+    const sheetName = workbook.SheetNames[0]
+    const sheet = workbook.Sheets[sheetName]
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false })
 
     if (rows.length < 2) {
@@ -579,6 +690,15 @@ const handleFileChange = async (uploadFile) => {
     const headerRow2 = rows[1] || []
     const columns = parseFixedColumns(headerRow1)
     const rangeGroups = detectRangeColumns(headerRow1, headerRow2)
+    let factor = detectRangeFactorBySheetName(sheetName)
+    if (!factor && !isQuantityRangeSheetName(sheetName) && rangeGroups.length > 0) {
+      const importType = await chooseRangeFactor()
+      if (!importType) {
+        ElMessage.info('已取消导入')
+        return
+      }
+      factor = importType.rangeBasis === 'FACTOR' ? importType : null
+    }
     const hasSubHeader = headerRow2.some((cell) => {
       const text = normalizeHeader(cell)
       return isExclTaxHeader(text) || isInclTaxHeader(text)
@@ -658,8 +778,19 @@ const handleFileChange = async (uploadFile) => {
       return
     }
 
-    await importRangeItems({ rows: importRows })
-    ElMessage.success(`已导入${importRows.length}条区间价`)
+    const payload = buildRangeImportPayload(importRows, {
+      factor,
+      fileName: rawFile.name,
+      sheetName,
+    })
+    const importResult = await importRangeItems(payload)
+    if (payload.rangeBasis === 'FACTOR') {
+      const materialCount = new Set(importRows.map((row) => row.materialCode).filter(Boolean)).size
+      ElMessage.success(`导入成功：${materialCount}个物料，${importRows.length}条区间价。本次导入已替换这些物料的旧区间价。`)
+      await handlePriceTypeConflicts(importResult?.priceTypeConflicts || [])
+    } else {
+      ElMessage.success(`已导入${importRows.length}条区间价`)
+    }
     if (currentPage.value === 1) {
       fetchList()
     } else {
@@ -701,5 +832,10 @@ onMounted(() => {
 .filter-actions {
   display: flex;
   gap: 8px;
+}
+.factor-choice-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
 }
 </style>

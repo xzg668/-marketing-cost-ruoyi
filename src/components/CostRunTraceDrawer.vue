@@ -213,6 +213,7 @@
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { fetchCostRunTraceDetail, fetchCostRunTraces } from '../api/costRunDetail'
+import { rangeFactorDisplayName, rangeTraceExplanation } from './costRunTraceDrawerUtils'
 
 const props = defineProps({
   modelValue: {
@@ -314,6 +315,8 @@ const formulaCard = computed(() => {
     displayFormula: formula.displayFormula || formula.formulaText || formula.formula || '-',
     lines: [
       formula.formula ? `公式：${formula.formula}` : '',
+      formula.rangeType ? `区间类型：${formula.rangeType}` : '',
+      formula.factorValue !== undefined ? `${rangeFactorDisplayName(formula.factorCode, formula.rangeType)}：${formatValue(formula.factorValue)}` : '',
       formula.matchRange ? `命中区间：${formula.matchRange}` : '',
       formula.priceField ? `价格字段：${priceFieldLabel(formula.priceField)}` : '',
       formula.unitNote || '',
@@ -358,7 +361,7 @@ const financeSummaryText = computed(() => {
     return `该部品为采购件，取结算固定价表中的结算价作为单价，再按 BOM 用量计算本次金额。`
   }
   if (selectedDetail.value?.traceType === 'PART_PRICE' && selectedDetail.value?.sourceType === 'RANGE_PRICE') {
-    return `该部品为采购件，按 BOM 用量命中区间价区间，取该区间单价，再计算本次金额。`
+    return rangeTraceExplanation(selectedDetail.value)
   }
   if (selectedDetail.value?.traceType === 'PART_PRICE' && selectedDetail.value?.sourceType === 'PACKAGE_COMPONENT') {
     return `该部品为包装组件，按包装组件规则汇总价格，再按 BOM 用量计算本次金额。`
@@ -576,6 +579,7 @@ function stepLabel(step) {
     FIXED_PRICE_ROW: '读取固定价格表',
     SETTLE_FIXED_PRICE_ROW: '读取结算固定价',
     RANGE_PRICE_ROW: '匹配区间价',
+    FACTOR_RANGE_PRICE_ROW: '匹配行情区间价',
     WEIGHT_CONVERT: '重量换算',
     RAW_MATERIAL_AMOUNT: '计算原材料金额',
     BLANK_AMOUNT: '读取毛坯价格',
@@ -656,13 +660,20 @@ function normalizeFixedPriceLine(row) {
 function normalizeRangePriceLine(row) {
   if (!row || Object.keys(row).length === 0) return []
   const rows = []
+  const factorCode = row.factorCode || row.factor_code
+  const rangeBasis = String(row.rangeBasis || row.range_basis || '').trim().toUpperCase()
+  const rangeType = row.rangeType || row.range_type || (factorCode ? `${rangeFactorDisplayName(factorCode)}区间` : '')
   pushVariable(rows, '价格表', '区间价表', '')
+  pushVariable(rows, '区间类型', rangeType || (rangeBasis === 'QTY' ? '数量区间' : ''), '')
+  pushVariable(rows, '命中口径', rangeBasis === 'FACTOR' ? '报价单行情值' : rangeBasis === 'QTY' ? 'BOM 用量' : '', '')
+  pushVariable(rows, '行情因素', factorCode ? rangeFactorDisplayName(factorCode, rangeType) : '', '')
+  pushVariable(rows, '报价单行情值', row.factorValue ?? row.factor_value, '')
   pushVariable(rows, '供应商', row.supplierName, '')
   pushVariable(rows, '物料编码', row.materialCode, '')
   pushVariable(rows, '物料名称', row.materialName, '')
   pushVariable(rows, '规格型号', row.specModel, '')
-  pushVariable(rows, '区间下限', row.rangeLow, '')
-  pushVariable(rows, '区间上限', row.rangeHigh, '')
+  pushVariable(rows, '区间下限', row.rangeLow ?? row.range_low, '')
+  pushVariable(rows, '区间上限', row.rangeHigh ?? row.range_high, '')
   pushVariable(rows, '不含税单价', row.priceExclTax, '')
   pushVariable(rows, '含税单价', row.priceInclTax, '')
   pushVariable(rows, '生效日期', row.effectiveFrom, '')
@@ -738,11 +749,23 @@ function variableLabel(key) {
     settleReferenceHeader: '结算价列名',
     settleReferencePrice: '结算价列值',
     matchQuantity: '匹配数量',
+    rangeBasis: '区间口径',
+    range_basis: '区间口径',
+    rangeType: '区间类型',
+    range_type: '区间类型',
+    factorCode: '行情因素编码',
+    factor_code: '行情因素编码',
+    factorValue: '报价单行情值',
+    factor_value: '报价单行情值',
     rangeLow: '区间下限',
+    range_low: '区间下限',
     rangeHigh: '区间上限',
+    range_high: '区间上限',
+    matchedRange: '命中区间',
     priceExclTax: '不含税单价',
     priceInclTax: '含税单价',
     rangeUnitPrice: '区间单价',
+    matchedUnitPrice: '命中单价',
     rowCostSum: '明细行成本合计',
     parentTotalCostPrice: '父件总成本价',
     calcBatchId: '生成批次',
