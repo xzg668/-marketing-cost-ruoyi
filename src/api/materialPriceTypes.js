@@ -6,6 +6,9 @@ export const fetchMaterialPriceTypes = (params) =>
 export const importMaterialPriceTypes = (body) =>
   request('/api/v1/material-price-types/import', { method: 'POST', body })
 
+export const applyRangePriceTypes = (body) =>
+  request('/api/v1/material-price-types/range-price-type/apply', { method: 'POST', body })
+
 export const createMaterialPriceType = (body) =>
   request('/api/v1/material-price-types', { method: 'POST', body })
 
