@@ -24,12 +24,10 @@ describe('T10 成本一览表核算底稿抽屉', () => {
     assert.match(detailPageContent, /productCode \|\| route\.query\.materialCode/)
   })
 
-  it('完整成本表运费为 0 时隐藏页面行并在导出中删除模板行', () => {
-    assert.match(detailPageContent, /v-if="hasFreightCost" class="attr-row"/)
-    assert.match(detailPageContent, /const hasFreightCost = computed/)
-    assert.match(detailPageContent, /hasNonZeroAmount\(getCostAmountValue\('OTHER_EXP_FREIGHT'\)\)/)
+  it('完整成本表不展示也不导出运费', () => {
+    assert.doesNotMatch(detailPageContent, /OTHER_EXP_FREIGHT/)
+    assert.doesNotMatch(detailPageContent, />运费</)
     assert.match(detailPageContent, /sheet\.spliceRows\(rowIndexAfterGap\(40\), 1\)/)
-    assert.match(detailPageContent, /if \(hasFreightCost\.value\) \{\s*setCellValue\(rowIndexFinal\(40\), 6, toNumber\(getCostAmountValue\('OTHER_EXP_FREIGHT'\)\)\)/s)
   })
 
   it('底稿抽屉按 costRunNo 拉列表和详情并展示通用 JSON 区块', () => {

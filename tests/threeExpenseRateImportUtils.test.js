@@ -86,6 +86,19 @@ describe('threeExpenseRateImportUtils', () => {
     assert.equal(result.rows[0].productCategory, '商用直销产品')
     assert.equal(result.rows[0].productLine, '国内产线')
   })
+
+  it('uses the explicit business unit instead of inferring it from product category', () => {
+    const result = parseThreeExpenseRateRows([
+      ['家代商代销产品-国内产线'],
+      ['申请部门', '申请处室', '管理费用', '财务费用', '营业费用', '三项费用合计', 'OEM费用率', '业务单元'],
+      ['泰国事务所-直销', '/', '10%', '2%', '25%', '37%', '0%', 'COMMERCIAL'],
+    ], { defaultPeriodYear: 2026 })
+
+    assert.equal(result.errors.length, 0)
+    assert.equal(result.rows.length, 1)
+    assert.equal(result.rows[0].productCategory, '家代商代销产品')
+    assert.equal(result.rows[0].businessUnitType, 'COMMERCIAL')
+  })
 })
 
 function section(title, department, office, management, finance, sales, total, oem) {

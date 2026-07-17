@@ -26,6 +26,7 @@ const HEADER_ALIASES = {
   threeExpenseRate2025: ['2025三项费用', '2025 三项费用'],
   threeExpenseRate2026: ['2026三项费用', '2026 三项费用'],
   oemExpenseRate: ['OEM费用率', 'OEM费用', 'OEM'],
+  businessUnitType: ['业务单元', '业务单元类型'],
   overseasSales: ['是否通过海外销'],
   periodText: ['年份/期间', '年份期间', '期间', '年份'],
 }
@@ -179,6 +180,10 @@ function parseSection(rows, section, endRowIndex, globalPeriodText, defaultPerio
     const sales = parseRate(row[fieldIndex.salesExpenseRate])
     const total = parseRate(row[fieldIndex.threeExpenseTotalRate])
     const oem = fieldIndex.oemExpenseRate === undefined ? null : parseRate(row[fieldIndex.oemExpenseRate])
+    const businessUnitType = resolveBusinessUnitType(
+      fieldIndex.businessUnitType === undefined ? '' : row[fieldIndex.businessUnitType],
+      section.productCategory,
+    )
     const periodValue =
       fieldIndex.periodText === undefined ? globalPeriodText : readText(row, fieldIndex.periodText) || globalPeriodText
     const period = parsePeriod(periodValue)
@@ -206,7 +211,7 @@ function parseSection(rows, section, endRowIndex, globalPeriodText, defaultPerio
     }
 
     parsedRows.push({
-      businessUnitType: section.productCategory === '家代商代销产品' ? 'HOUSEHOLD' : 'COMMERCIAL',
+      businessUnitType,
       periodYear,
       productCategory: section.productCategory,
       productLine: section.productLine,
@@ -222,6 +227,17 @@ function parseSection(rows, section, endRowIndex, globalPeriodText, defaultPerio
       importBatchNo,
     })
   }
+}
+
+function resolveBusinessUnitType(value, productCategory) {
+  const normalized = String(value || '').trim().toUpperCase()
+  if (normalized === 'COMMERCIAL' || normalized === '商用') {
+    return 'COMMERCIAL'
+  }
+  if (normalized === 'HOUSEHOLD' || normalized === '家用') {
+    return 'HOUSEHOLD'
+  }
+  return productCategory === '家代商代销产品' ? 'HOUSEHOLD' : 'COMMERCIAL'
 }
 
 function parseLegacyRows(rows, importBatchNo, errors) {

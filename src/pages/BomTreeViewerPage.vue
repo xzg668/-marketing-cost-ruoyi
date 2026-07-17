@@ -35,6 +35,16 @@
             <el-option label="精益" value="精益" />
           </el-select>
         </el-form-item>
+        <el-form-item label="报价组织" required>
+          <el-select
+            v-model="query.priceOrgCode"
+            placeholder="请选择"
+            style="width: 140px"
+          >
+            <el-option label="商用 210" value="210" />
+            <el-option label="板换 220" value="220" />
+          </el-select>
+        </el-form-item>
         <el-tooltip
           content="按哪个时间点生效的 BOM 版本查看；留空 = 今天"
           placement="top"
@@ -135,12 +145,15 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import BomNodeDetailDrawer from '../components/BomNodeDetailDrawer.vue'
 import { getBomHierarchy } from '../api/bom'
+import { useUserStore } from '../store/modules/user'
 
 const route = useRoute()
+const userStore = useUserStore()
 
 const query = reactive({
   topProductCode: '',
   bomPurpose: '',
+  priceOrgCode: defaultPriceOrgCode(),
   asOfDate: '',
   sourceType: 'U9',
 })
@@ -169,6 +182,7 @@ async function loadTree() {
   try {
     const data = await getBomHierarchy(query.topProductCode.trim(), {
       bomPurpose: query.bomPurpose || null,
+      priceOrgCode: query.priceOrgCode,
       asOfDate: query.asOfDate || null,
       sourceType: query.sourceType,
     })
@@ -234,6 +248,7 @@ function collapseAll() {
 function applyRouteQuery() {
   query.topProductCode = normalizeQueryString(route.query.topProductCode)
   query.bomPurpose = normalizeQueryString(route.query.bomPurpose)
+  query.priceOrgCode = normalizePriceOrgCode(route.query.priceOrgCode) || defaultPriceOrgCode()
   query.asOfDate = normalizeQueryString(route.query.asOfDate)
   query.sourceType = normalizeSourceType(route.query.sourceType)
 }
@@ -246,6 +261,15 @@ function normalizeQueryString(value) {
 function normalizeSourceType(value) {
   const sourceType = normalizeQueryString(value)
   return ['U9', 'MANUAL', 'E_DRAWING'].includes(sourceType) ? sourceType : 'U9'
+}
+
+function normalizePriceOrgCode(value) {
+  const priceOrgCode = normalizeQueryString(value)
+  return ['210', '220'].includes(priceOrgCode) ? priceOrgCode : ''
+}
+
+function defaultPriceOrgCode() {
+  return userStore.businessUnitType === 'PLATE' ? '220' : '210'
 }
 
 onMounted(() => {

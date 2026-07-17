@@ -570,13 +570,6 @@ const handleFileChange = async (uploadFile) => {
     }
     const buffer = await rawFile.arrayBuffer()
     const workbook = XLSX.read(buffer, { type: 'array', cellDates: true })
-    const sheetName = workbook.SheetNames.find((name) => normalizeHeader(name) === normalizeHeader('固定采购价5'))
-    if (!sheetName) {
-      ElMessage.error('未找到固定采购价5 sheet')
-      return
-    }
-    const sheet = workbook.Sheets[sheetName]
-    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false })
     const headerAliases = {
       externalRowId: ['id'],
       processStatus: ['流程状态'],
@@ -634,31 +627,6 @@ const handleFileChange = async (uploadFile) => {
       const matched = headerKeys.find((key) => normalized.includes(key))
       return matched ? headerMap[matched] : null
     }
-    const headerIndex = rows.reduce(
-      (best, row, index) => {
-        const hitCount = row.reduce((count, cell) => {
-          return resolveHeaderField(cell) ? count + 1 : count
-        }, 0)
-        if (hitCount > best.count) {
-          return { index, count: hitCount }
-        }
-        return best
-      },
-      { index: -1, count: 0 },
-    ).index
-    if (headerIndex === -1) {
-      ElMessage.error('固定采购价5 未找到表头，请确认Excel格式是否正确')
-      return
-    }
-    const headerRow = rows[headerIndex]
-    const fieldIndex = {}
-    headerRow.forEach((cell, index) => {
-      const field = resolveHeaderField(cell)
-      if (field) {
-        fieldIndex[field] = index
-      }
-    })
-
     const requiredFields = ['externalRowId', 'materialCode', 'materialName', 'fixedPrice']
     const requiredLabels = {
       externalRowId: 'id',
@@ -666,12 +634,74 @@ const handleFileChange = async (uploadFile) => {
       materialName: '物料名称',
       fixedPrice: '现不含税价格',
     }
-    const missing = requiredFields.filter((field) => fieldIndex[field] === undefined)
-    if (missing.length > 0) {
-      const names = missing.map((field) => requiredLabels[field] || field)
-      ElMessage.error(`缺少表头：${names.join('、')}`)
+
+    const inspectSheet = (sheetName) => {
+      const sheet = workbook.Sheets[sheetName]
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false })
+      const headerResult = rows.reduce(
+        (best, row, index) => {
+          const hitCount = row.reduce((count, cell) => {
+            return resolveHeaderField(cell) ? count + 1 : count
+          }, 0)
+          return hitCount > best.count ? { index, count: hitCount } : best
+        },
+        { index: -1, count: 0 },
+      )
+      if (headerResult.index === -1) {
+        return null
+      }
+
+      const fieldIndex = {}
+      rows[headerResult.index].forEach((cell, index) => {
+        const field = resolveHeaderField(cell)
+        if (field) {
+          fieldIndex[field] = index
+        }
+      })
+      const missing = requiredFields.filter((field) => fieldIndex[field] === undefined)
+      return {
+        sheetName,
+        rows,
+        headerIndex: headerResult.index,
+        fieldIndex,
+        missing,
+        matchedHeaderCount: headerResult.count,
+      }
+    }
+
+    // 工作表名称不作限制；存在“固定采购价5”时优先识别，否则按必填表头扫描全部工作表。
+    const preferredSheetName = workbook.SheetNames.find(
+      (name) => normalizeHeader(name) === normalizeHeader('固定采购价5'),
+    )
+    const candidateSheetNames = [
+      ...(preferredSheetName ? [preferredSheetName] : []),
+      ...workbook.SheetNames.filter((name) => name !== preferredSheetName),
+    ]
+    let selectedSheet = null
+    let bestMatchedSheet = null
+    for (const candidateSheetName of candidateSheetNames) {
+      const inspected = inspectSheet(candidateSheetName)
+      if (!inspected) {
+        continue
+      }
+      if (!bestMatchedSheet || inspected.matchedHeaderCount > bestMatchedSheet.matchedHeaderCount) {
+        bestMatchedSheet = inspected
+      }
+      if (inspected.missing.length === 0) {
+        selectedSheet = inspected
+        break
+      }
+    }
+    if (!selectedSheet) {
+      if (bestMatchedSheet?.missing.length) {
+        const names = bestMatchedSheet.missing.map((field) => requiredLabels[field] || field)
+        ElMessage.error(`工作表“${bestMatchedSheet.sheetName}”缺少表头：${names.join('、')}`)
+      } else {
+        ElMessage.error('未找到包含固定采购价必填表头的工作表，请确认Excel格式是否正确')
+      }
       return
     }
+    const { sheetName, rows, headerIndex, fieldIndex } = selectedSheet
     let skippedInvalid = 0
     const dataRows = rows.slice(headerIndex + 1).map((row, offset) => {
       const processNo = String(row[fieldIndex.processNo] || '').trim()

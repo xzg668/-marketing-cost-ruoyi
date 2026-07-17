@@ -342,25 +342,8 @@
             <td></td>
             <td></td>
           </tr>
-          <!-- 见机表 r58/r59/r60 顺序：运费 / 模具费 / 认证费。
-               运费只有金额非 0 才展示；模具费/认证费按 costName 在 OTHER_EXP_<id> 系列里 lookup。
-               注意：包装费已经计入材料费 (T24 见机表口径)，**不在这里展示**避免双重 -->
-          <tr v-if="hasFreightCost" class="attr-row">
-            <td class="left-label">运费</td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td class="formula">
-              <button type="button" class="trace-link" @click="openCostTrace('OTHER_EXP_FREIGHT')">
-                {{ getCostAmount('OTHER_EXP_FREIGHT') || '-' }}
-              </button>
-            </td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-          </tr>
+          <!-- 模具费/认证费按 costName 在 OTHER_EXP_<id> 系列里 lookup。
+               包装费已经计入材料费 (T24 见机表口径)，不在这里展示避免双重。 -->
           <tr class="attr-row">
             <td class="left-label">模具费</td>
             <td></td>
@@ -554,14 +537,8 @@ const toNumber = (value) => {
   return Number.isFinite(number) ? number : null
 }
 
-const hasNonZeroAmount = (value) => {
-  const number = toNumber(value)
-  return number !== null && Math.abs(number) > 0
-}
-
 const getCostAmountValue = (code) => costMap.value?.[code]?.amount ?? null
 const getCostRateValue = (code) => costMap.value?.[code]?.rate ?? null
-const hasFreightCost = computed(() => hasNonZeroAmount(getCostAmountValue('OTHER_EXP_FREIGHT')))
 
 const sanitizeFileName = (value) =>
   String(value || '产品成本计算一览表').replace(/[\\/:*?"<>|]/g, '_')
@@ -794,13 +771,9 @@ const exportSheet = () => {
       return row
     }
 
-    // 模板有 3 个其他费用槽（r40 运费 / r41 模具费 / r42 认证费）。
-    // 运费为 0 时删除 r40，让模具费、认证费、总成本行上移。
-    let freightRowDelta = 0
-    if (!hasFreightCost.value) {
-      sheet.spliceRows(rowIndexAfterGap(40), 1)
-      freightRowDelta = -1
-    }
+    // 系统不核算运费，固定删除模板中的运费行，让模具费、认证费和总成本上移。
+    sheet.spliceRows(rowIndexAfterGap(40), 1)
+    const freightRowDelta = -1
     const otherExpenseDelta = 0
     void otherExpenseCount  // 仅为了避免 lint 未使用变量警告
     void OTHER_EXP_TEMPLATE_ROWS
@@ -941,11 +914,7 @@ const exportSheet = () => {
     setCellValue(rowIndexFinal(38), 6, toNumber(getCostAmountValue('SALES_EXP')))
     setCellValue(rowIndexFinal(39), 3, formatRate(getCostRateValue('FIN_EXP')))
     setCellValue(rowIndexFinal(39), 6, toNumber(getCostAmountValue('FIN_EXP')))
-    // 模板 r40/r41/r42 对应运费/模具费/认证费；运费为 0 时整行已删除。
-    // 仅填 col6 金额；包装费已在材料费里（T24）不在这里展示
-    if (hasFreightCost.value) {
-      setCellValue(rowIndexFinal(40), 6, toNumber(getCostAmountValue('OTHER_EXP_FREIGHT')))
-    }
+    // 模板 r40 运费行已固定删除；包装费已在材料费里（T24）不在这里展示。
     setCellValue(rowIndexFinal(41), 6, toNumber(getOtherExpenseValueByName('模具费')))
     setCellValue(rowIndexFinal(42), 6, toNumber(getOtherExpenseValueByName('认证费')))
     const totalRow = rowIndexFinal(43)

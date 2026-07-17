@@ -87,7 +87,7 @@
           <el-table-column label="最近检查时间" width="180">
             <template #default="{ row }">{{ formatDateTime(row.bomStatus?.checkedAt) }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="140" fixed="right">
+          <el-table-column label="操作" width="190" fixed="right">
             <template #default="{ row }">
               <el-button
                 v-if="canSelectForSupplement(row)"
@@ -98,15 +98,41 @@
               >
                 发起补录
               </el-button>
+              <template v-else-if="costingOperationState(row) === 'COMPLETED'">
+                <el-button
+                  link
+                  type="primary"
+                  :loading="actionLoadingId === costingViewActionKey(row)"
+                  @click="viewCostingResult(row)"
+                >
+                  查看结果
+                </el-button>
+                <el-button
+                  link
+                  type="warning"
+                  :loading="actionLoadingId === costingActionKey(row)"
+                  @click="restartCosting(row)"
+                >
+                  重新核算
+                </el-button>
+              </template>
+              <el-button
+                v-else-if="costingOperationState(row) === 'INCOMPLETE'"
+                link
+                type="primary"
+                @click="continueCosting(row)"
+              >
+                继续核算
+              </el-button>
               <el-button
                 v-else
                 link
-                :type="costingActionType(row)"
+                type="primary"
                 :disabled="!canStartCosting(row)"
                 :loading="actionLoadingId === costingActionKey(row)"
                 @click="startCosting(row)"
               >
-                {{ costingActionText(row) }}
+                发起核算
               </el-button>
             </template>
           </el-table-column>
@@ -165,6 +191,7 @@ import { ElMessage } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import {
   confirmQuoteRequestClassification,
+  fetchQuoteCostRun,
   fetchQuoteRequestDetail,
   launchQuoteCostingWorkbench,
 } from '../api/quoteRequests'
@@ -323,6 +350,10 @@ function costingActionKey(row) {
   return `costing:${row?.id || row?.materialNo || ''}`
 }
 
+function costingViewActionKey(row) {
+  return `costing:view:${row?.id || row?.materialNo || ''}`
+}
+
 function canStartCosting(row) {
   return isCostReadyBomStatus(row?.bomStatus?.bomStatus) && Boolean(row?.materialNo)
 }
@@ -353,6 +384,63 @@ async function startCosting(row) {
   }
 }
 
+async function viewCostingResult(row) {
+  if (!row?.id || !row?.materialNo) {
+    ElMessage.error('当前产品缺少核算结果定位信息')
+    return
+  }
+  actionLoadingId.value = costingViewActionKey(row)
+  try {
+    const response = await fetchQuoteCostRun(oaNo.value, row.id, {
+      versionId: row.confirmedCostVersionId || undefined,
+    })
+    const versions = Array.isArray(response?.versions) ? response.versions : []
+    const confirmedVersionId = Number(row.confirmedCostVersionId)
+    const displayVersion = [
+      response?.currentDisplayVersion,
+      response?.latestConfirmed,
+      ...versions,
+    ].find((version) => {
+      if (!version?.costRunNo) return false
+      if (Number.isFinite(confirmedVersionId) && confirmedVersionId > 0) {
+        return Number(version.id) === confirmedVersionId
+      }
+      return version.currentConfirmed || version.status === 'CONFIRMED'
+    })
+    if (!displayVersion?.costRunNo) {
+      throw new Error('当前产品没有可查看的已确认核算版本')
+    }
+    const resultHeader = response?.resultHeader || {}
+    const productCode = resultHeader.productCode || row.materialNo
+    await router.push({
+      name: 'cost-run-detail',
+      params: { oaNo: oaNo.value },
+      query: {
+        customer: detail.value.customer || '',
+        productName: resultHeader.productName || row.productName || '',
+        productModel: resultHeader.productModel || row.sunlModel || row.spec || '',
+        productCode,
+        materialCode: productCode,
+        customerDrawing: row.customerDrawing || '',
+        costRunNo: displayVersion.costRunNo,
+        versionNo: displayVersion.versionNo || displayVersion.costRunNo,
+      },
+    })
+  } catch (error) {
+    ElMessage.error(error?.message || '查看核算结果失败')
+  } finally {
+    actionLoadingId.value = ''
+  }
+}
+
+function continueCosting(row) {
+  openCostingWorkbench(row, { tab: 'COST_RUN' })
+}
+
+async function restartCosting(row) {
+  await startCosting(row)
+}
+
 function normalizedCalcStatus(value) {
   const text = String(value || '未核算').trim()
   if (['CALCULATED', 'DONE', 'SUCCESS', '已核算'].includes(text)) return '已核算'
@@ -362,22 +450,14 @@ function normalizedCalcStatus(value) {
 }
 
 function hasCostingResult(row) {
-  return Boolean(row?.calcAt || row?.unitCost || row?.costAmount)
+  return Boolean(row?.confirmedCostVersionId || row?.calcAt || row?.unitCost || row?.costAmount)
 }
 
-function costingActionText(row) {
+function costingOperationState(row) {
   const status = normalizedCalcStatus(row?.calcStatus)
-  if (status === '试算中') return '试算中'
-  if (status === '重新核算') return '重新核算'
-  if (status === '已核算' || hasCostingResult(row)) return '重新核算'
-  return '发起核算'
-}
-
-function costingActionType(row) {
-  const text = costingActionText(row)
-  if (text === '已核算') return 'success'
-  if (text === '重新核算') return 'warning'
-  return 'primary'
+  if (status === '试算中') return 'INCOMPLETE'
+  if (status === '已核算' || hasCostingResult(row)) return 'COMPLETED'
+  return 'PENDING'
 }
 
 function bomSourceLabel(source) {

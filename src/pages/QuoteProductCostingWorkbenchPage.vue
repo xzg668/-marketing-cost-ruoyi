@@ -528,42 +528,36 @@
             <div class="action-panel">
               <div>
                 <h2>生成最终价格</h2>
-                <p>{{ displayBusinessText(pricePrepare.readiness?.message || tab.blockedReason || '基于已确认价格类型和价格源生成当前产品行的最终价格') }}</p>
+                <p>一次生成财务基准与 OA 锁价两份明细，并自动计算材料金额差异</p>
               </div>
               <el-button
                 type="primary"
                 :loading="pricePrepareActionLoading"
                 :disabled="isBlockedTab(tab)"
-                @click="generatePricePrepare"
+                @click="generatePricePrepare()"
               >
                 生成最终价格
               </el-button>
             </div>
 
-            <div class="status-strip">
+            <div class="status-strip price-compare-summary">
               <div class="metric">
-                <span>准备批次</span>
-                <strong>{{ latestPrepare.prepareNo || pricePrepare.readiness?.prepareNo || '-' }}</strong>
+                <span>财务 Cu 基准（元/公斤）</span>
+                <strong>{{ formatPrice(pricePrepare.financeCuPricePerKg) }}</strong>
               </div>
               <div class="metric">
-                <span>状态</span>
-                <strong>{{ latestPrepare.status || pricePrepare.readiness?.batchStatus || pricePrepare.readiness?.status || '-' }}</strong>
+                <span>OA 锁定 Cu（元/公斤）</span>
+                <strong>{{ formatPrice(oaCuPricePerKg) }}</strong>
               </div>
               <div class="metric">
-                <span>总数</span>
-                <strong>{{ latestPrepare.totalCount ?? pricePrepare.generatedResult?.totalCount ?? pricePrepareItems.length }}</strong>
+                <span>材料金额差异（OA - 财务）</span>
+                <strong :class="differenceAmountClass(pricePrepareDifferenceSummary.amountDifference)">
+                  {{ formatSignedMoney(pricePrepareDifferenceSummary.amountDifference) }}
+                </strong>
               </div>
               <div class="metric">
-                <span>成功</span>
-                <strong>{{ latestPrepare.successCount ?? pricePrepare.generatedResult?.successCount ?? '-' }}</strong>
-              </div>
-              <div class="metric">
-                <span>告警</span>
-                <strong>{{ latestPrepare.warningCount ?? pricePrepare.generatedResult?.warningCount ?? '-' }}</strong>
-              </div>
-              <div class="metric">
-                <span>缺口</span>
-                <strong>{{ latestPrepare.gapCount ?? pricePrepare.readiness?.gapCount ?? pricePrepareGaps.length }}</strong>
+                <span>差异明细</span>
+                <strong>{{ pricePrepareDifferenceSummary.differentCount || 0 }} / {{ pricePrepareDifferenceSummary.totalCount || 0 }}</strong>
               </div>
             </div>
 
@@ -576,6 +570,14 @@
               class="inline-alert"
             />
             <el-alert
+              v-else-if="oaPricePrepareReady"
+              type="info"
+              show-icon
+              :closable="false"
+              title="价格源检查已完成；点击“生成最终价格”后会自动生成财务与 OA 两份结果"
+              class="inline-alert"
+            />
+            <el-alert
               v-else-if="pricePrepare.readiness?.message"
               type="warning"
               show-icon
@@ -584,34 +586,99 @@
               class="inline-alert"
             />
 
-            <div class="subsection-head">
-              <strong>最终价格明细</strong>
-              <span>prepare_no：{{ latestPrepare.prepareNo || pricePrepare.readiness?.prepareNo || '-' }}</span>
-            </div>
-            <el-table :data="pricePrepareItems" border stripe scrollbar-always-on max-height="320" class="prepare-detail-table">
-              <el-table-column prop="materialCode" label="料号" min-width="170" fixed="left" show-overflow-tooltip />
-              <el-table-column prop="materialName" label="品名" min-width="180" fixed="left" show-overflow-tooltip />
-              <el-table-column prop="itemType" label="类型" width="110" />
-              <el-table-column prop="quantity" label="数量" width="110" align="right" />
-              <el-table-column prop="unitPrice" label="单价" width="120" align="right">
-                <template #default="{ row }">{{ formatMoney(row.unitPrice) }}</template>
-              </el-table-column>
-              <el-table-column prop="amount" label="金额" width="120" align="right">
-                <template #default="{ row }">{{ formatMoney(row.amount) }}</template>
-              </el-table-column>
-              <el-table-column prop="priceSource" label="价格来源" width="150" show-overflow-tooltip />
-              <el-table-column prop="status" label="状态" width="110" />
-              <el-table-column prop="message" label="说明" min-width="220" show-overflow-tooltip />
-              <template #empty>
-                <el-empty description="暂无最终价格明细" />
-              </template>
-            </el-table>
+            <el-tabs v-model="pricePrepareScenarioTab" class="price-scenario-tabs">
+              <el-tab-pane label="财务基准" name="FINANCE">
+                <div class="scenario-meta">
+                  <span>Cu：{{ formatPrice(pricePrepare.financeCuPricePerKg) }} 元/公斤</span>
+                  <span>prepare_no：{{ financePrepareBatch.prepareNo || '-' }}</span>
+                </div>
+                <el-table :data="financePricePrepareItems" border stripe scrollbar-always-on max-height="360" class="prepare-detail-table">
+                  <el-table-column prop="materialCode" label="料号" min-width="170" fixed="left" show-overflow-tooltip />
+                  <el-table-column prop="materialName" label="品名" min-width="180" fixed="left" show-overflow-tooltip />
+                  <el-table-column prop="itemType" label="类型" width="110" />
+                  <el-table-column prop="quantity" label="数量" width="110" align="right" />
+                  <el-table-column prop="unitPrice" label="单价" width="120" align="right">
+                    <template #default="{ row }">{{ formatMoney(row.unitPrice) }}</template>
+                  </el-table-column>
+                  <el-table-column prop="amount" label="金额" width="120" align="right">
+                    <template #default="{ row }">{{ formatMoney(row.amount) }}</template>
+                  </el-table-column>
+                  <el-table-column prop="priceSource" label="价格来源" min-width="160" show-overflow-tooltip />
+                  <el-table-column prop="status" label="状态" width="100" />
+                  <el-table-column prop="message" label="说明" min-width="220" show-overflow-tooltip />
+                  <template #empty>
+                    <el-empty description="暂无财务基准明细" />
+                  </template>
+                </el-table>
+              </el-tab-pane>
 
-            <div class="subsection-head">
+              <el-tab-pane label="OA 锁价" name="OA">
+                <div class="scenario-meta">
+                  <span>Cu：{{ formatPrice(oaCuPricePerKg) }} 元/公斤</span>
+                  <span>prepare_no：{{ oaPrepareBatch.prepareNo || latestPrepare.prepareNo || '-' }}</span>
+                </div>
+                <el-table :data="oaPricePrepareItems" border stripe scrollbar-always-on max-height="360" class="prepare-detail-table">
+                  <el-table-column prop="materialCode" label="料号" min-width="170" fixed="left" show-overflow-tooltip />
+                  <el-table-column prop="materialName" label="品名" min-width="180" fixed="left" show-overflow-tooltip />
+                  <el-table-column prop="itemType" label="类型" width="110" />
+                  <el-table-column prop="quantity" label="数量" width="110" align="right" />
+                  <el-table-column prop="unitPrice" label="单价" width="120" align="right">
+                    <template #default="{ row }">{{ formatMoney(row.unitPrice) }}</template>
+                  </el-table-column>
+                  <el-table-column prop="amount" label="金额" width="120" align="right">
+                    <template #default="{ row }">{{ formatMoney(row.amount) }}</template>
+                  </el-table-column>
+                  <el-table-column prop="priceSource" label="价格来源" min-width="160" show-overflow-tooltip />
+                  <el-table-column prop="status" label="状态" width="100" />
+                  <el-table-column prop="message" label="说明" min-width="220" show-overflow-tooltip />
+                  <template #empty>
+                    <el-empty description="暂无 OA 锁价明细" />
+                  </template>
+                </el-table>
+              </el-tab-pane>
+
+              <el-tab-pane label="差异对比" name="DIFFERENCE">
+                <div class="scenario-meta difference-toolbar">
+                  <span>同一料号按相同数量比较，差异口径为 OA - 财务</span>
+                  <el-checkbox v-model="onlyDifferentPricePrepare">只看有差异</el-checkbox>
+                </div>
+                <el-table :data="visiblePricePrepareDifferences" border stripe scrollbar-always-on max-height="360" class="prepare-detail-table">
+                  <el-table-column prop="materialCode" label="料号" min-width="160" fixed="left" show-overflow-tooltip />
+                  <el-table-column prop="materialName" label="品名" min-width="160" fixed="left" show-overflow-tooltip />
+                  <el-table-column prop="quantity" label="数量" width="90" align="right" />
+                  <el-table-column prop="financeUnitPrice" label="财务单价" width="120" align="right">
+                    <template #default="{ row }">{{ formatMoney(row.financeUnitPrice) }}</template>
+                  </el-table-column>
+                  <el-table-column prop="oaUnitPrice" label="OA 单价" width="120" align="right">
+                    <template #default="{ row }">{{ formatMoney(row.oaUnitPrice) }}</template>
+                  </el-table-column>
+                  <el-table-column prop="unitPriceDifference" label="单价差异" width="120" align="right">
+                    <template #default="{ row }"><span :class="differenceAmountClass(row.unitPriceDifference)">{{ formatSignedMoney(row.unitPriceDifference) }}</span></template>
+                  </el-table-column>
+                  <el-table-column prop="financeAmount" label="财务金额" width="120" align="right">
+                    <template #default="{ row }">{{ formatMoney(row.financeAmount) }}</template>
+                  </el-table-column>
+                  <el-table-column prop="oaAmount" label="OA 金额" width="120" align="right">
+                    <template #default="{ row }">{{ formatMoney(row.oaAmount) }}</template>
+                  </el-table-column>
+                  <el-table-column prop="amountDifference" label="金额差异" width="120" align="right">
+                    <template #default="{ row }"><span :class="differenceAmountClass(row.amountDifference)">{{ formatSignedMoney(row.amountDifference) }}</span></template>
+                  </el-table-column>
+                  <el-table-column prop="differenceRate" label="差异率" width="100" align="right">
+                    <template #default="{ row }">{{ formatPercent(row.differenceRate) }}</template>
+                  </el-table-column>
+                  <template #empty>
+                    <el-empty description="暂无价格差异" />
+                  </template>
+                </el-table>
+              </el-tab-pane>
+            </el-tabs>
+
+            <div v-if="pricePrepareGaps.length" class="subsection-head">
               <strong>价格生成缺口</strong>
               <span>{{ pricePrepareGaps.length }} 条待处理事项</span>
             </div>
-            <el-table :data="pricePrepareGaps" border stripe scrollbar-always-on max-height="280" class="gap-table">
+            <el-table v-if="pricePrepareGaps.length" :data="pricePrepareGaps" border stripe scrollbar-always-on max-height="280" class="gap-table">
               <el-table-column prop="materialCode" label="来源料号" min-width="160" fixed="left" show-overflow-tooltip />
               <el-table-column prop="gapMaterialCode" label="缺口料号" min-width="160" show-overflow-tooltip />
               <el-table-column prop="gapType" label="缺口类型" width="130" />
@@ -635,7 +702,7 @@
                 <el-button
                   type="primary"
                   :loading="costRunActionLoading"
-                  :disabled="isBlockedTab(tab) || !costRun.canStartTrial"
+                  :disabled="isBlockedTab(tab) || !canStartCostRun"
                   @click="trialCostRun"
                 >
                   开始核算
@@ -648,17 +715,17 @@
                 </el-button>
                 <el-button
                   :loading="costRunActionLoading"
-                  :disabled="!costRun.currentDisplayVersion?.id"
+                  :disabled="!displayedCostVersion.id"
                   @click="exportCostRun"
                 >
-                  导出
+                  导出 XLSX
                 </el-button>
               </div>
             </div>
 
             <div class="condition-list">
-              <el-tag :type="costRun.canStartTrial ? 'success' : 'warning'" effect="plain">
-                {{ costRun.canStartTrial ? '允许开始试算' : '暂不可试算' }}
+              <el-tag :type="canStartCostRun ? 'success' : 'warning'" effect="plain">
+                {{ canStartCostRun ? '允许开始试算' : '暂不可试算' }}
               </el-tag>
               <el-tag :type="costRun.canConfirm ? 'success' : 'info'" effect="plain">
                 {{ costRun.canConfirm ? '允许确认核算' : '暂无可确认试算' }}
@@ -672,6 +739,24 @@
                 {{ reason }}
               </el-tag>
             </div>
+
+            <el-alert
+              v-if="costRunRepriceLocked"
+              class="inline-alert"
+              type="warning"
+              show-icon
+              :closable="false"
+              :title="activeRepriceLock.message || '当前业务单元正在月度调价，暂不能发起成本核算'"
+            />
+
+            <el-alert
+              v-if="costRunError"
+              class="inline-alert"
+              type="error"
+              show-icon
+              :closable="false"
+              :title="costRunError"
+            />
 
             <el-alert
               v-if="hasPendingTrial"
@@ -688,12 +773,18 @@
               stripe
               scrollbar-always-on
               row-key="id"
+              :row-class-name="costVersionRowClass"
               class="cost-version-table"
             >
               <el-table-column prop="displayVersionNo" label="成本版本" min-width="190" fixed="left" show-overflow-tooltip>
                 <template #default="{ row }">
                   <div class="version-cell">
-                    <strong>{{ row.displayVersionNo || row.versionNo || row.costRunNo || '-' }}</strong>
+                    <div class="version-title-line">
+                      <strong>{{ row.displayVersionNo || row.versionNo || row.costRunNo || '-' }}</strong>
+                      <el-tag v-if="row.id === selectedCostRunVersionId" size="small" type="primary" effect="plain">
+                        当前展示
+                      </el-tag>
+                    </div>
                     <span>{{ row.costRunNo || '-' }}</span>
                   </div>
                 </template>
@@ -719,9 +810,18 @@
               <el-table-column prop="confirmedBy" label="确认人" width="110" show-overflow-tooltip>
                 <template #default="{ row }">{{ row.confirmedBy || '-' }}</template>
               </el-table-column>
-              <el-table-column label="操作" width="250" fixed="right">
+              <el-table-column label="操作" width="390" fixed="right">
                 <template #default="{ row }">
                   <div class="row-actions">
+                    <el-button
+                      link
+                      type="primary"
+                      :loading="costRunLoading && row.id === selectedCostRunVersionId"
+                      :disabled="row.id === selectedCostRunVersionId"
+                      @click="selectCostRunVersion(row)"
+                    >
+                      查看本版本
+                    </el-button>
                     <el-button
                       v-if="row.canConfirm"
                       link
@@ -747,6 +847,15 @@
                     >
                       核算底稿
                     </el-button>
+                    <el-button
+                      link
+                      type="primary"
+                      :loading="costRunActionLoading"
+                      :disabled="!row.id"
+                      @click="exportCostRun(row)"
+                    >
+                      导出 XLSX
+                    </el-button>
                   </div>
                 </template>
               </el-table-column>
@@ -754,6 +863,7 @@
                 <el-empty description="暂无成本核算版本，请先开始核算" />
               </template>
             </el-table>
+
           </div>
         </el-tab-pane>
       </el-tabs>
@@ -970,11 +1080,15 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Edit, Refresh } from '@element-plus/icons-vue'
 import BomNodeDetailDrawer from '../components/BomNodeDetailDrawer.vue'
+import BasePagination from '../components/BasePagination.vue'
 import CostRunTraceDrawer from '../components/CostRunTraceDrawer.vue'
 import { getBomHierarchy } from '../api/bom'
+import { fetchMonthlyRepriceActiveLock } from '../api/monthlyReprice'
+import { useUserStore } from '../store/modules/user'
 import {
   adjustPriceType,
   cancelCostingBomConfirm,
+  checkQuotePriceSources,
   confirmCostingBom,
   confirmPriceType,
   confirmQuoteCostRun,
@@ -991,9 +1105,15 @@ import {
 import { confirmPricePrepareNoScrap } from '../api/pricePrepare'
 import { fetchU9MaterialOptions } from '../api/u9MaterialMaster'
 import { formatDateTime, statusLabel, statusTagType } from '../utils/quoteRequestWorkbench'
+import {
+  isCostRunLockedByMonthlyReprice,
+  differenceAmountClass,
+  formatSnapshotDecimal,
+} from './quoteCuCostingUtils'
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
 
 const oaNo = computed(() => String(route.params.oaNo || ''))
 const itemId = computed(() => String(route.params.itemId || ''))
@@ -1024,6 +1144,8 @@ const priceTypeDrawerMode = ref('ADJUST')
 const priceTypeForm = ref(emptyPriceTypeForm())
 const pricePrepareLoading = ref(false)
 const pricePrepareActionLoading = ref(false)
+const pricePrepareScenarioTab = ref('FINANCE')
+const onlyDifferentPricePrepare = ref(true)
 const autoPriceSourceChecking = ref(false)
 const returnPriceSourceRefreshing = ref(false)
 const autoPriceSourceCheckedKey = ref('')
@@ -1036,6 +1158,9 @@ const pricePrepare = ref(emptyPricePrepareResponse())
 const costRunLoading = ref(false)
 const costRunActionLoading = ref(false)
 const costRun = ref(emptyCostRunResponse())
+const costRunError = ref('')
+const activeRepriceLock = ref({ locked: false })
+const selectedCostRunVersionId = ref(null)
 const traceDrawerVisible = ref(false)
 const traceVersion = ref(null)
 const localWorkflowGuideText = ref('')
@@ -1126,6 +1251,22 @@ const missingPriceTypeRows = computed(() => flatPriceTypeRows.value.filter((row)
 const filteredPriceTypeRows = computed(() => filterTreeRows(priceType.value.rows || []))
 const priceTypeDrawerTitle = computed(() => priceTypeDrawerMode.value === 'IMPORT_MISSING' ? '维护缺失价格类型' : '调整价格类型')
 const pricePrepareItems = computed(() => Array.isArray(pricePrepare.value.items?.records) ? pricePrepare.value.items.records : [])
+const oaPrepareBatch = computed(() => pricePrepare.value.oaScenario?.batch || {})
+const financePrepareBatch = computed(() => pricePrepare.value.financeScenario?.batch || {})
+const oaPricePrepareItems = computed(() => {
+  const rows = pricePrepare.value.oaScenario?.items?.records
+  return Array.isArray(rows) ? rows : pricePrepareItems.value
+})
+const financePricePrepareItems = computed(() => {
+  const rows = pricePrepare.value.financeScenario?.items?.records
+  return Array.isArray(rows) ? rows : []
+})
+const pricePrepareDifferences = computed(() => Array.isArray(pricePrepare.value.differences) ? pricePrepare.value.differences : [])
+const visiblePricePrepareDifferences = computed(() => onlyDifferentPricePrepare.value
+  ? pricePrepareDifferences.value.filter((row) => row?.different)
+  : pricePrepareDifferences.value)
+const pricePrepareDifferenceSummary = computed(() => pricePrepare.value.differenceSummary || {})
+const oaCuPricePerKg = computed(() => normalizeCuPricePerKg(header.value.copperPrice))
 const pricePrepareGaps = computed(() => Array.isArray(pricePrepare.value.gaps?.records) ? pricePrepare.value.gaps.records : [])
 const priceSourceGapSummary = computed(() => {
   const rows = pricePrepareGaps.value || []
@@ -1138,19 +1279,33 @@ const priceSourceGapSummary = computed(() => {
     scrapMapping: rows.filter((row) => priceSourceGapKind(row) === 'SCRAP_MAPPING').length,
   }
 })
-const pricePrepareReady = computed(() => {
+const oaPricePrepareReady = computed(() => {
   const readiness = pricePrepare.value.readiness || {}
   const gapCount = Number(readiness.gapCount ?? pricePrepareGaps.value.length)
   return readiness.status === 'READY' && gapCount === 0
 })
+const financePricePrepareReady = computed(() => (
+  financePrepareBatch.value.status === 'SUCCESS'
+  && Number(financePrepareBatch.value.gapCount || 0) === 0
+  && financePricePrepareItems.value.length > 0
+))
+const pricePrepareReady = computed(() => oaPricePrepareReady.value && financePricePrepareReady.value)
 const priceSourceChecked = computed(() => {
   const readiness = pricePrepare.value.readiness || {}
   const status = String(readiness.status || '').toUpperCase()
   if (status && status !== 'NOT_PREPARED') return true
   return Boolean(latestPrepare.value.prepareNo || pricePrepareItems.value.length || pricePrepareGaps.value.length)
 })
-const priceSourceReady = computed(() => priceSourceChecked.value && pricePrepareReady.value && priceSourceGapSummary.value.total === 0)
+const priceSourceReady = computed(() => priceSourceChecked.value && oaPricePrepareReady.value && priceSourceGapSummary.value.total === 0)
+const costRunRepriceLocked = computed(() => isCostRunLockedByMonthlyReprice(
+  activeRepriceLock.value,
+  { permissions: userStore.permissions, roles: userStore.roles },
+))
+const canStartCostRun = computed(() => Boolean(costRun.value.canStartTrial) && pricePrepareReady.value && !costRunRepriceLocked.value)
 const costRunBlockingText = computed(() => {
+  if (costRunRepriceLocked.value) {
+    return activeRepriceLock.value.message || '当前业务单元正在月度调价，暂不能发起成本核算'
+  }
   const reasons = costRun.value.blockingReasons || []
   if (reasons.length > 0) return displayBusinessText(reasons.join('；'))
   return 'BOM、价格类型、最终价格均通过后可开始核算'
@@ -1190,6 +1345,7 @@ const costRunStatusTagType = computed(() => {
   if (hasStaleCostVersion.value) return 'info'
   return statusTagType('calcStatus', header.value.calcStatus || '未核算')
 })
+const displayedCostVersion = computed(() => costRun.value.currentDisplayVersion || {})
 const costPartRows = computed(() => (costRun.value.partItems || []).map((row, index) => ({
   key: `PART-${row.bomRowId || row.partCode || index}`,
   partName: row.partName || '-',
@@ -1261,8 +1417,17 @@ async function refreshAllTabData() {
     loadPriceType(false),
     loadPricePrepare(false),
     loadCostRun(false),
+    loadActiveRepriceLock(),
   ])
   refreshingTabs.value = false
+}
+
+async function loadActiveRepriceLock() {
+  try {
+    activeRepriceLock.value = await fetchMonthlyRepriceActiveLock() || { locked: false }
+  } catch (error) {
+    activeRepriceLock.value = { locked: false }
+  }
 }
 
 function applyInputGapGuide() {
@@ -1351,13 +1516,48 @@ async function loadPricePrepare(showError = true) {
 async function loadCostRun(showError = true) {
   if (!oaNo.value || !itemId.value) return
   costRunLoading.value = true
+  costRunError.value = ''
   try {
-    costRun.value = await fetchQuoteCostRun(oaNo.value, itemId.value, {
+    const response = await fetchQuoteCostRun(oaNo.value, itemId.value, {
       periodMonth: workbench.value.periodMonth,
     })
+    await applyCostRunResponse(response)
   } catch (error) {
-    costRun.value = emptyCostRunResponse()
-    if (showError) ElMessage.error(error?.message || '获取成本核算失败')
+    const message = error?.message || '获取成本核算失败'
+    resetCostRunResult()
+    costRunError.value = message
+    if (showError) ElMessage.error(message)
+  } finally {
+    costRunLoading.value = false
+  }
+}
+
+function applyCostRunResponse(response) {
+  costRun.value = response || emptyCostRunResponse()
+  selectedCostRunVersionId.value = costRun.value.currentDisplayVersion?.id ?? null
+  costRunError.value = ''
+}
+
+function resetCostRunResult() {
+  costRun.value = emptyCostRunResponse()
+  selectedCostRunVersionId.value = null
+}
+
+async function selectCostRunVersion(row) {
+  if (!row?.id || row.id === selectedCostRunVersionId.value) return
+  costRunLoading.value = true
+  costRunError.value = ''
+  selectedCostRunVersionId.value = row.id
+  try {
+    const response = await fetchQuoteCostRun(oaNo.value, itemId.value, {
+      versionId: row.id,
+    })
+    await applyCostRunResponse(response)
+  } catch (error) {
+    const message = error?.message || '获取历史成本版本失败'
+    costRunError.value = message
+    selectedCostRunVersionId.value = displayedCostVersion.value.id ?? null
+    ElMessage.error(message)
   } finally {
     costRunLoading.value = false
   }
@@ -1381,13 +1581,57 @@ async function loadBomTree() {
   }
   bomTreeLoading.value = true
   try {
-    bomTree.value = await getBomHierarchy(topProductCode, { sourceType: 'U9' })
+    bomTree.value = await getBomHierarchy(topProductCode, {
+      sourceType: 'U9',
+      priceOrgCode: resolveBomTreePriceOrgCode(),
+    })
   } catch (error) {
     bomTree.value = null
     ElMessage.error(error?.message || '查询 BOM 层级树失败')
   } finally {
     bomTreeLoading.value = false
   }
+}
+
+function resolveBomTreePriceOrgCode() {
+  return normalizePriceOrgCode(bomRows.value.find((row) => normalizePriceOrgCode(row?.priceOrgCode))?.priceOrgCode)
+    || priceOrgCodeFromOrganization(bomRows.value.find((row) => priceOrgCodeFromOrganization(row?.materialOrganizationCode))?.materialOrganizationCode)
+    || normalizePriceOrgCode(item.value?.priceOrgCode)
+    || normalizePriceOrgCode(header.value?.priceOrgCode)
+    || normalizePriceOrgCode(workbench.value?.priceOrgCode)
+    || priceOrgCodeFromOrganization(item.value?.materialOrganizationCode)
+    || priceOrgCodeFromOrganization(header.value?.materialOrganizationCode)
+    || priceOrgCodeFromOrganization(workbench.value?.materialOrganizationCode)
+    || priceOrgCodeFromProcess(oaNo.value)
+    || priceOrgCodeFromProductText(item.value?.productName, item.value?.sunlModel)
+    || priceOrgCodeFromOrganization(item.value?.businessUnitType)
+    || priceOrgCodeFromOrganization(header.value?.businessUnitType)
+    || priceOrgCodeFromOrganization(workbench.value?.businessUnitType)
+    || priceOrgCodeFromOrganization(userStore.businessUnitType)
+    || '210'
+}
+
+function normalizePriceOrgCode(value) {
+  const priceOrgCode = String(value || '').trim()
+  return ['210', '220'].includes(priceOrgCode) ? priceOrgCode : ''
+}
+
+function priceOrgCodeFromOrganization(value) {
+  const organization = String(value || '').trim().toUpperCase()
+  if (organization === 'PLATE' || organization === '220' || organization === '板换') return '220'
+  if (organization === 'COMMERCIAL' || organization === '210' || organization === '商用') return '210'
+  return ''
+}
+
+function priceOrgCodeFromProcess(value) {
+  const process = String(value || '').trim().toUpperCase()
+  const compact = process.replace(/[-_]/g, '')
+  return process.startsWith('FI-SC-020') || compact.startsWith('FISC020') ? '220' : ''
+}
+
+function priceOrgCodeFromProductText(...values) {
+  const text = values.map((value) => String(value || '')).join(' ')
+  return /板换|板式换热器|板式热交换器|钎焊板式/.test(text) ? '220' : ''
 }
 
 function openBomNodeDetail(node) {
@@ -1680,7 +1924,15 @@ async function runPriceSourceCheck(successText = '价格源已自动检查') {
   }
   autoPriceSourceChecking.value = true
   try {
-    return await generatePricePrepare(successText)
+    pricePrepare.value = await checkQuotePriceSources(oaNo.value, itemId.value, {
+      periodMonth: workbench.value.periodMonth,
+      priceTypeConfirmNo: latestPriceType.value.confirmNo,
+    })
+    if (successText) ElMessage.success(successText)
+    return true
+  } catch (error) {
+    ElMessage.error(error?.message || '检查价格源失败')
+    return false
   } finally {
     autoPriceSourceChecking.value = false
   }
@@ -2010,14 +2262,19 @@ function canConfirmNoScrap(row) {
 }
 
 async function trialCostRun() {
+  if (costRunRepriceLocked.value) {
+    ElMessage.warning(activeRepriceLock.value.message || '当前业务单元正在月度调价，暂不能发起成本核算')
+    return
+  }
   costRunActionLoading.value = true
+  costRunError.value = ''
   try {
     const response = await trialQuoteCostRun(oaNo.value, itemId.value, {
       periodMonth: workbench.value.periodMonth,
-      pricePrepareNo: latestPrepare.value.prepareNo || pricePrepare.value.readiness?.prepareNo,
+      pricePrepareNo: oaPrepareBatch.value.prepareNo || pricePrepare.value.readiness?.prepareNo,
     })
     if (response) {
-      costRun.value = response
+      await applyCostRunResponse(response)
     } else {
       await loadCostRun(false)
     }
@@ -2025,7 +2282,8 @@ async function trialCostRun() {
     const trialRow = costRunVersions.value.find((row) => row?.status === 'TRIAL') || costRunVersions.value[0]
     if (trialRow?.canViewSheet) openCostRunDetail(trialRow)
   } catch (error) {
-    ElMessage.error(error?.message || '开始核算失败')
+    costRunError.value = error?.message || '开始核算失败'
+    ElMessage.error(costRunError.value)
   } finally {
     costRunActionLoading.value = false
   }
@@ -2035,20 +2293,22 @@ async function confirmCostRun(row = null) {
   const costRunNo = row?.costRunNo || costRun.value.latestTrial?.costRunNo
   if (!costRunNo) return
   costRunActionLoading.value = true
+  costRunError.value = ''
   try {
     await confirmQuoteCostRun(oaNo.value, itemId.value, costRunNo, {
       confirmMessage: '前端确认成本核算',
     })
     await refreshAfterAction('成本核算已确认')
   } catch (error) {
-    ElMessage.error(error?.message || '确认成本核算失败')
+    costRunError.value = error?.message || '确认成本核算失败'
+    ElMessage.error(costRunError.value)
   } finally {
     costRunActionLoading.value = false
   }
 }
 
 async function exportCostRun(row = null) {
-  const versionId = row?.id || costRun.value.currentDisplayVersion?.id
+  const versionId = row?.id || displayedCostVersion.value.id
   if (!versionId) return
   costRunActionLoading.value = true
   try {
@@ -2124,6 +2384,29 @@ function materialModelText(material) {
 function formatMoney(value) {
   if (value === null || value === undefined || value === '') return '-'
   return Number.isFinite(Number(value)) ? Number(value).toLocaleString('zh-CN') : value
+}
+
+function formatPrice(value) {
+  return formatSnapshotDecimal(value, 3)
+}
+
+function formatSignedMoney(value) {
+  if (value === null || value === undefined || value === '') return '-'
+  const number = Number(value)
+  const formatted = formatSnapshotDecimal(value, 3)
+  return Number.isFinite(number) && number > 0 ? `+${formatted}` : formatted
+}
+
+function formatPercent(value) {
+  if (value === null || value === undefined || value === '') return '-'
+  return `${formatSnapshotDecimal(value, 2)}%`
+}
+
+function normalizeCuPricePerKg(value) {
+  if (value === null || value === undefined || value === '') return null
+  const number = Number(String(value).replaceAll(',', ''))
+  if (!Number.isFinite(number)) return value
+  return number > 1000 ? number / 1000 : number
 }
 
 function normalizeTabCode(code) {
@@ -2308,6 +2591,10 @@ function normalizeCostVersionRow(row) {
   }
 }
 
+function costVersionRowClass({ row }) {
+  return row?.id === selectedCostRunVersionId.value ? 'selected-version-row' : ''
+}
+
 function costVersionStatusText(row) {
   if (row?.status === 'TRIAL') return '待确认'
   if (row?.currentConfirmed) return '当前已确认'
@@ -2351,6 +2638,10 @@ function emptyPricePrepareResponse() {
     batches: { records: [] },
     items: { records: [] },
     gaps: { records: [] },
+    oaScenario: { batch: null, items: { records: [] } },
+    financeScenario: { batch: null, items: { records: [] } },
+    differences: [],
+    differenceSummary: {},
   }
 }
 
@@ -2733,6 +3024,44 @@ onMounted(() => initializeWorkbench())
   word-break: break-all;
 }
 
+.price-compare-summary {
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+}
+
+.price-compare-summary .metric strong.difference-positive {
+  color: #d9485f;
+}
+
+.price-compare-summary .metric strong.difference-negative {
+  color: #15803d;
+}
+
+.price-compare-summary .metric strong.difference-zero {
+  color: #697386;
+}
+
+.price-scenario-tabs {
+  margin-top: 14px;
+}
+
+.price-scenario-tabs :deep(.el-tabs__header) {
+  margin-bottom: 10px;
+}
+
+.scenario-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 34px;
+  color: #697386;
+  font-size: 12px;
+}
+
+.difference-toolbar {
+  min-height: 38px;
+}
+
 .filter-bar {
   display: flex;
   align-items: center;
@@ -2840,11 +3169,34 @@ onMounted(() => initializeWorkbench())
   line-height: 1.25;
 }
 
+.version-title-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cost-version-table :deep(.selected-version-row > td.el-table__cell) {
+  background: #f0f7ff !important;
+}
+
 .row-actions {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.difference-positive {
+  color: #d9485f;
+}
+
+.difference-negative {
+  color: #15803d;
+}
+
+.difference-zero {
+  color: #697386;
 }
 
 .version-strip {

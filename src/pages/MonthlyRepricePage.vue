@@ -544,12 +544,6 @@
                   <td></td><td></td><td></td><td></td>
                 </tr>
                 <tr class="attr-row">
-                  <td class="left-label">运费</td>
-                  <td></td><td></td><td></td><td></td>
-                  <td class="formula">{{ getMonthlyCostAmount('OTHER_EXP_FREIGHT') || '-' }}</td>
-                  <td></td><td></td><td></td><td></td>
-                </tr>
-                <tr class="attr-row">
                   <td class="left-label">模具费</td>
                   <td></td><td></td><td></td><td></td>
                   <td class="formula">{{ getMonthlyOtherExpenseByName('模具费') || '-' }}</td>

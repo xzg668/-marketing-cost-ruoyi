@@ -22,3 +22,12 @@ export const deleteQuoteBaseMappingRule = (id) =>
 
 export const fetchFactorQuoteBaseMappings = (params) =>
   request(`${BASE_PATH}/factor-quote-base-mappings`, { params })
+
+export const fetchMetalBasePricePolicies = () =>
+  request(`${BASE_PATH}/metal-base-price-policies`)
+
+export const updateMetalBasePricePolicy = (variableCode, pricePolicy) =>
+  request(`${BASE_PATH}/metal-base-price-policies/${encodeURIComponent(variableCode)}`, {
+    method: 'PUT',
+    body: { pricePolicy },
+  })

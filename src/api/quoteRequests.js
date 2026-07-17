@@ -59,6 +59,12 @@ export const confirmPriceType = (oaNo, itemId, body = {}) =>
 export const fetchQuotePricePrepare = (oaNo, itemId, params) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/price-prepare`, { params })
 
+export const checkQuotePriceSources = (oaNo, itemId, body = {}) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/price-prepare/check`, {
+    method: 'POST',
+    body,
+  })
+
 export const generateQuotePricePrepare = (oaNo, itemId, body = {}) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/price-prepare/generate`, {
     method: 'POST',
@@ -96,7 +102,7 @@ export const exportQuoteCostRunVersion = async (oaNo, itemId, versionId) => {
   const downloadUrl = window.URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = downloadUrl
-  link.download = `cost-run_${oaNo}_${itemId}_${versionId}.csv`
+  link.download = `cost-run_${oaNo}_${itemId}_${versionId}.xlsx`
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)
