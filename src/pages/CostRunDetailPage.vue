@@ -432,6 +432,7 @@ const meta = computed(() => ({
   productCode: String(route.query.productCode || route.query.materialCode || ''),
   costRunNo: String(route.query.costRunNo || ''),
   versionNo: String(route.query.versionNo || ''),
+  legacyResult: String(route.query.legacyResult || '') === '1',
   series: String(route.query.series || ''),
   customerDrawing: String(route.query.customerDrawing || ''),
   // 见机表 r2 col 4 是空给业务方手填；OA 表当前没 owner 字段，留空
@@ -551,6 +552,7 @@ const loadDetail = async () => {
   try {
     const data = await fetchCostRunDetail(meta.value.oaNo, meta.value.productCode, {
       costRunNo: meta.value.costRunNo || undefined,
+      legacyResult: meta.value.legacyResult || undefined,
     })
     const parts = Array.isArray(data?.partItems) ? data.partItems : []
     const costs = Array.isArray(data?.costItems) ? data.costItems : []

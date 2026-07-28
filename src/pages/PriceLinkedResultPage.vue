@@ -117,7 +117,7 @@
             {{ lastImportMetaText }}
           </div>
           <div class="section-subtitle">
-            本区只用于核对本次导入和自动绑定结果；影响因素长期维护请进入影响因素表。
+            本区只用于核对本次导入结果；影响因素长期维护请进入影响因素表。
           </div>
         </div>
         <div class="section-actions">
@@ -133,7 +133,7 @@
             type="primary"
             @click="toggleImportLogs"
           >
-            {{ showImportLogs ? '收起日志' : '导入历史和日志' }}
+            {{ showImportLogs ? '收起导入记录' : '查看导入记录' }}
           </el-button>
         </div>
       </div>
@@ -143,6 +143,11 @@
           v-for="item in importSummaryItems"
           :key="item.key"
           class="summary-item"
+          :class="{ 'summary-item--clickable': isFailureSummaryItem(item) }"
+          :role="isFailureSummaryItem(item) ? 'button' : undefined"
+          :tabindex="isFailureSummaryItem(item) ? 0 : undefined"
+          @click="handleSummaryItemClick(item)"
+          @keydown.enter="handleSummaryItemClick(item)"
         >
           <div class="summary-label">{{ item.label }}</div>
           <div class="summary-value">
@@ -150,6 +155,9 @@
               {{ item.value }}
             </el-tag>
             <span v-else>{{ item.value }}</span>
+            <span v-if="isFailureSummaryItem(item)" class="summary-detail-link">
+              查看明细
+            </span>
           </div>
         </div>
       </div>
@@ -207,7 +215,11 @@
         <el-table-column prop="sourceRowNumber" label="来源行号" width="100" />
       </el-table>
 
-      <el-tabs v-if="hasImportDetails" v-model="importDetailTab" class="result-tabs">
+      <el-tabs
+        v-if="hasImportDetails && !selectedImportBatchId"
+        v-model="importDetailTab"
+        class="result-tabs"
+      >
         <el-tab-pane label="冲突处理" name="conflicts">
           <el-table
             :data="conflictRows"
@@ -345,28 +357,177 @@
         <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="loadImportBatchDetail(row.batchId)">
-              查看
+              查看结果
             </el-button>
           </template>
         </el-table-column>
       </el-table>
 
-      <el-table
-        v-if="showImportLogs && bindingLogRows.length"
-        :data="bindingLogRows"
-        class="result-table"
-        size="small"
-        border
+      <section
+        v-if="showImportLogs && selectedImportBatchId"
+        ref="importBatchResultRef"
+        class="formula-result-panel"
       >
-        <el-table-column prop="createdAt" label="时间" width="170" />
-        <el-table-column prop="materialCode" label="料号" width="140" />
-        <el-table-column prop="tokenName" label="变量" width="130" />
-        <el-table-column prop="action" label="动作" width="130" />
-        <el-table-column prop="status" label="状态" width="100" />
-        <el-table-column prop="factorIdentityId" label="影响因素ID" width="120" />
-        <el-table-column prop="sourceText" label="来源" min-width="180" />
-        <el-table-column prop="message" label="日志" min-width="260" />
-      </el-table>
+        <div class="formula-result-header">
+          <div>
+            <div class="section-title">批次导入结果</div>
+            <div class="section-subtitle">
+              批次 {{ selectedImportBatchId }} · 成功公式、失败记录分开展示
+            </div>
+          </div>
+          <div class="formula-result-actions">
+            <el-tag type="info" effect="plain">
+              公式 {{ formulaResultRows.length }} 条
+            </el-tag>
+            <el-tag :type="failureDisplayCount ? 'danger' : 'info'" effect="plain">
+              失败 {{ failureDisplayCount }} 条
+            </el-tag>
+          </div>
+        </div>
+
+        <el-tabs v-model="batchResultTab" class="batch-result-tabs">
+          <el-tab-pane :label="`联动公式 (${formulaResultRows.length})`" name="formulas">
+            <div class="batch-tab-toolbar">
+              <span>按料号和供应商聚合，同一公式引用多个因素时只展示一行。</span>
+              <el-button
+                v-if="bindingLogRows.length"
+                link
+                type="info"
+                @click="showTechnicalLogs = !showTechnicalLogs"
+              >
+                {{ showTechnicalLogs ? '收起技术明细' : '查看技术明细' }}
+              </el-button>
+            </div>
+            <el-table
+              :data="formulaResultRows"
+              class="formula-result-table"
+              size="small"
+              border
+              empty-text="该批次暂无联动公式识别记录"
+            >
+              <el-table-column prop="materialCode" label="料号" width="140" />
+              <el-table-column prop="supplierCode" label="供应商" width="120" />
+              <el-table-column prop="formula" label="联动公式" min-width="420">
+                <template #default="{ row }">
+                  <div class="formula-text">{{ row.formula }}</div>
+                </template>
+              </el-table-column>
+              <el-table-column label="识别结果" width="150" align="center">
+                <template #default="{ row }">
+                  <el-tag :type="row.resultTag" effect="light">
+                    {{ row.resultText }}
+                  </el-tag>
+                  <div v-if="row.message" class="formula-result-message">
+                    {{ row.message }}
+                  </div>
+                </template>
+              </el-table-column>
+              <el-table-column label="操作" width="90" align="center">
+                <template #default="{ row }">
+                  <el-button link type="primary" @click="copyFormula(row.formula)">
+                    复制
+                  </el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+
+            <el-collapse-transition>
+              <div v-if="showTechnicalLogs" class="technical-log-panel">
+                <div class="technical-log-title">自动绑定技术明细</div>
+                <el-table :data="bindingLogRows" size="small" border>
+                  <el-table-column prop="createdAt" label="时间" width="170" />
+                  <el-table-column prop="materialCode" label="料号" width="140" />
+                  <el-table-column prop="tokenName" label="变量" width="130" />
+                  <el-table-column prop="action" label="动作" width="130" />
+                  <el-table-column prop="status" label="状态" width="100" />
+                  <el-table-column prop="factorIdentityId" label="影响因素ID" width="120" />
+                  <el-table-column prop="sourceText" label="来源" min-width="180" />
+                  <el-table-column prop="message" label="日志" min-width="260" />
+                </el-table>
+              </div>
+            </el-collapse-transition>
+          </el-tab-pane>
+
+          <el-tab-pane :label="`失败明细 (${failureDisplayCount})`" name="failures">
+            <el-table
+              :data="failedRows"
+              class="failure-result-table"
+              size="small"
+              border
+              empty-text="该批次没有可回看的失败明细"
+            >
+              <el-table-column prop="rowNumber" label="Excel 行" width="90" />
+              <el-table-column label="物料" min-width="180">
+                <template #default="{ row }">
+                  <div class="material-code-text">{{ row.materialCode }}</div>
+                  <div v-if="row.materialName && row.materialName !== '-'" class="cell-subtext">
+                    {{ row.materialName }}
+                  </div>
+                </template>
+              </el-table-column>
+              <el-table-column prop="supplierCode" label="供应商" width="110" />
+              <el-table-column prop="formula" label="导入公式" min-width="220">
+                <template #default="{ row }">
+                  <div class="formula-text">{{ row.formula || '-' }}</div>
+                </template>
+              </el-table-column>
+              <el-table-column prop="formulaEffectiveDate" label="生效日期" width="110" />
+              <el-table-column label="失败原因" min-width="260">
+                <template #default="{ row }">
+                  <el-tag type="danger" effect="light" size="small">
+                    {{ row.failureTypeText }}
+                  </el-tag>
+                  <div class="failure-reason-text">{{ row.message }}</div>
+                </template>
+              </el-table-column>
+              <el-table-column prop="suggestion" label="处理建议" min-width="220" />
+              <el-table-column label="操作" width="110" fixed="right">
+                <template #default="{ row }">
+                  <el-button v-if="row.formula" link type="primary" @click="copyFormula(row.formula)">
+                    复制公式
+                  </el-button>
+                  <el-button
+                    v-if="row.canOpenBinding"
+                    v-hasPermi="['price:linked:binding:admin']"
+                    link
+                    type="primary"
+                    @click="openBindingByMaterial(row)"
+                  >
+                    人工绑定
+                  </el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </el-tab-pane>
+
+          <el-tab-pane
+            v-if="conflictRows.length"
+            :label="`冲突处理 (${conflictRows.length})`"
+            name="conflicts"
+          >
+            <el-table :data="conflictRows" size="small" border>
+              <el-table-column prop="conflictTypeText" label="冲突类型" width="150" />
+              <el-table-column prop="materialCode" label="料号" width="140" />
+              <el-table-column prop="factorName" label="影响因素" min-width="150" />
+              <el-table-column prop="formula" label="本次公式" min-width="240" />
+              <el-table-column prop="reason" label="冲突原因" min-width="260" />
+              <el-table-column label="操作" width="130" fixed="right">
+                <template #default="{ row }">
+                  <el-button
+                    v-if="row.conflictType === 'BINDING_HISTORY'"
+                    v-hasPermi="['price:linked:binding:admin']"
+                    link
+                    type="primary"
+                    @click="openBindingByMaterial(row)"
+                  >
+                    人工绑定
+                  </el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </el-tab-pane>
+        </el-tabs>
+      </section>
     </el-card>
 
     <el-card shadow="never">
@@ -857,7 +1018,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '../store/modules/user'
@@ -884,6 +1045,7 @@ import BasePagination from '../components/BasePagination.vue'
 // T24：trace drawer + 系统结果/Excel 金标/差异 所需的纯函数辅助层
 import {
   DIFF_THRESHOLD,
+  buildFormulaResultRows,
   buildTraceTimeline,
   buildImportSummaryItems,
   diffWithGolden,
@@ -914,6 +1076,10 @@ const showImportLogs = ref(false)
 const importDetailTab = ref('conflicts')
 const importHistoryRows = ref([])
 const bindingLogRows = ref([])
+const selectedImportBatchId = ref('')
+const showTechnicalLogs = ref(false)
+const batchResultTab = ref('formulas')
+const importBatchResultRef = ref(null)
 const returnToWorkbenchVisible = computed(() => Boolean(route.query.returnTo))
 
 const returnToWorkbench = () => {
@@ -1731,6 +1897,14 @@ const conflictRows = computed(() => importDetailRows.value.conflictRows)
 
 const failedRows = computed(() => importDetailRows.value.failedRows)
 
+const legacyUnpersistedErrorCount = computed(() =>
+  Math.max(0, Number(lastImportResult.value?.unpersistedErrorCount || 0)),
+)
+
+const failureDisplayCount = computed(() =>
+  failedRows.value.length + legacyUnpersistedErrorCount.value,
+)
+
 const hasImportDetails = computed(
   () => conflictRows.value.length > 0 || failedRows.value.length > 0,
 )
@@ -1745,6 +1919,28 @@ const importSummaryItems = computed(() =>
     failedRows: failedRows.value,
   }),
 )
+
+const isFailureSummaryItem = (item) =>
+  item?.key === 'failed' && Number(item?.value || 0) > 0
+
+const handleSummaryItemClick = async (item) => {
+  if (!isFailureSummaryItem(item)) {
+    return
+  }
+  showImportLogs.value = true
+  const batchId =
+    lastImportResult.value?.factorUploadBatchId ||
+    lastImportResult.value?.batchId ||
+    importHistoryRows.value[0]?.batchId
+  if (batchId && batchId !== '-') {
+    await loadImportBatchDetail(batchId, { silent: true, tab: 'failures' })
+  } else {
+    await loadImportHistory({ loadLatest: true })
+    batchResultTab.value = 'failures'
+  }
+  await nextTick()
+  importBatchResultRef.value?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+}
 
 const lastImportMetaText = computed(() => {
   const row = importHistoryRows.value[0]
@@ -1784,7 +1980,7 @@ const normalizeImportHistoryRow = (row) => ({
   summary:
     `影响因素 ${row?.factorRowCount ?? '-'}，` +
     `联动价 ${row?.linkedRowCount ?? '-'}，` +
-    `自动绑定 ${row?.autoBindingCount ?? '-'}，` +
+    `因素识别 ${row?.autoBindingCount ?? '-'}，` +
     `告警 ${row?.warningCount ?? '-'}，` +
     `失败 ${row?.errorCount ?? '-'}`,
 })
@@ -1797,6 +1993,8 @@ const normalizeBindingLogRow = (row) => ({
     row?.sourceCellRef,
   ].filter(Boolean).join(' / ') || '-',
 })
+
+const formulaResultRows = computed(() => buildFormulaResultRows(bindingLogRows.value))
 
 const buildImportHistoryParams = () => {
   const scope = importHistoryFilter.value.scope
@@ -1845,13 +2043,19 @@ const loadMoreImportHistory = () => {
   loadImportHistory({ loadLatest: false })
 }
 
-const loadImportBatchDetail = async (batchId, { silent = false } = {}) => {
+const loadImportBatchDetail = async (
+  batchId,
+  { silent = false, tab = 'formulas' } = {},
+) => {
   if (!batchId || batchId === '-') {
     return
   }
   try {
     const detail = await fetchLinkedImportBatchDetail(batchId)
     lastImportResult.value = detail || {}
+    selectedImportBatchId.value = batchId
+    showTechnicalLogs.value = false
+    batchResultTab.value = tab
     bindingLogRows.value = Array.isArray(detail?.bindingLogs)
       ? detail.bindingLogs.map(normalizeBindingLogRow)
       : []
@@ -2083,6 +2287,9 @@ const submitMonthlyImport = async () => {
     importDialogVisible.value = false
     showFactorPreview.value = true
     showImportLogs.value = true
+    selectedImportBatchId.value = ''
+    bindingLogRows.value = []
+    showTechnicalLogs.value = false
     importDetailTab.value = conflictRows.value.length ? 'conflicts' : 'failures'
     const detailRows = splitImportDetailRows(result || {}, factorPreviewRows.value)
     const failed = detailRows.failedRows.length
@@ -2097,6 +2304,13 @@ const submitMonthlyImport = async () => {
     }
     fetchList({ loadLatestImport: false })
     await loadImportHistory({ loadLatest: false })
+    const importedBatchId = result?.factorUploadBatchId || result?.batchId
+    if (importedBatchId) {
+      await loadImportBatchDetail(importedBatchId, {
+        silent: true,
+        tab: failed ? 'failures' : conflicts ? 'conflicts' : 'formulas',
+      })
+    }
     loadPending()
   } catch (error) {
     ElMessage.error(error?.message || '导入失败')
@@ -2313,16 +2527,40 @@ onMounted(loadPending)
   background: #fff;
 }
 
+.summary-item--clickable {
+  border-color: #fecaca;
+  background: #fffafa;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.summary-item--clickable:hover,
+.summary-item--clickable:focus-visible {
+  border-color: #f87171;
+  box-shadow: 0 0 0 2px rgb(248 113 113 / 12%);
+  outline: none;
+}
+
 .summary-label {
   font-size: 12px;
   color: #6b7280;
 }
 
 .summary-value {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-top: 6px;
   font-size: 18px;
   font-weight: 600;
   color: #111827;
+}
+
+.summary-detail-link {
+  color: #dc2626;
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .quote-base-summary {
@@ -2375,6 +2613,88 @@ onMounted(loadPending)
   margin: 4px 0 10px;
   color: #6b7280;
   font-size: 12px;
+}
+
+.formula-result-panel {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fbfdff;
+}
+
+.formula-result-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.formula-result-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.batch-tab-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 10px;
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.formula-result-table {
+  width: 100%;
+}
+
+.formula-text {
+  color: #1f2a37;
+  line-height: 1.55;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.formula-result-message {
+  margin-top: 6px;
+  color: #b42318;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.material-code-text {
+  color: #1f2937;
+  font-weight: 600;
+}
+
+.cell-subtext {
+  margin-top: 3px;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.failure-reason-text {
+  margin-top: 6px;
+  color: #4b5563;
+  line-height: 1.5;
+  white-space: normal;
+}
+
+.technical-log-panel {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed #d1d5db;
+}
+
+.technical-log-title {
+  margin-bottom: 10px;
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .monthly-upload {

@@ -61,7 +61,15 @@
       </el-form>
     </div>
 
-    <el-table :data="displayRows" border stripe v-loading="loading">
+    <el-table
+      :data="displayRows"
+      border
+      stripe
+      scrollbar-always-on
+      max-height="calc(100vh - 330px)"
+      class="quote-request-table"
+      v-loading="loading"
+    >
       <el-table-column prop="oaNo" label="报价单号" min-width="180" />
       <el-table-column prop="processCode" label="流程类型" width="130" />
       <el-table-column prop="sourceType" label="来源类型" width="120">

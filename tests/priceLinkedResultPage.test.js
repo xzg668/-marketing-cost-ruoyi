@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import {
   DIFF_THRESHOLD,
+  buildFormulaResultRows,
   buildImportSummaryItems,
   buildTraceTimeline,
   diffWithGolden,
@@ -104,7 +105,7 @@ describe('PriceLinkedResultPage.vue V2-14 月度导入和结果页契约', () =>
     )
     assert.match(
       content,
-      /v-hasPermi="\['price:linked-item:import-history:list'\]"[\s\S]{0,180}导入历史和日志/
+      /v-hasPermi="\['price:linked-item:import-history:list'\]"[\s\S]{0,180}查看导入记录/
     )
     assert.match(content, /v-hasPermi="\['price:linked-item:add'\]"/)
     assert.match(content, /v-hasPermi="\['price:linked-item:edit'\]"/)
@@ -180,7 +181,7 @@ describe('PriceLinkedResultPage.vue V2-14 月度导入和结果页契约', () =>
     assert.match(content, /本次影响因素预览/)
     assert.match(content, /冲突处理/)
     assert.match(content, /失败明细/)
-    assert.match(content, /导入历史和日志/)
+    assert.match(content, /查看导入记录/)
   })
 
   it('V4-11：联动价格主表使用服务端分页，不一次性加载全部料号', () => {
@@ -218,8 +219,31 @@ describe('PriceLinkedResultPage.vue V2-14 月度导入和结果页契约', () =>
   })
 
   it('V4-04：导入结果区提示这里只核对本次导入，不做长期维护', () => {
-    assert.match(content, /本区只用于核对本次导入和自动绑定结果/)
+    assert.match(content, /本区只用于核对本次导入结果/)
     assert.match(content, /影响因素长期维护请进入影响因素表/)
+  })
+
+  it('V4-12：历史批次分开展示公式和失败明细，技术日志折叠显示', () => {
+    assert.match(content, /批次导入结果/)
+    assert.match(content, /formulaResultRows/)
+    assert.match(content, /batchResultTab/)
+    assert.match(content, /failureDisplayCount/)
+    assert.doesNotMatch(content, /失败记录仅保留了数量/)
+    assert.match(content, /label="联动公式"/)
+    assert.doesNotMatch(content, /label="引用因素"/)
+    assert.match(content, /label="导入公式"/)
+    assert.match(content, /label="处理建议"/)
+    assert.match(content, /查看技术明细/)
+    assert.match(content, /自动绑定技术明细/)
+    assert.match(content, /v-if="showTechnicalLogs"/)
+  })
+
+  it('V4-13：失败数量卡片可点击并定位到批次失败明细', () => {
+    assert.match(content, /summary-item--clickable/)
+    assert.match(content, /查看明细/)
+    assert.match(content, /handleSummaryItemClick/)
+    assert.match(content, /tab: 'failures'/)
+    assert.match(content, /importBatchResultRef/)
   })
 
   it('V4-04：提供跳转到影响因素表本月汇总的入口', () => {
@@ -325,8 +349,106 @@ describe('PriceLinkedResultPage.vue T7 导入结果展示辅助', () => {
     }, [])
 
     assert.equal(detailRows.failedRows.length, 1)
-    assert.equal(detailRows.failedRows[0].failureTypeText, '公式版本生效日期倒挂')
+    assert.equal(detailRows.failedRows[0].failureTypeText, '公式版本生效日期冲突')
     assert.match(detailRows.failedRows[0].message, /生命周期倒挂/)
+  })
+
+  it('持久化失败明细保留物料、公式、生效日期和处理建议', () => {
+    const detailRows = splitImportDetailRows({
+      errors: [{
+        rowNumber: 15,
+        materialCode: '301990317',
+        materialName: '废紫铜沫（干净）',
+        supplierCode: '',
+        sourceSheetName: '联动价',
+        formula: 'Cu * 0.981',
+        formulaEffectiveDate: '2026-07-01',
+        errorStage: 'FORMULA_VERSION',
+        errorCode: 'FORMULA_LIFECYCLE_OVERLAP',
+        message: '公式版本生命周期倒挂',
+        suggestion: '请将新公式生效日期调整后重新导入',
+      }],
+    }, [])
+
+    assert.equal(detailRows.failedRows.length, 1)
+    assert.equal(detailRows.failedRows[0].rowNumber, 15)
+    assert.equal(detailRows.failedRows[0].materialName, '废紫铜沫（干净）')
+    assert.equal(detailRows.failedRows[0].formula, 'Cu * 0.981')
+    assert.equal(detailRows.failedRows[0].formulaEffectiveDate, '2026-07-01')
+    assert.equal(detailRows.failedRows[0].refText, '联动价!15')
+    assert.match(detailRows.failedRows[0].suggestion, /重新导入/)
+    assert.equal(detailRows.failedRows[0].canOpenBinding, false)
+  })
+
+  it('旧批次未持久化失败行时，失败汇总仍使用批次总数', () => {
+    const items = buildImportSummaryItems({
+      errorCount: 3,
+      unpersistedErrorCount: 3,
+      errors: [],
+    }, {
+      failedRows: [],
+    })
+
+    const failed = items.find((item) => item.key === 'failed')
+    assert.equal(failed.value, 3)
+    assert.equal(failed.tag, 'danger')
+  })
+
+  it('逐因素技术日志按联动价料号聚合成一条公式结果', () => {
+    const rows = buildFormulaResultRows([
+      {
+        linkedItemId: 191,
+        materialCode: '201500340',
+        supplierCode: 'S001',
+        excelFormula: 'Cu * 0.981 + 加工费',
+        tokenName: 'Cu',
+        sourceSheetName: '影响因素10',
+        sourceCellRef: 'E7',
+        status: 'SUCCESS',
+      },
+      {
+        linkedItemId: 191,
+        materialCode: '201500340',
+        supplierCode: 'S001',
+        excelFormula: 'Cu * 0.981 + 加工费',
+        tokenName: '加工费',
+        sourceSheetName: '影响因素10',
+        sourceCellRef: 'E8',
+        status: 'SUCCESS',
+      },
+    ])
+
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0].materialCode, '201500340')
+    assert.equal(rows[0].formula, 'Cu * 0.981 + 加工费')
+    assert.equal(rows[0].factorRefs.length, 2)
+    assert.equal(rows[0].resultText, '已识别 2 个因素')
+    assert.equal(rows[0].resultTag, 'success')
+  })
+
+  it('同一公式存在失败日志时优先显示失败原因', () => {
+    const rows = buildFormulaResultRows([
+      {
+        linkedItemId: 192,
+        materialCode: '301990317',
+        excelFormula: 'Cu * 0.981',
+        tokenName: 'Cu',
+        status: 'success',
+      },
+      {
+        linkedItemId: 192,
+        materialCode: '301990317',
+        excelFormula: 'Cu * 0.981',
+        tokenName: '加工费',
+        status: 'failed',
+        message: '未找到对应影响因素',
+      },
+    ])
+
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0].resultText, '识别失败')
+    assert.equal(rows[0].resultTag, 'danger')
+    assert.equal(rows[0].message, '未找到对应影响因素')
   })
 })
 

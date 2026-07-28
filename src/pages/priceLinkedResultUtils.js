@@ -118,6 +118,76 @@ export const pickImportResultValue = (result = {}, ...keys) => {
   return null
 }
 
+const bindingStatusRank = (status) => {
+  const normalized = String(status || '').toUpperCase()
+  if (normalized === 'FAILED') return 3
+  if (normalized === 'WARNING') return 2
+  if (normalized === 'SUCCESS') return 1
+  return 0
+}
+
+/**
+ * 把逐 token 的自动绑定技术日志聚合成逐联动公式的业务结果。
+ * 同一 linkedItemId 只展示一行，避免一个公式引用多个因素时重复刷屏。
+ */
+export const buildFormulaResultRows = (bindingLogs = []) => {
+  const grouped = new Map()
+  for (const row of Array.isArray(bindingLogs) ? bindingLogs : []) {
+    const formula = row?.excelFormula || ''
+    const key = row?.linkedItemId != null
+      ? `item:${row.linkedItemId}`
+      : [row?.materialCode, row?.supplierCode, formula].map((value) => value || '').join('|')
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        key,
+        linkedItemId: row?.linkedItemId ?? null,
+        materialCode: row?.materialCode || '-',
+        supplierCode: row?.supplierCode || '-',
+        formula: formula || '-',
+        factorRefs: [],
+        status: '',
+        message: '',
+      })
+    }
+    const current = grouped.get(key)
+    const sourceText = [row?.sourceSheetName, row?.sourceCellRef]
+      .filter(Boolean)
+      .join(' / ') || '-'
+    const refKey = [row?.tokenName, sourceText].join('|')
+    if (!current.factorRefs.some((ref) => ref.key === refKey)) {
+      current.factorRefs.push({
+        key: refKey,
+        tokenName: row?.tokenName || '公式因素',
+        sourceText,
+      })
+    }
+    if (bindingStatusRank(row?.status) > bindingStatusRank(current.status)) {
+      current.status = String(row?.status || '').toUpperCase()
+    }
+    const normalizedStatus = String(row?.status || '').toUpperCase()
+    if (normalizedStatus !== 'SUCCESS' && row?.message && !current.message) {
+      current.message = row.message
+    }
+  }
+
+  return [...grouped.values()].map((row) => {
+    if (row.status === 'FAILED') {
+      return { ...row, resultText: '识别失败', resultTag: 'danger' }
+    }
+    if (row.status === 'WARNING') {
+      return { ...row, resultText: '需人工确认', resultTag: 'warning' }
+    }
+    if (row.status === 'SUCCESS') {
+      return {
+        ...row,
+        resultText: `已识别 ${row.factorRefs.length} 个因素`,
+        resultTag: 'success',
+      }
+    }
+    return { ...row, resultText: '未识别', resultTag: 'info' }
+  })
+}
+
 export const importFactorPriceConflictStrategyText = (value) => {
   if (value === 'KEEP_EXISTING') return '保留已有价格，冲突行跳过'
   if (value === 'OVERWRITE') return '仅覆盖冲突价格行'
@@ -137,7 +207,14 @@ export const buildImportSummaryItems = (result = {}, context = {}) => {
   const bindingConflictCount = pickImportResultValue(result, 'conflictBindingCount') ?? 0
   const rawBindingErrorCount = pickImportResultValue(result, 'bindingErrorCount') ?? 0
   const fallbackFailedCount = Math.max(0, rawBindingErrorCount - bindingConflictCount)
-  const failedCount = failedRows.length || fallbackFailedCount
+  const persistedTotalErrorCount =
+    pickImportResultValue(result, 'errorCount') ?? result?.batch?.errorCount ?? null
+  const unpersistedErrorCount = Number(result?.unpersistedErrorCount || 0)
+  const restoredFailedCount = failedRows.length + unpersistedErrorCount
+  const failedCount = Math.max(
+    restoredFailedCount,
+    persistedTotalErrorCount == null ? fallbackFailedCount : Number(persistedTotalErrorCount || 0),
+  )
 
   return [
     { key: 'batch', label: '上传批次ID', value: formatImportCount(pickImportResultValue(result, 'batchId', 'factorUploadBatchId')) },
@@ -246,16 +323,39 @@ export const buildFactorPriceConflictRows = (factorPreviewRows = []) =>
 
 export const normalizeImportErrorRow = (row = {}) => {
   const message = row.message || row.reason || ''
-  const isFormulaLifecycle = message.includes('生命周期倒挂') || message.includes('formulaEffectiveDate')
+  const errorCode = String(row.errorCode || '').toUpperCase()
+  const errorStage = String(row.errorStage || '').toUpperCase()
+  const isFormulaLifecycle =
+    errorCode === 'FORMULA_LIFECYCLE_OVERLAP' ||
+    message.includes('生命周期倒挂') ||
+    message.includes('formulaEffectiveDate')
+  const failureTypeText = isFormulaLifecycle
+    ? '公式版本生效日期冲突'
+    : errorCode === 'FORMULA_INVALID'
+      ? '联动公式无法解析'
+      : errorStage === 'FACTOR_IMPORT'
+        ? '影响因素导入失败'
+        : errorStage === 'EXCEL_PARSE'
+          ? 'Excel 解析失败'
+          : '导入失败'
+  const sourceSheetName = row.sourceSheetName || row.sheetName || ''
+  const rowNumber = row.rowNumber ?? row.excelRowNumber ?? '-'
   return {
-    rowNumber: row.rowNumber ?? row.excelRowNumber ?? '-',
+    rowNumber,
     materialCode: row.materialCode || '-',
-    refText: '-',
-    formula: row.formula || '',
+    materialName: row.materialName || '-',
+    supplierCode: row.supplierCode || '-',
+    sourceSheetName,
+    refText: sourceSheetName ? `${sourceSheetName}!${rowNumber}` : '-',
+    formula: row.formula || row.formulaExpr || '',
+    formulaEffectiveDate: row.formulaEffectiveDate || row.effectiveDate || '-',
+    errorStage,
+    errorCode,
     message,
+    suggestion: row.suggestion || '请根据失败原因修正 Excel 后重新导入',
     failureType: isFormulaLifecycle ? 'FORMULA_LIFECYCLE' : 'IMPORT_ERROR',
-    failureTypeText: isFormulaLifecycle ? '公式版本生效日期倒挂' : '导入失败',
-    canOpenBinding: !!row.materialCode,
+    failureTypeText,
+    canOpenBinding: errorStage === 'AUTO_BIND' && !!row.materialCode,
   }
 }
 

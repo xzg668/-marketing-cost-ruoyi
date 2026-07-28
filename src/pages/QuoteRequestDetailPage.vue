@@ -407,24 +407,31 @@ async function viewCostingResult(row) {
       }
       return version.currentConfirmed || version.status === 'CONFIRMED'
     })
-    if (!displayVersion?.costRunNo) {
+    const legacyResultAvailable = hasCostingResult(row)
+    if (!displayVersion?.costRunNo && !legacyResultAvailable) {
       throw new Error('当前产品没有可查看的已确认核算版本')
     }
     const resultHeader = response?.resultHeader || {}
     const productCode = resultHeader.productCode || row.materialNo
+    const query = {
+      customer: detail.value.customer || '',
+      productName: resultHeader.productName || row.productName || '',
+      productModel: resultHeader.productModel || row.sunlModel || row.spec || '',
+      productCode,
+      materialCode: productCode,
+      customerDrawing: row.customerDrawing || '',
+    }
+    if (displayVersion?.costRunNo) {
+      query.costRunNo = displayVersion.costRunNo
+      query.versionNo = displayVersion.versionNo || displayVersion.costRunNo
+    } else {
+      query.legacyResult = '1'
+      query.versionNo = '历史核算结果'
+    }
     await router.push({
       name: 'cost-run-detail',
       params: { oaNo: oaNo.value },
-      query: {
-        customer: detail.value.customer || '',
-        productName: resultHeader.productName || row.productName || '',
-        productModel: resultHeader.productModel || row.sunlModel || row.spec || '',
-        productCode,
-        materialCode: productCode,
-        customerDrawing: row.customerDrawing || '',
-        costRunNo: displayVersion.costRunNo,
-        versionNo: displayVersion.versionNo || displayVersion.costRunNo,
-      },
+      query,
     })
   } catch (error) {
     ElMessage.error(error?.message || '查看核算结果失败')
