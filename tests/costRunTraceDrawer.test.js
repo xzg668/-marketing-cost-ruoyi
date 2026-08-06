@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import fs from 'node:fs'
 import path from 'node:path'
+import { rangeTraceExplanation, rangeTraceMeta } from '../src/components/costRunTraceDrawerUtils.js'
 
 const DETAIL_PAGE_FILE = path.resolve(import.meta.dirname, '../src/pages/CostRunDetailPage.vue')
 const DRAWER_FILE = path.resolve(import.meta.dirname, '../src/components/CostRunTraceDrawer.vue')
@@ -53,5 +54,51 @@ describe('T10 成本一览表核算底稿抽屉', () => {
     assert.match(apiContent, /fetchCostRunTraceDetail/)
     assert.match(apiContent, /\/api\/v1\/cost-run\/detail\/\$\{encodeURIComponent/)
     assert.match(apiContent, /\/traces\/\$\{encodeURIComponent/)
+  })
+})
+
+describe('RPI1-11 区间价取价底稿和兜底原因', () => {
+  const detail = {
+    sourceSnapshotJson: JSON.stringify({
+      rangePriceItem: {
+        rangeBasis: 'FACTOR',
+        factorCode: 'CU',
+        supplierName: '供应商乙',
+        supplierCode: 'SUP-B',
+      },
+      priceConclusion: {
+        candidateSupplierCount: 2,
+        mainSupplierName: '供应商乙',
+        mainSupplierCode: 'SUP-B',
+        supplyRatio: 0.7,
+        supplierMatchMode: '供应商代码',
+        finalPriceRowId: 9101,
+        finalPriceExclTax: 0.392035,
+        fallback: true,
+        fallbackReason: '主供应商无价格记录',
+      },
+    }),
+  }
+
+  it('底稿元数据保留主供、比例、最终价格行和兜底原因', () => {
+    const meta = rangeTraceMeta(detail)
+    assert.equal(meta.candidateSupplierCount, 2)
+    assert.equal(meta.mainSupplierCode, 'SUP-B')
+    assert.equal(meta.supplyRatio, 0.7)
+    assert.equal(meta.finalPriceRowId, 9101)
+    assert.equal(meta.fallback, true)
+    assert.equal(meta.fallbackReason, '主供应商无价格记录')
+  })
+
+  it('取数说明明确告诉报价员发生了什么兜底', () => {
+    assert.match(rangeTraceExplanation(detail), /主供应商无价格记录/)
+  })
+
+  it('抽屉展示供应商代码、候选数量、供货比例和兜底原因', () => {
+    assert.match(drawerContent, /供应商代码/)
+    assert.match(drawerContent, /候选供应商数量/)
+    assert.match(drawerContent, /供货比例/)
+    assert.match(drawerContent, /是否兜底/)
+    assert.match(drawerContent, /兜底原因/)
   })
 })

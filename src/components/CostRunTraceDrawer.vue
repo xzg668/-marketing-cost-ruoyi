@@ -335,7 +335,7 @@ const priceLineRows = computed(() => {
     return normalizeFixedPriceLine(source.fixedPriceItem || {})
   }
   if (isRangeTrace.value) {
-    return normalizeRangePriceLine(source.rangePriceItem || {})
+    return normalizeRangePriceLine(source.rangePriceItem || {}, source.priceConclusion || {})
   }
   return []
 })
@@ -657,8 +657,8 @@ function normalizeFixedPriceLine(row) {
   return rows
 }
 
-function normalizeRangePriceLine(row) {
-  if (!row || Object.keys(row).length === 0) return []
+function normalizeRangePriceLine(row, conclusion = {}) {
+  if ((!row || Object.keys(row).length === 0) && Object.keys(conclusion).length === 0) return []
   const rows = []
   const factorCode = row.factorCode || row.factor_code
   const rangeBasis = String(row.rangeBasis || row.range_basis || '').trim().toUpperCase()
@@ -669,6 +669,12 @@ function normalizeRangePriceLine(row) {
   pushVariable(rows, '行情因素', factorCode ? rangeFactorDisplayName(factorCode, rangeType) : '', '')
   pushVariable(rows, '报价单行情值', row.factorValue ?? row.factor_value, '')
   pushVariable(rows, '供应商', row.supplierName, '')
+  pushVariable(rows, '供应商代码', row.supplierCode, '')
+  pushVariable(rows, '候选供应商数量', conclusion.candidateSupplierCount ?? row.candidateSupplierCount, '')
+  pushVariable(rows, '主供应商名称', conclusion.mainSupplierName ?? row.mainSupplierName, '')
+  pushVariable(rows, '主供应商代码', conclusion.mainSupplierCode ?? row.mainSupplierCode, '')
+  pushVariable(rows, '供货比例', conclusion.supplyRatio ?? row.supplyRatio, '')
+  pushVariable(rows, '供应商匹配方式', conclusion.supplierMatchMode ?? row.supplierMatchMode, '')
   pushVariable(rows, '物料编码', row.materialCode, '')
   pushVariable(rows, '物料名称', row.materialName, '')
   pushVariable(rows, '规格型号', row.specModel, '')
@@ -676,6 +682,13 @@ function normalizeRangePriceLine(row) {
   pushVariable(rows, '区间上限', row.rangeHigh ?? row.range_high, '')
   pushVariable(rows, '不含税单价', row.priceExclTax, '')
   pushVariable(rows, '含税单价', row.priceInclTax, '')
+  pushVariable(rows, '最终价格行ID', conclusion.finalPriceRowId ?? row.finalPriceRowId ?? row.id, '')
+  pushVariable(rows, '最终不含税单价', conclusion.finalPriceExclTax ?? row.finalPriceExclTax ?? row.priceExclTax, '')
+  const fallbackValue = conclusion.fallback ?? row.fallback
+  if (fallbackValue !== null && fallbackValue !== undefined) {
+    pushVariable(rows, '是否兜底', fallbackValue === true || fallbackValue === '是' ? '是' : '否', '')
+  }
+  pushVariable(rows, '兜底原因', conclusion.fallbackReason ?? row.fallbackReason, '')
   pushVariable(rows, '生效日期', row.effectiveFrom, '')
   pushVariable(rows, '失效日期', row.effectiveTo, '')
   return rows
@@ -741,6 +754,16 @@ function variableLabel(key) {
     materialCode: '物料编码',
     fixedPrice: '固定价',
     supplierName: '供应商',
+    supplierCode: '供应商代码',
+    candidateSupplierCount: '候选供应商数量',
+    mainSupplierName: '主供应商名称',
+    mainSupplierCode: '主供应商代码',
+    supplyRatio: '供货比例',
+    supplierMatchMode: '供应商匹配方式',
+    finalPriceRowId: '最终价格行ID',
+    finalPriceExclTax: '最终不含税单价',
+    fallback: '是否兜底',
+    fallbackReason: '兜底原因',
     effectiveFrom: '生效日期',
     effectiveTo: '失效日期',
     pricingMonth: '价格月份',

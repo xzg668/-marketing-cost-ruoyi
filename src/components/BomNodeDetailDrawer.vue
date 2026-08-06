@@ -13,11 +13,13 @@
     <div v-else class="node-detail">
       <!-- 业务标记 —— 方便一眼判断是否接管/部品联动/结算行 -->
       <div class="tag-row">
-        <el-tag v-if="node.isLeaf === 1" type="success" size="small">叶子节点</el-tag>
+        <el-tag v-if="isLeafNode(node)" type="success" size="small">叶子节点</el-tag>
         <el-tag v-else type="info" size="small">中间节点</el-tag>
         <el-tag v-if="node.shapeAttr === '部品联动'" type="warning" size="small">
           部品联动
         </el-tag>
+        <el-tag v-if="node.alternativeChildType === 'STANDARD'" type="primary" size="small">标准料</el-tag>
+        <el-tag v-if="node.alternativeChildType === 'ALTERNATIVE'" type="warning" size="small">替代料</el-tag>
         <el-tag v-if="isTakeover(node)" type="warning" size="small">接管</el-tag>
       </div>
 
@@ -37,10 +39,10 @@
           {{ node.materialSpec || '-' }}
         </el-descriptions-item>
         <el-descriptions-item label="层级">
-          {{ node.level ?? '-' }}
+          {{ node.nodeLevel ?? node.level ?? '-' }}
         </el-descriptions-item>
         <el-descriptions-item label="路径">
-          <code class="path-code">{{ node.path || '-' }}</code>
+          <code class="path-code">{{ node.nodePath || node.path || '-' }}</code>
         </el-descriptions-item>
         <el-descriptions-item label="单件用量（相对父）">
           {{ formatNum(node.qtyPerParent) }}
@@ -49,7 +51,14 @@
           {{ formatNum(node.qtyPerTop) }}
         </el-descriptions-item>
         <el-descriptions-item label="形态属性">
-          {{ node.shapeAttr || '-' }}
+          {{ shapeLabel(node.effectiveMaterialShape || node.shapeAttr) }}
+        </el-descriptions-item>
+        <el-descriptions-item v-if="node.shapeResolutionSource" label="形态来源">
+          {{ shapeSourceLabel(node.shapeResolutionSource) }}
+        </el-descriptions-item>
+        <el-descriptions-item v-if="node.selectedSupplierCode || node.selectedSupplierName" label="主供应商">
+          {{ node.selectedSupplierName || node.selectedSupplierCode }}
+          <template v-if="node.selectedSupplyRatio != null">（{{ formatRatio(node.selectedSupplyRatio) }}）</template>
         </el-descriptions-item>
         <el-descriptions-item label="生产类别">
           {{ node.sourceCategory || '-' }}
@@ -91,6 +100,36 @@ const visible = computed({
 function isTakeover(node) {
   const name = node?.materialName || ''
   return name.includes('接管')
+}
+
+function isLeafNode(node) {
+  if (node?.isLeaf === 1) return true
+  return Array.isArray(node?.children) && node.children.length === 0
+}
+
+function shapeLabel(value) {
+  const labels = {
+    MANUFACTURE: '制造件',
+    PURCHASE: '采购件',
+    OUTSOURCE: '委外加工件',
+    VIRTUAL: '虚拟件',
+  }
+  return labels[String(value || '').toUpperCase()] || value || '-'
+}
+
+function shapeSourceLabel(value) {
+  const labels = {
+    U9: 'U9 料品档案',
+    FIXED_POLICY: '固定形态规则',
+    SUPPLIER_RATIO: '供货比例规则',
+  }
+  return labels[String(value || '').toUpperCase()] || value || '-'
+}
+
+function formatRatio(value) {
+  const number = Number(value)
+  if (!Number.isFinite(number)) return String(value)
+  return `${Number(((Math.abs(number) <= 1 ? number * 100 : number)).toFixed(4))}%`
 }
 
 /** qty 展示：原样保留精度，NULL 返 "-" */

@@ -167,6 +167,178 @@
         <el-button type="primary" @click="confirmFactorSelection">确定</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="rangePreviewVisible"
+      title="类型1区间价导入预览"
+      width="94%"
+      top="5vh"
+    >
+      <el-alert
+        :title="rangePreviewAlertTitle"
+        :type="rangePreviewCanSubmit ? 'success' : 'error'"
+        :closable="false"
+        show-icon
+      >
+        <template #default>
+          <span v-if="rangePreviewCanSubmit">
+            已按现有区间价接口生成标准请求，请核对后确认导入。
+          </span>
+          <span v-else>
+            存在解析或匹配错误，修正 Excel 后重新导入；本批数据不会提交。
+          </span>
+        </template>
+      </el-alert>
+      <div v-if="rangePreviewSummary.failedCount > 0" class="range-preview-error-action">
+        <el-button type="danger" plain @click="rangeImportErrorVisible = true">
+          查看完整错误明细
+        </el-button>
+      </div>
+
+      <div class="range-preview-summary">
+        <span>业务行 {{ rangePreviewSummary.totalCount }}</span>
+        <span class="range-preview-success">
+          匹配成功 {{ rangePreviewSummary.matchedCount }}
+        </span>
+        <span :class="{ 'range-preview-error': rangePreviewSummary.failedCount > 0 }">
+          失败/冲突 {{ rangePreviewSummary.failedCount }}
+        </span>
+        <span>展开明细 {{ rangePreviewExpandedCount }}</span>
+      </div>
+
+      <el-tabs v-model="rangePreviewActiveTab">
+        <el-tab-pane
+          :label="`匹配结果（${rangePreviewSummary.totalCount}）`"
+          name="matches"
+        >
+          <el-table
+            :data="rangePreviewRows"
+            border
+            stripe
+            max-height="520"
+            class="range-preview-table"
+          >
+            <el-table-column prop="sourceRowNumber" label="Sheet1行号" width="105" />
+            <el-table-column prop="materialName" label="名称" min-width="120" />
+            <el-table-column prop="specModel" label="规格" min-width="220" show-overflow-tooltip />
+            <el-table-column prop="supplierShortName" label="供方简称" min-width="130" />
+            <el-table-column prop="materialCode" label="匹配料号" min-width="130">
+              <template #default="{ row }">
+                {{ row.materialCode || '—' }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="supplierName" label="供应商完整名称" min-width="220">
+              <template #default="{ row }">
+                {{ row.supplierName || '—' }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="supplierCode" label="供应商代码" min-width="120">
+              <template #default="{ row }">
+                {{ row.supplierCode || '—' }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="intervalCount" label="区间数量" width="95" align="right" />
+            <el-table-column label="匹配状态" width="105">
+              <template #default="{ row }">
+                <el-tag :type="rangePreviewStatusType(row.matchStatus)" effect="plain">
+                  {{ row.matchStatusLabel }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="errorReason" label="异常原因" min-width="260">
+              <template #default="{ row }">
+                {{ row.errorReason || '—' }}
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+        <el-tab-pane
+          :label="`导入明细（${rangePreviewExpandedCount}）`"
+          name="details"
+          :disabled="rangePreviewExpandedCount === 0"
+        >
+          <el-table
+            :data="rangePreviewExpandedRows"
+            border
+            stripe
+            max-height="520"
+            class="range-preview-table"
+          >
+            <el-table-column prop="materialCode" label="料号" width="130" />
+            <el-table-column prop="materialName" label="名称" min-width="120" />
+            <el-table-column prop="specModel" label="规格" min-width="210" show-overflow-tooltip />
+            <el-table-column prop="supplierCode" label="供应商代码" width="120" />
+            <el-table-column prop="supplierName" label="供应商完整名称" min-width="210" />
+            <el-table-column prop="rangeLow" label="区间下限" width="110" align="right" />
+            <el-table-column prop="rangeHigh" label="区间上限" width="110" align="right" />
+            <el-table-column prop="priceExclTax" label="不含税价" width="115" align="right" />
+            <el-table-column prop="priceInclTax" label="含税价" width="115" align="right" />
+            <el-table-column prop="effectiveFrom" label="生效日期" width="115" />
+            <el-table-column prop="effectiveTo" label="失效日期" width="115" />
+          </el-table>
+        </el-tab-pane>
+      </el-tabs>
+
+      <template #footer>
+        <el-button @click="rangePreviewVisible = false">关闭</el-button>
+        <el-button
+          type="primary"
+          :disabled="!rangePreviewCanSubmit"
+          :loading="rangePreviewImporting"
+          @click="confirmRangeType1Import"
+        >
+          确认导入
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="rangeImportErrorVisible"
+      title="导入错误明细"
+      width="92%"
+      top="6vh"
+    >
+      <el-alert
+        type="error"
+        :closable="false"
+        show-icon
+        :title="`共${rangeImportErrorRows.length}项错误，本批数据未导入`"
+      />
+      <el-table
+        :data="rangeImportErrorRows"
+        border
+        stripe
+        max-height="560"
+        class="range-import-error-table"
+      >
+        <el-table-column prop="sheetName" label="Sheet名称" min-width="130">
+          <template #default="{ row }">{{ row.sheetName || '—' }}</template>
+        </el-table-column>
+        <el-table-column prop="rowNumber" label="Excel行号" width="105">
+          <template #default="{ row }">{{ row.rowNumber || '—' }}</template>
+        </el-table-column>
+        <el-table-column label="料号/规格" min-width="240">
+          <template #default="{ row }">
+            <div class="range-error-stack">
+              <span>{{ row.materialCode || '—' }}</span>
+              <span>{{ row.specModel || '—' }}</span>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="供应商简称/身份" min-width="220">
+          <template #default="{ row }">
+            <div class="range-error-stack">
+              <span>{{ row.supplierName || '—' }}</span>
+              <span>{{ row.supplierCode || '—' }}</span>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column prop="message" label="具体原因" min-width="360" />
+      </el-table>
+      <template #footer>
+        <el-button @click="rangeImportErrorVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -187,10 +359,19 @@ import {
   RANGE_IMPORT_TYPE_OPTIONS,
   buildRangeImportPayload,
   buildRangePriceTypeApplyPayload,
+  buildRangeType1ImportRequest,
+  collectRangeFormulaCells,
+  collectRangeMergedCellValues,
   detectRangeFactorBySheetName,
+  detectRangeWorkbookRoute,
   formatCurrentStatus,
   formatRangeType,
   isQuantityRangeSheetName,
+  matchRangeType1Rows,
+  normalizeRangeImportErrors,
+  parseRangeBaseSheet,
+  parseRangeType1Sheet,
+  submitRangeType1ImportRequest,
 } from './priceRangeImportUtils'
 
 const route = useRoute()
@@ -199,6 +380,21 @@ const loading = ref(false)
 const importing = ref(false)
 const dialogVisible = ref(false)
 const factorDialogVisible = ref(false)
+const rangePreviewVisible = ref(false)
+const rangeImportErrorVisible = ref(false)
+const rangeImportErrorRows = ref([])
+const rangePreviewImporting = ref(false)
+const rangePreviewActiveTab = ref('matches')
+const rangePreviewRows = ref([])
+const rangePreviewExpandedRows = ref([])
+const rangePreviewRequestResult = ref(null)
+const rangePreviewExpandedCount = ref(0)
+const rangePreviewSummary = ref({
+  totalCount: 0,
+  matchedCount: 0,
+  failedCount: 0,
+  conflictCount: 0,
+})
 const factorChoice = ref('CU')
 let factorSelectionResolver = null
 const editingId = ref(null)
@@ -243,6 +439,34 @@ const pageSize = ref(20)
 const dialogTitle = computed(() => (
   editingId.value ? '编辑区间价' : '新增区间价'
 ))
+
+const rangePreviewAlertTitle = computed(() => {
+  if (rangePreviewSummary.value.failedCount > 0) {
+    return `存在${rangePreviewSummary.value.failedCount}行业务数据未唯一匹配，整批已阻断`
+  }
+  if (rangePreviewRequestResult.value && !rangePreviewRequestResult.value.canSubmit) {
+    return rangePreviewRequestResult.value.errors?.[0]?.message || '标准导入请求生成失败'
+  }
+  return `全部${rangePreviewSummary.value.matchedCount}行业务数据已唯一匹配，已展开${rangePreviewExpandedCount.value}条明细`
+})
+
+const rangePreviewCanSubmit = computed(() =>
+  Boolean(rangePreviewRequestResult.value?.canSubmit)
+  && rangePreviewSummary.value.failedCount === 0
+)
+
+const rangePreviewStatusType = (status) => {
+  if (status === 'MATCHED') return 'success'
+  if (status === 'CONFLICT') return 'warning'
+  return 'danger'
+}
+
+const showRangeImportErrors = (errors, context = {}) => {
+  rangeImportErrorRows.value = normalizeRangeImportErrors(errors, context)
+  rangeImportErrorVisible.value = true
+  const stage = context.stage || '导入校验失败'
+  ElMessage.error(`${stage}，共${rangeImportErrorRows.value.length}项，请查看错误明细`)
+}
 
 const chooseRangeFactor = () => new Promise((resolve) => {
   factorChoice.value = 'CU'
@@ -306,6 +530,44 @@ const handlePriceTypeConflicts = async (conflicts) => {
       return
     }
     ElMessage.error(error?.message || '区间价已导入，但价格类型更新失败')
+  }
+}
+
+const confirmRangeType1Import = async () => {
+  if (!rangePreviewCanSubmit.value) {
+    ElMessage.warning('当前预览存在错误，不能提交导入')
+    return
+  }
+
+  rangePreviewImporting.value = true
+  try {
+    const submitResult = await submitRangeType1ImportRequest(
+      rangePreviewRequestResult.value,
+      importRangeItems
+    )
+    if (!submitResult.submitted) {
+      ElMessage.warning('当前预览存在错误，不能提交导入')
+      return
+    }
+
+    const payloadRows = rangePreviewRequestResult.value.payload?.rows || []
+    const materialCount = new Set(
+      payloadRows.map((row) => row.materialCode).filter(Boolean)
+    ).size
+    ElMessage.success(
+      `导入成功：${materialCount}个物料，${payloadRows.length}条区间价。`
+    )
+    await handlePriceTypeConflicts(submitResult.response?.priceTypeConflicts || [])
+    rangePreviewVisible.value = false
+    if (currentPage.value === 1) {
+      fetchList()
+    } else {
+      currentPage.value = 1
+    }
+  } catch (error) {
+    ElMessage.error(error?.message || '导入失败')
+  } finally {
+    rangePreviewImporting.value = false
   }
 }
 
@@ -677,20 +939,106 @@ const handleFileChange = async (uploadFile) => {
 
     const buffer = await rawFile.arrayBuffer()
     const workbook = XLSX.read(buffer, { type: 'array' })
-    const sheetName = workbook.SheetNames[0]
-    const sheet = workbook.Sheets[sheetName]
-    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false })
+    const workbookSheets = workbook.SheetNames.map((name) => ({
+      name,
+      rows: XLSX.utils.sheet_to_json(workbook.Sheets[name], {
+        header: 1,
+        defval: '',
+        raw: false,
+      }),
+    }))
+    const workbookRoute = detectRangeWorkbookRoute(workbookSheets, {
+      fileName: rawFile.name,
+    })
+
+    if (!workbookRoute.ok) {
+      showRangeImportErrors([
+        {
+          code: workbookRoute.errorCode,
+          sheetName: (workbookRoute.sheets || []).map((item) => item.name).join('、'),
+          message: workbookRoute.message,
+        },
+      ])
+      return
+    }
+
+    if (workbookRoute.route === 'TYPE1') {
+      const baseParseResult = parseRangeBaseSheet(workbookRoute.baseSheet.rows, {
+        headerRowIndex: workbookRoute.baseSheet.headerRowIndex,
+        sheetName: workbookRoute.baseSheet.name,
+      })
+      if (!baseParseResult.ok) {
+        showRangeImportErrors(baseParseResult.errors, {
+          sheetName: workbookRoute.baseSheet.name,
+          stage: '基础资料解析失败',
+        })
+        return
+      }
+      const rangeWorksheet = workbook.Sheets[workbookRoute.rangeSheet.name]
+      const rangeParseResult = parseRangeType1Sheet(workbookRoute.rangeSheet.rows, {
+        headerRowIndex: workbookRoute.rangeSheet.headerRowIndex,
+        subHeaderRowIndex: workbookRoute.rangeSheet.subHeaderRowIndex,
+        factor: workbookRoute.factor,
+        formulaCells: collectRangeFormulaCells(rangeWorksheet),
+        mergedCellValues: collectRangeMergedCellValues(rangeWorksheet),
+        sheetName: workbookRoute.rangeSheet.name,
+      })
+      if (!rangeParseResult.ok) {
+        showRangeImportErrors(rangeParseResult.errors, {
+          sheetName: workbookRoute.rangeSheet.name,
+          stage: '区间矩阵解析失败',
+        })
+        return
+      }
+      const matchResult = matchRangeType1Rows(
+        baseParseResult.rows,
+        rangeParseResult.rows,
+        { sheetName: workbookRoute.rangeSheet.name }
+      )
+      const requestResult = buildRangeType1ImportRequest(matchResult, {
+        factor: rangeParseResult.factor,
+        fileName: rawFile.name,
+        sheetName: workbookRoute.rangeSheet.name,
+      })
+      rangePreviewRows.value = matchResult.previewRows
+      rangePreviewSummary.value = matchResult.summary
+      rangePreviewRequestResult.value = requestResult
+      rangePreviewExpandedRows.value = requestResult.expandedRows
+      rangePreviewExpandedCount.value = requestResult.rowCount
+      rangeImportErrorRows.value = normalizeRangeImportErrors(matchResult.errors, {
+        sheetName: workbookRoute.rangeSheet.name,
+      })
+      rangePreviewActiveTab.value = 'matches'
+      rangePreviewVisible.value = true
+      if (!requestResult.ok) {
+        ElMessage.warning(
+          `跨Sheet匹配存在${matchResult.summary.failedCount}行失败或冲突，整批已阻断，本次未导入数据。`
+        )
+      } else {
+        ElMessage.success(
+          `已唯一匹配${matchResult.summary.matchedCount}行业务数据，生成${requestResult.rowCount}条标准区间明细，请核对后确认导入。`
+        )
+      }
+      return
+    }
+
+    const routedSheet = workbookRoute.standardSheet
+    const sheetName = routedSheet.name
+    const rows = routedSheet.rows
+    const headerRowIndex = routedSheet.headerRowIndex
 
     if (rows.length < 2) {
       ElMessage.warning('Excel无有效数据')
       return
     }
 
-    const headerRow1 = rows[0] || []
-    const headerRow2 = rows[1] || []
+    const headerRow1 = rows[headerRowIndex] || []
+    const headerRow2 = routedSheet.subHeaderRowIndex == null
+      ? []
+      : rows[routedSheet.subHeaderRowIndex] || []
     const columns = parseFixedColumns(headerRow1)
     const rangeGroups = detectRangeColumns(headerRow1, headerRow2)
-    let factor = detectRangeFactorBySheetName(sheetName)
+    let factor = workbookRoute.factor || detectRangeFactorBySheetName(sheetName)
     if (!factor && !isQuantityRangeSheetName(sheetName) && rangeGroups.length > 0) {
       const importType = await chooseRangeFactor()
       if (!importType) {
@@ -703,7 +1051,9 @@ const handleFileChange = async (uploadFile) => {
       const text = normalizeHeader(cell)
       return isExclTaxHeader(text) || isInclTaxHeader(text)
     })
-    const dataStartRow = hasSubHeader ? 2 : 1
+    const dataStartRow = hasSubHeader
+      ? routedSheet.subHeaderRowIndex + 1
+      : headerRowIndex + 1
     const importRows = []
 
     for (let rowIndex = dataStartRow; rowIndex < rows.length; rowIndex += 1) {
@@ -837,5 +1187,37 @@ onMounted(() => {
   display: grid;
   grid-template-columns: 1fr;
   gap: 10px;
+}
+.range-preview-summary {
+  display: flex;
+  gap: 20px;
+  margin: 16px 0 12px;
+  color: #606266;
+}
+.range-preview-success {
+  color: #67c23a;
+}
+.range-preview-error {
+  color: #f56c6c;
+}
+.range-preview-table {
+  width: 100%;
+}
+.range-preview-error-action {
+  margin-top: 10px;
+}
+.range-import-error-table {
+  width: 100%;
+  margin-top: 12px;
+}
+.range-import-error-table :deep(.cell) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.range-error-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-wrap: anywhere;
 }
 </style>

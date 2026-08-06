@@ -62,20 +62,34 @@ export function rangeTraceMeta(detail) {
     variables.factor_code
   )
   const isFactorRange = String(rangeBasis ?? '').trim().toUpperCase() === 'FACTOR' || Boolean(factorCode)
+  const fallbackValue = conclusion.fallback ?? rangeItem.fallback
+  const fallback = fallbackValue === true || String(fallbackValue ?? '').trim() === '是'
   return {
     isFactorRange,
     factorCode,
     factorName: rangeFactorDisplayName(factorCode, rangeType),
     rangeType,
+    candidateSupplierCount: conclusion.candidateSupplierCount ?? rangeItem.candidateSupplierCount,
+    mainSupplierName: firstText(conclusion.mainSupplierName, rangeItem.mainSupplierName),
+    mainSupplierCode: firstText(conclusion.mainSupplierCode, rangeItem.mainSupplierCode),
+    supplyRatio: conclusion.supplyRatio ?? rangeItem.supplyRatio,
+    supplierMatchMode: firstText(conclusion.supplierMatchMode, rangeItem.supplierMatchMode),
+    finalPriceRowId: conclusion.finalPriceRowId ?? rangeItem.finalPriceRowId ?? rangeItem.id,
+    finalPriceExclTax: conclusion.finalPriceExclTax ?? rangeItem.finalPriceExclTax ?? rangeItem.priceExclTax,
+    fallback,
+    fallbackReason: firstText(conclusion.fallbackReason, rangeItem.fallbackReason),
   }
 }
 
 export function rangeTraceExplanation(detail) {
   const meta = rangeTraceMeta(detail)
+  const fallbackText = meta.fallback
+    ? `本次发生兜底：${meta.fallbackReason || '按默认价格顺序取价'}。`
+    : ''
   if (meta.isFactorRange) {
-    return `该部品为采购件，按报价单${meta.factorName}命中区间，取命中单价，再按 BOM 用量计算本次金额。`
+    return `该部品为采购件，按报价单${meta.factorName}命中区间，取命中单价，再按 BOM 用量计算本次金额。${fallbackText}`
   }
-  return `该部品为采购件，按 BOM 用量命中区间，取该区间单价，再计算本次金额。`
+  return `该部品为采购件，按 BOM 用量命中区间，取该区间单价，再计算本次金额。${fallbackText}`
 }
 
 function firstText(...values) {

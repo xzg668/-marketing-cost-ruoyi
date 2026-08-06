@@ -32,6 +32,26 @@ export const previewFormula = (body) =>
  * @param {object}    options 月度影响因素自动绑定上下文
  */
 export const importLinkedItemsExcel = (file, pricingMonth, options = {}) => {
+  const form = buildLinkedItemsExcelForm(file, pricingMonth, options)
+  if (options.previewFileSha256) {
+    form.append('previewFileSha256', options.previewFileSha256)
+  }
+  return request('/api/v1/price-linked/items/import-excel', {
+    method: 'POST',
+    body: form,
+  })
+}
+
+/**
+ * PLI2-11：选择 Excel 后先预检。预检只解析和核对，不写数据库。
+ */
+export const previewLinkedItemsExcel = (file, pricingMonth, options = {}) =>
+  request('/api/v1/price-linked/items/import-excel/preview', {
+    method: 'POST',
+    body: buildLinkedItemsExcelForm(file, pricingMonth, options),
+  })
+
+const buildLinkedItemsExcelForm = (file, pricingMonth, options = {}) => {
   const form = new FormData()
   form.append('file', file)
   form.append('pricingMonth', pricingMonth)
@@ -47,10 +67,7 @@ export const importLinkedItemsExcel = (file, pricingMonth, options = {}) => {
   if (options.factorPriceConflictStrategy) {
     form.append('factorPriceConflictStrategy', options.factorPriceConflictStrategy)
   }
-  return request('/api/v1/price-linked/items/import-excel', {
-    method: 'POST',
-    body: form,
-  })
+  return form
 }
 
 export const fetchLinkedImportHistory = (params) =>
@@ -64,3 +81,7 @@ export const fetchLinkedImportBatchDetail = (batchId) =>
  */
 export const fetchTrace = (id) =>
   request(`/api/v1/price-linked/items/${id}/trace`)
+
+/** PLI2-11：查询类型 2 联动价版本保存的原 Excel 导入依据。 */
+export const fetchLinkedImportBasis = (id) =>
+  request(`/api/v1/price-linked/items/${id}/import-basis`)

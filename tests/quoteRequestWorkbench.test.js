@@ -20,6 +20,7 @@ import {
   statusLabel,
   statusTagType,
 } from '../src/utils/quoteRequestWorkbench.js'
+import { expandQuoteBomDisplayRows } from '../src/utils/quoteCostingBomRows.js'
 
 const LIST_PAGE_FILE = path.resolve(import.meta.dirname, '../src/views/ingest/quote-requests/index.vue')
 const PRODUCT_BOM_PAGE_FILE = path.resolve(import.meta.dirname, '../src/views/ingest/quote-request-products/bom/index.vue')
@@ -34,7 +35,6 @@ const PRICE_RANGE_PAGE_FILE = path.resolve(import.meta.dirname, '../src/pages/Pr
 const QUOTE_REQUEST_API_FILE = path.resolve(import.meta.dirname, '../src/api/quoteRequests.js')
 const PRICE_PREPARE_API_FILE = path.resolve(import.meta.dirname, '../src/api/pricePrepare.js')
 const COST_RUN_DETAIL_API_FILE = path.resolve(import.meta.dirname, '../src/api/costRunDetail.js')
-const U9_MATERIAL_API_FILE = path.resolve(import.meta.dirname, '../src/api/u9MaterialMaster.js')
 const ROUTER_FILE = path.resolve(import.meta.dirname, '../src/router/index.js')
 const listPageContent = fs.readFileSync(LIST_PAGE_FILE, 'utf-8')
 const productBomPageContent = fs.readFileSync(PRODUCT_BOM_PAGE_FILE, 'utf-8')
@@ -49,7 +49,6 @@ const priceRangePageContent = fs.readFileSync(PRICE_RANGE_PAGE_FILE, 'utf-8')
 const quoteRequestApiContent = fs.readFileSync(QUOTE_REQUEST_API_FILE, 'utf-8')
 const pricePrepareApiContent = fs.readFileSync(PRICE_PREPARE_API_FILE, 'utf-8')
 const costRunDetailApiContent = fs.readFileSync(COST_RUN_DETAIL_API_FILE, 'utf-8')
-const u9MaterialApiContent = fs.readFileSync(U9_MATERIAL_API_FILE, 'utf-8')
 const routerContent = fs.readFileSync(ROUTER_FILE, 'utf-8')
 
 describe('T11 报价单接入工作台工具', () => {
@@ -200,6 +199,61 @@ describe('T11 报价单接入工作台工具', () => {
   })
 })
 
+describe('报价物料上卷展示名称', () => {
+  it('使用父件料号图号和父件-子件品名，不生成原材料或废料子行', () => {
+    const parent = {
+      id: 4057,
+      childCode: '201190083',
+      childName: '接管',
+      childModel: 'T-JG-0029',
+      usageQty: 1,
+      qtyPerTop: 1,
+      shapeAttribute: '制造件',
+      rollupComponents: [{
+        childCode: '301050120',
+        childName: '拉制铜管',
+        parentDrawingNo: 'T-JG-0029',
+        usageQty: 0.00381546,
+        qtyPerTop: 0.00381546,
+        unit: '千克',
+      }],
+    }
+
+    const rows = expandQuoteBomDisplayRows([parent])
+
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0].childCode, '201190083')
+    assert.equal(rows[0].childName, '接管-拉制铜管')
+    assert.equal(rows[0].childModel, 'T-JG-0029')
+    assert.equal(rows[0].usageQty, 0.00381546)
+    assert.equal(rows[0].shapeAttribute, '制造件')
+    assert.equal(rows[0].sourceRow, parent)
+    assert.equal('children' in rows[0], false)
+  })
+
+  it('同一父件命中两个子件时只拆展示行，仍指向同一结算行', () => {
+    const parent = {
+      id: 5001,
+      childCode: 'A-PLATE',
+      childName: 'A板片组件',
+      childModel: 'A-DRAWING',
+      rollupComponents: [
+        { childCode: 'RAW-CU', childName: '铜箔' },
+        { childCode: 'RAW-SUS', childName: '不锈钢卷' },
+      ],
+    }
+
+    const rows = expandQuoteBomDisplayRows([parent])
+
+    assert.deepEqual(rows.map((row) => row.childName), [
+      'A板片组件-铜箔',
+      'A板片组件-不锈钢卷',
+    ])
+    assert.ok(rows.every((row) => row.childCode === 'A-PLATE'))
+    assert.ok(rows.every((row) => row.sourceRow === parent))
+  })
+})
+
 describe('T11 报价单接入页面契约', () => {
   it('列表页串联查询和确认分类，仅以两态展示核算状态且不提供检查 BOM', () => {
     assert.match(listPageContent, /fetchQuoteRequests/)
@@ -323,6 +377,8 @@ describe('T11 报价单接入页面契约', () => {
     assert.match(quoteRequestApiContent, /\/items\/\$\{encodePath\(itemId\)\}\/costing-workbench/)
     assert.match(detailPageContent, /canStartCosting/)
     assert.match(detailPageContent, /isCostReadyBomStatus/)
+    assert.match(detailPageContent, /async function startCosting[\s\S]*openCostingWorkbench\(row, \{ tab: 'QUOTE_BOM' \}\)/)
+    assert.match(costingWorkbenchPageContent, /async function applyRouteTab[\s\S]*preparePricingBomForNextStep\(\)[\s\S]*activeTab\.value = requestedTab/)
   })
 
   it('QCB-05 产品行操作按 BOM 和核算状态展示四种入口', () => {
@@ -340,9 +396,9 @@ describe('T11 报价单接入页面契约', () => {
     assert.match(detailPageContent, /confirmedCostVersionId/)
   })
 
-  it('QWB-08 工作台初始化展示五个真实接口 tab 和产品明细 BOM 树', () => {
+  it('QEB-14 工作台初始化展示最终有效 BOM 树和后续真实接口 tab', () => {
     assert.match(costingWorkbenchPageContent, /fetchQuoteCostingWorkbench/)
-    assert.match(costingWorkbenchPageContent, /getBomHierarchy/)
+    assert.match(costingWorkbenchPageContent, /fetchQuoteEffectiveBom/)
     assert.match(costingWorkbenchPageContent, /BomNodeDetailDrawer/)
     assert.match(costingWorkbenchPageContent, /onMounted\(\(\) => initializeWorkbench\(\)\)/)
     assert.match(costingWorkbenchPageContent, /autoPriceSourceCheckedKey/)
@@ -351,8 +407,8 @@ describe('T11 报价单接入页面契约', () => {
     assert.match(costingWorkbenchPageContent, /activeTab = ref\('PRODUCT_DETAIL'\)/)
     assert.match(costingWorkbenchPageContent, /resetTab/)
     assert.match(costingWorkbenchPageContent, /产品明细/)
-    assert.match(costingWorkbenchPageContent, /BOM 层级树/)
-    assert.match(costingWorkbenchPageContent, /loadBomTree/)
+    assert.match(costingWorkbenchPageContent, /本次计价 BOM/)
+    assert.match(costingWorkbenchPageContent, /loadEffectiveBom/)
     assert.match(costingWorkbenchPageContent, /item\.materialNo/)
     assert.match(costingWorkbenchPageContent, /openBomNodeDetail/)
     assert.match(costingWorkbenchPageContent, /expandBomTree/)
@@ -367,6 +423,9 @@ describe('T11 报价单接入页面契约', () => {
     assert.match(costingWorkbenchPageContent, /isPricePrepareTab\(tab\.code\)/)
     assert.match(costingWorkbenchPageContent, /isCostRunTab\(tab\.code\)/)
     assert.match(costingWorkbenchPageContent, /bomRows/)
+    assert.match(costingWorkbenchPageContent, /displayBomRows/)
+    assert.match(costingWorkbenchPageContent, /expandQuoteBomDisplayRows/)
+    assert.match(costingWorkbenchPageContent, /上卷父件已按命中子件生成展示名称/)
     assert.match(costingWorkbenchPageContent, /scrollbar-always-on/)
     assert.match(costingWorkbenchPageContent, /max-height="calc\(100vh - 420px\)"/)
     assert.doesNotMatch(costingWorkbenchPageContent, /prop="parentCode" label="父件料号"/)
@@ -507,42 +566,20 @@ describe('T11 报价单接入页面契约', () => {
     assert.match(costingWorkbenchPageContent, /runPriceSourceCheck\('无废料已确认，价格源已刷新'\)/)
   })
 
-  it('QCB-06 工作台 BOM 行支持抽屉替换料号、调整用量、取消、保存和失败提示', () => {
-    assert.match(costingWorkbenchPageContent, /editingRowId/)
-    assert.match(costingWorkbenchPageContent, /editDrawerVisible/)
-    assert.match(costingWorkbenchPageContent, /替换子件料号 \/ 调整用量/)
-    assert.match(costingWorkbenchPageContent, /替换\/调整/)
-    assert.match(costingWorkbenchPageContent, /startEdit\(row\)/)
-    assert.match(costingWorkbenchPageContent, /cancelEdit/)
-    assert.match(costingWorkbenchPageContent, /saveBomRow\(editingRow\)/)
-    assert.match(costingWorkbenchPageContent, /updateCostingBomRow/)
-    assert.match(costingWorkbenchPageContent, /Object\.assign\(row,\s*saved\)/)
-    assert.match(costingWorkbenchPageContent, /BOM 行已保存/)
-    assert.match(costingWorkbenchPageContent, /保存 BOM 行失败/)
-    assert.match(costingWorkbenchPageContent, /从料品库选择子件料号/)
-    assert.match(costingWorkbenchPageContent, /本次核算用量/)
-    assert.match(costingWorkbenchPageContent, /请输入有效用量/)
-    assert.match(quoteRequestApiContent, /updateCostingBomRow/)
-    assert.match(quoteRequestApiContent, /costing-bom\/rows\/\$\{encodePath\(rowId\)\}/)
-    assert.match(quoteRequestApiContent, /method:\s*'PUT'/)
-  })
-
-  it('QCB-06 子件料号远程搜索选择后自动带出 U9 字段', () => {
-    assert.match(costingWorkbenchPageContent, /fetchU9MaterialOptions/)
-    assert.match(costingWorkbenchPageContent, /materialSearchKeyword/)
-    assert.match(costingWorkbenchPageContent, /searchChildMaterials\(materialSearchKeyword\)/)
-    assert.match(costingWorkbenchPageContent, /material-option-table/)
-    assert.match(costingWorkbenchPageContent, /@row-dblclick="handleMaterialSelected"/)
-    assert.match(costingWorkbenchPageContent, /handleMaterialSelected/)
-    assert.match(costingWorkbenchPageContent, /选用/)
-    assert.match(costingWorkbenchPageContent, /替换后料号/)
-    assert.match(costingWorkbenchPageContent, /selected\.materialName/)
-    assert.match(costingWorkbenchPageContent, /materialModelText\(selected\)/)
-    assert.match(costingWorkbenchPageContent, /selected\.unit/)
-    assert.match(costingWorkbenchPageContent, /selected\.materialAttribute/)
-    assert.match(costingWorkbenchPageContent, /selected\.shapeAttribute/)
-    assert.match(costingWorkbenchPageContent, /el-input-number/)
-    assert.match(u9MaterialApiContent, /fetchU9MaterialOptions/)
-    assert.match(u9MaterialApiContent, /\/options/)
+  it('QCB-06 报价物料明细不再提供单行替换或用量调整能力', () => {
+    assert.doesNotMatch(costingWorkbenchPageContent, /替换\/调整/)
+    assert.doesNotMatch(costingWorkbenchPageContent, /替换子件料号/)
+    assert.doesNotMatch(costingWorkbenchPageContent, /updateCostingBomRow/)
+    assert.doesNotMatch(costingWorkbenchPageContent, /startEdit\(row\)/)
+    assert.doesNotMatch(costingWorkbenchPageContent, /saveBomRow/)
+    assert.doesNotMatch(costingWorkbenchPageContent, /cancelEdit\(\)/)
+    assert.doesNotMatch(costingWorkbenchPageContent, /label="人工修改"/)
+    assert.doesNotMatch(costingWorkbenchPageContent, /prop="modifiedBy"/)
+    assert.doesNotMatch(costingWorkbenchPageContent, />用量调整</)
+    assert.doesNotMatch(quoteRequestApiContent, /costing-bom\/rows\/\$\{encodePath\(rowId\)\}/)
+    assert.match(
+      costingWorkbenchPageContent,
+      /loading\.value = true\s*try \{\s*clearEffectiveBom\(\)[\s\S]*?finally \{\s*loading\.value = false/,
+    )
   })
 })

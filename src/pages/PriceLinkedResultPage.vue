@@ -611,7 +611,7 @@
         <el-table-column prop="quota" label="配额" width="100" />
         <el-table-column prop="pricingMonth" label="月份" width="110" />
         <el-table-column prop="updatedAt" label="更新时间" width="160" />
-        <el-table-column label="操作" width="260" fixed="right">
+        <el-table-column label="操作" width="360" fixed="right">
           <template #default="{ row }">
             <el-button
               v-hasPermi="['price:linked-item:edit']"
@@ -632,6 +632,14 @@
             <!-- T24：查看 trace —— 打开右侧抽屉展示计算追踪 -->
             <el-button type="primary" link @click="openTrace(row)">
               查看 Trace
+            </el-button>
+            <el-button
+              v-hasPermi="['price:linked-item:list']"
+              type="primary"
+              link
+              @click="openImportBasis(row)"
+            >
+              查看导入依据
             </el-button>
             <!-- T6：行局部变量绑定 —— 打开抽屉管理 B 组 token → 影响因素 的映射 -->
             <el-button
@@ -669,8 +677,14 @@
     <el-dialog
       v-model="importDialogVisible"
       title="导入月度联动价与影响因素 Excel"
-      width="720px"
+      width="960px"
     >
+      <el-alert
+        class="import-template-help"
+        type="info"
+        :closable="false"
+        title="支持标准模板和采购价联动类型 2；系统按 Sheet 内容识别，不按文件名判断。"
+      />
       <el-form :model="importForm" label-width="120px">
         <el-form-item label="导入月份" required>
           <el-date-picker
@@ -679,10 +693,15 @@
             format="YYYY-MM"
             value-format="YYYY-MM"
             placeholder="选择月份"
+            @change="handleMonthlyImportContextChange"
           />
         </el-form-item>
         <el-form-item label="业务单元" required>
-          <el-input v-model="importForm.businessUnitType" placeholder="COMMERCIAL" />
+          <el-input
+            v-model="importForm.businessUnitType"
+            placeholder="COMMERCIAL"
+            @change="handleMonthlyImportContextChange"
+          />
         </el-form-item>
         <el-form-item label="公式生效日期" required>
           <el-date-picker
@@ -690,10 +709,14 @@
             type="date"
             value-format="YYYY-MM-DD"
             placeholder="选择公式生效日期"
+            @change="handleMonthlyImportContextChange"
           />
         </el-form-item>
         <el-form-item label="影响因素价格冲突" required>
-          <el-radio-group v-model="importForm.factorPriceConflictStrategy">
+          <el-radio-group
+            v-model="importForm.factorPriceConflictStrategy"
+            @change="handleMonthlyImportContextChange"
+          >
             <el-radio-button label="KEEP_EXISTING">
               保留已有价格，冲突行跳过
             </el-radio-button>
@@ -719,12 +742,77 @@
             :on-remove="clearMonthlyImportFile"
           >
             <div class="upload-placeholder">
-              <div class="upload-title">请上传同时包含影响因素 sheet 和联动公式 sheet 的 Excel</div>
-              <div class="upload-hint">系统会读取原始公式并生成行级变量绑定</div>
+              <div class="upload-title">选择 Excel 后自动预检</div>
+              <div class="upload-hint">
+                标准模板直接识别；类型 2 会核对业务计算 Sheet、importdata1、因素、匹配和公式。
+              </div>
             </div>
           </el-upload>
         </el-form-item>
       </el-form>
+
+      <section
+        v-if="selectedImportFile"
+        v-loading="importPreviewLoading"
+        class="import-preview-panel"
+      >
+        <el-alert
+          v-if="importPreviewError"
+          type="error"
+          :closable="false"
+          :title="importPreviewError"
+          show-icon
+        />
+        <template v-else-if="importPreviewResult">
+          <div class="preview-header">
+            <div>
+              <div class="section-title">文件预检结果</div>
+              <div class="section-subtitle">
+                {{ importPreviewResult.detectionMessage || '模板结构识别完成' }}
+              </div>
+            </div>
+            <el-tag
+              :type="importPreviewResult.canConfirm ? 'success' : 'danger'"
+              effect="light"
+            >
+              {{ importPreviewResult.canConfirm ? '可以确认导入' : '存在阻断错误' }}
+            </el-tag>
+          </div>
+          <div class="preview-summary-grid">
+            <div
+              v-for="item in type2PreviewSummaryItems"
+              :key="item.key"
+              class="preview-summary-item"
+            >
+              <span>{{ item.label }}</span>
+              <el-tag v-if="item.tag" :type="item.tag" effect="plain">
+                {{ item.value }}
+              </el-tag>
+              <strong v-else>{{ item.value }}</strong>
+            </div>
+          </div>
+          <el-table
+            v-if="type2PreviewErrorRows.length"
+            :data="type2PreviewErrorRows"
+            class="preview-error-table"
+            size="small"
+            border
+            max-height="220"
+          >
+            <el-table-column prop="sourceSheetName" label="Sheet" width="140" />
+            <el-table-column prop="rowNumber" label="行号" width="80" />
+            <el-table-column prop="materialCode" label="料号" width="140" />
+            <el-table-column prop="supplierCode" label="供应商" width="120" />
+            <el-table-column prop="errorCode" label="错误类型" width="170" />
+            <el-table-column prop="message" label="原因" min-width="260" />
+          </el-table>
+        </template>
+        <el-empty
+          v-else
+          :image-size="60"
+          description="正在等待预检结果"
+        />
+      </section>
       <el-steps
         v-if="importing"
         :active="importProgressActiveStep"
@@ -739,8 +827,13 @@
       </el-steps>
       <template #footer>
         <el-button @click="importDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="importing" @click="submitMonthlyImport">
-          开始导入
+        <el-button
+          type="primary"
+          :loading="importing"
+          :disabled="!canConfirmMonthlyImport"
+          @click="submitMonthlyImport"
+        >
+          确认导入
         </el-button>
       </template>
     </el-dialog>
@@ -1014,6 +1107,10 @@
       :row="bindingRow"
       @changed="onBindingChanged"
     />
+    <PriceLinkedImportBasisDrawer
+      v-model:visible="importBasisDrawerVisible"
+      :row="importBasisRow"
+    />
   </div>
 </template>
 
@@ -1028,6 +1125,7 @@ import {
   updateLinkedItem,
   deleteLinkedItem,
   importLinkedItemsExcel,
+  previewLinkedItemsExcel,
   fetchLinkedImportHistory,
   fetchLinkedImportBatchDetail,
   fetchTrace,
@@ -1041,7 +1139,15 @@ import {
   importBindings,
 } from '../api/priceLinkedBindings'
 import PriceLinkedBindingDrawer from '../components/PriceLinkedBindingDrawer.vue'
+import PriceLinkedImportBasisDrawer from '../components/PriceLinkedImportBasisDrawer.vue'
 import BasePagination from '../components/BasePagination.vue'
+import {
+  buildType2PreviewSummary,
+  canConfirmLinkedPreview,
+  currentPricingMonth,
+  linkedImportResultText,
+  normalizeType2PreviewErrors,
+} from './priceLinkedType2PreviewUtils'
 // T24：trace drawer + 系统结果/Excel 金标/差异 所需的纯函数辅助层
 import {
   DIFF_THRESHOLD,
@@ -1070,6 +1176,10 @@ const dialogVisible = ref(false)
 const importing = ref(false)
 const importDialogVisible = ref(false)
 const selectedImportFile = ref(null)
+const importPreviewLoading = ref(false)
+const importPreviewResult = ref(null)
+const importPreviewError = ref('')
+const importPreviewRequestToken = ref(0)
 const lastImportResult = ref(null)
 const showFactorPreview = ref(false)
 const showImportLogs = ref(false)
@@ -1115,14 +1225,11 @@ const pendingLoaded = ref(false)
 const bindingImporting = ref(false)
 const bindingDrawerVisible = ref(false)
 const bindingRow = ref(null)
+const importBasisDrawerVisible = ref(false)
+const importBasisRow = ref(null)
 const userStore = useUserStore()
 
-const currentMonthText = () => {
-  const now = new Date()
-  const year = now.getFullYear()
-  const month = String(now.getMonth() + 1).padStart(2, '0')
-  return `${year}-${month}`
-}
+const currentMonthText = () => currentPricingMonth()
 
 const firstDayOfMonth = (monthText) => {
   const value = String(monthText || '').trim()
@@ -1154,6 +1261,23 @@ const importForm = ref({
   formulaEffectiveDate: firstDayOfMonth(queryString('pricingMonth', currentMonthText())),
   factorPriceConflictStrategy: 'KEEP_EXISTING',
 })
+
+const type2PreviewSummaryItems = computed(() =>
+  buildType2PreviewSummary(importPreviewResult.value || {}),
+)
+
+const type2PreviewErrorRows = computed(() =>
+  normalizeType2PreviewErrors(importPreviewResult.value?.errors),
+)
+
+const canConfirmMonthlyImport = computed(() =>
+  canConfirmLinkedPreview({
+    file: selectedImportFile.value,
+    loading: importPreviewLoading.value,
+    error: importPreviewError.value,
+    preview: importPreviewResult.value,
+  }),
+)
 
 const importHistoryFilter = ref({
   scope: 'mine',
@@ -2133,6 +2257,11 @@ const openTrace = async (row) => {
   }
 }
 
+const openImportBasis = (row) => {
+  importBasisRow.value = row
+  importBasisDrawerVisible.value = true
+}
+
 // ============================ T6：行局部变量绑定 ============================
 
 /**
@@ -2227,16 +2356,80 @@ const openMonthlyImport = () => {
     factorPriceConflictStrategy: 'KEEP_EXISTING',
   }
   selectedImportFile.value = null
+  invalidateMonthlyImportPreview()
   importProgressActiveStep.value = 0
   importDialogVisible.value = true
 }
 
-const handleMonthlyImportFileChange = (uploadFile) => {
+const previewOptions = () => ({
+  businessUnitType: importForm.value.businessUnitType,
+  overwriteManual: importForm.value.overwriteManual,
+  formulaEffectiveDate: importForm.value.formulaEffectiveDate,
+  factorPriceConflictStrategy: importForm.value.factorPriceConflictStrategy,
+})
+
+const invalidateMonthlyImportPreview = () => {
+  importPreviewRequestToken.value += 1
+  importPreviewLoading.value = false
+  importPreviewResult.value = null
+  importPreviewError.value = ''
+}
+
+const runMonthlyImportPreview = async () => {
+  const rawFile = selectedImportFile.value
+  if (
+    !rawFile ||
+    !isExcelFile(rawFile) ||
+    !importForm.value.pricingMonth ||
+    !importForm.value.businessUnitType ||
+    !importForm.value.formulaEffectiveDate ||
+    !importForm.value.factorPriceConflictStrategy
+  ) {
+    return
+  }
+  const token = ++importPreviewRequestToken.value
+  importPreviewLoading.value = true
+  importPreviewResult.value = null
+  importPreviewError.value = ''
+  try {
+    const preview = await previewLinkedItemsExcel(
+      rawFile,
+      importForm.value.pricingMonth,
+      previewOptions(),
+    )
+    if (token !== importPreviewRequestToken.value) return
+    importPreviewResult.value = preview || {}
+  } catch (error) {
+    if (token !== importPreviewRequestToken.value) return
+    importPreviewError.value = error?.message || 'Excel 预检失败'
+    ElMessage.error(importPreviewError.value)
+  } finally {
+    if (token === importPreviewRequestToken.value) {
+      importPreviewLoading.value = false
+    }
+  }
+}
+
+const handleMonthlyImportFileChange = async (uploadFile) => {
+  invalidateMonthlyImportPreview()
   selectedImportFile.value = uploadFile?.raw || null
+  if (selectedImportFile.value && !isExcelFile(selectedImportFile.value)) {
+    importPreviewError.value = '文件必须是 Excel 格式'
+    return
+  }
+  await runMonthlyImportPreview()
 }
 
 const clearMonthlyImportFile = () => {
   selectedImportFile.value = null
+  invalidateMonthlyImportPreview()
+}
+
+const handleMonthlyImportContextChange = async () => {
+  invalidateMonthlyImportPreview()
+  if (!selectedImportFile.value) return
+  await nextTick()
+  await runMonthlyImportPreview()
 }
 
 const isExcelFile = (file) => {
@@ -2270,6 +2463,10 @@ const submitMonthlyImport = async () => {
     ElMessage.warning('文件必须是 Excel 格式')
     return
   }
+  if (!canConfirmMonthlyImport.value) {
+    ElMessage.warning('请等待文件预检通过后再确认导入')
+    return
+  }
   importing.value = true
   importProgressActiveStep.value = 0
   try {
@@ -2279,6 +2476,7 @@ const submitMonthlyImport = async () => {
       overwriteManual: importForm.value.overwriteManual,
       formulaEffectiveDate: importForm.value.formulaEffectiveDate,
       factorPriceConflictStrategy: importForm.value.factorPriceConflictStrategy,
+      previewFileSha256: importPreviewResult.value.fileSha256,
     })
     importProgressActiveStep.value = importStepList.length
     lastImportResult.value = result || {}
@@ -2294,13 +2492,14 @@ const submitMonthlyImport = async () => {
     const detailRows = splitImportDetailRows(result || {}, factorPreviewRows.value)
     const failed = detailRows.failedRows.length
     const conflicts = detailRows.conflictRows.length
-    const created = result?.linkedVersionCreatedCount ?? result?.linkedCreatedCount ?? 0
-    const updated = result?.linkedExpiredCount ?? result?.linkedUpdatedCount ?? 0
-    const skipped = result?.linkedUnchangedSkippedCount ?? result?.linkedSkippedCount ?? 0
-    if (failed || conflicts) {
-      ElMessage.warning(`导入完成：新增版本 ${created}，旧版本失效 ${updated}，未变化跳过 ${skipped}，需处理 ${failed + conflicts} 条`)
+    if (
+      String(result?.importStatus || '').toUpperCase() === 'PARTIAL' ||
+      failed ||
+      conflicts
+    ) {
+      ElMessage.warning(linkedImportResultText(result || {}))
     } else {
-      ElMessage.success(`导入完成：新增版本 ${created}，旧版本失效 ${updated}，未变化跳过 ${skipped}`)
+      ElMessage.success(linkedImportResultText(result || {}))
     }
     fetchList({ loadLatestImport: false })
     await loadImportHistory({ loadLatest: false })
@@ -2699,6 +2898,59 @@ onMounted(loadPending)
 
 .monthly-upload {
   width: 100%;
+}
+
+.import-template-help {
+  margin-bottom: 16px;
+}
+
+.import-preview-panel {
+  min-height: 90px;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid #dbe4ef;
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
+.preview-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.preview-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.preview-summary-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.preview-summary-item span {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.preview-summary-item strong {
+  color: #111827;
+  font-size: 14px;
+}
+
+.preview-error-table {
+  margin-top: 12px;
 }
 
 .upload-placeholder {

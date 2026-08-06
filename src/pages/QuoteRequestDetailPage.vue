@@ -376,7 +376,7 @@ async function startCosting(row) {
     if (response?.snapshotGenerated) {
       ElMessage.success('已按最新结算规则刷新报价物料明细')
     }
-    openCostingWorkbench(row)
+    openCostingWorkbench(row, { tab: 'QUOTE_BOM' })
   } catch (error) {
     ElMessage.error(error?.message || '发起核算失败')
   } finally {

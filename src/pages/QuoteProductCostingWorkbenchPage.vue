@@ -12,14 +12,6 @@
     </div>
 
     <el-alert
-      v-if="workbench.snapshotGenerated"
-      class="inline-alert"
-      type="success"
-      show-icon
-      :closable="false"
-      title="已生成当前核算月份 BOM 快照"
-    />
-    <el-alert
       v-if="workflowGuideVisible"
       class="inline-alert"
       type="warning"
@@ -75,7 +67,7 @@
     <section class="section-block">
       <div class="section-head">
         <span>当前报价料号</span>
-        <small>{{ workbench.buildBatchId ? `生成批次：${workbench.buildBatchId}` : '按产品行隔离核算' }}</small>
+        <small>当前产品单独核算</small>
       </div>
       <el-table
         :data="currentItemRows"
@@ -117,7 +109,7 @@
         <span>整体状态：{{ tabStatusLabel(workbench.workflowStatus?.overallStatus) }}</span>
       </div>
 
-      <el-tabs v-model="activeTab" class="costing-tabs">
+      <el-tabs v-model="activeTab" class="costing-tabs" :before-leave="beforeWorkbenchTabLeave">
         <el-tab-pane v-for="(tab, index) in tabs" :key="tab.code" :name="tab.code">
           <template #label>
             <span class="tab-label">
@@ -129,47 +121,228 @@
             </span>
           </template>
 
-          <div v-if="tab.code === 'PRODUCT_DETAIL'" class="product-detail-tab">
-            <div class="tab-toolbar">
+          <div
+            v-if="tab.code === 'PRODUCT_DETAIL'"
+            v-loading="effectiveBomConfirming"
+            element-loading-text="正在生成报价物料明细"
+            class="product-detail-tab"
+          >
+            <template v-if="effectiveBomFeatureEnabled">
+            <div class="pricing-bom-summary">
               <div>
-                <strong>BOM 层级树</strong>
-                <span>顶层料号：{{ item.materialNo || '-' }}</span>
+                <strong>本次计价 BOM</strong>
+                <span>
+                  产品 {{ presentedEffectiveBom.topProductCode || item.materialNo || '-' }}
+                  · {{ presentedEffectiveBom.costPeriodMonth || workbench.periodMonth || '-' }}
+                  · {{ presentedEffectiveBom.nodes.length }} 个计价节点
+                </span>
               </div>
-              <div class="toolbar-actions">
-                <el-button size="small" :disabled="!bomTree" @click="expandBomTree">展开全部</el-button>
-                <el-button size="small" :disabled="!bomTree" @click="collapseBomTree">收起全部</el-button>
+              <div class="pricing-bom-summary-status">
+                <el-tag v-if="effectiveBomPreviewActive" type="warning" effect="light">
+                  预览中 · 尚未保存
+                </el-tag>
+                <el-tag :type="effectiveBomStateInfo.type" effect="plain">
+                  {{ effectiveBomStateInfo.label }}
+                </el-tag>
+                <span>{{ effectiveAlternativeSummaryText }}</span>
               </div>
             </div>
-            <div class="bom-tree-panel" v-loading="bomTreeLoading">
+
+            <el-alert
+              v-if="effectiveBomBlocked"
+              type="error"
+              show-icon
+              :closable="false"
+              class="inline-alert"
+              title="本次计价 BOM 暂时无法生成，请处理以下数据问题。"
+            >
+              <template #default>
+                <ul class="effective-bom-message-list">
+                  <li v-for="issue in presentedEffectiveBom.blockIssues" :key="`${issue.issueCode}-${issue.materialCode}-${issue.sourcePath}`">
+                    {{ issue.message || issue.issueCode }}<template v-if="issue.materialCode">（料号：{{ issue.materialCode }}）</template>
+                  </li>
+                </ul>
+              </template>
+            </el-alert>
+
+            <el-alert
+              v-else-if="effectiveBomReadOnly"
+              type="success"
+              show-icon
+              :closable="false"
+              class="inline-alert"
+              :title="effectiveBom.state === 'REUSED'
+                ? '本月已有相同计价结果，系统已自动沿用。'
+                : '本月计价 BOM 已确定，后续步骤将继续使用当前结果。'"
+            />
+
+            <el-alert
+              v-if="presentedEffectiveBom.warnings.length > 0"
+              type="warning"
+              show-icon
+              :closable="false"
+              class="inline-alert"
+              :title="presentedEffectiveBom.warnings.join('；')"
+            />
+
+            <div class="pricing-bom-designer">
+              <div class="pricing-bom-tree-column">
+            <div class="tab-toolbar">
+              <div>
+                <strong>计价物料树</strong>
+                <span>按 BOM 层级展示，特殊规则与替代料已标注</span>
+              </div>
+              <div class="toolbar-actions">
+                <el-button
+                  v-if="alternativeFeatureEnabled"
+                  v-hasPermi="['quote:costing:bom:alternative-select']"
+                  type="warning"
+                  plain
+                  :loading="alternativeLoading"
+                  :disabled="isBomConfirmed || effectiveBomLoading"
+                  @click="openAlternativeDrawer"
+                >
+                  选择计价方案
+                </el-button>
+                <el-button size="small" :disabled="effectiveBomTreeData.length === 0" @click="expandBomTree">展开全部</el-button>
+                <el-button size="small" :disabled="effectiveBomTreeData.length === 0" @click="collapseBomTree">收起全部</el-button>
+              </div>
+            </div>
+            <div class="bom-tree-panel" v-loading="effectiveBomLoading">
               <div v-if="!item.materialNo" class="empty-tip">当前产品行无产品料号</div>
-              <div v-else-if="!bomTree && !bomTreeLoading" class="empty-tip">暂无 BOM 层级树</div>
-              <div v-else-if="bomTreeEmpty" class="empty-tip">该产品料号未查询到 BOM 层级树</div>
+              <div v-else-if="effectiveBomTreeData.length === 0 && !effectiveBomLoading" class="empty-tip">
+                {{ effectiveBomBlocked ? '当前存在数据问题，暂时无法生成计价 BOM' : '暂无本次计价 BOM' }}
+              </div>
               <el-tree
                 v-else
                 ref="bomTreeRef"
-                :data="bomTreeData"
+                class="effective-bom-tree"
+                :data="effectiveBomTreeData"
                 :props="bomTreeProps"
-                node-key="path"
+                node-key="nodeKey"
+                :indent="0"
+                :default-expanded-keys="effectiveBomDefaultExpandedKeys"
                 :expand-on-click-node="false"
                 @node-click="openBomNodeDetail"
               >
                 <template #default="{ data }">
-                  <span class="tree-node">
-                    <span class="node-code">{{ data.materialCode }}</span>
-                    <span class="node-name">{{ data.materialName || '' }}</span>
-                    <span v-if="data.qtyPerParent" class="node-qty">x {{ data.qtyPerParent }}</span>
-                    <el-tag
-                      v-if="bomNodeShapeAttr(data)"
-                      size="small"
-                      :type="bomNodeShapeTagType(data)"
-                      effect="plain"
-                    >{{ bomNodeShapeAttr(data) }}</el-tag>
-                    <el-tag v-if="isTakeoverNode(data)" size="small" type="warning">接管</el-tag>
-                    <el-tag v-if="data.isLeaf === 1" size="small" type="success" effect="plain">叶子</el-tag>
-                  </span>
+                  <div
+                    class="tree-node effective-tree-node"
+                    :class="{
+                      'effective-tree-parent': hasEffectiveBomChildren(data),
+                      'effective-tree-root': isStructureRootNode(data),
+                      'effective-tree-preview-change': isEffectiveBomPreviewChanged(data),
+                    }"
+                  >
+                    <div class="effective-node-main">
+                      <span class="node-code">{{ data.materialCode }}</span>
+                      <span class="node-name">{{ data.materialName || '' }}</span>
+                      <span v-if="!isStructureRootNode(data) && data.qtyPerParent != null" class="node-qty">× {{ data.qtyPerParent }}</span>
+                      <el-tag
+                        v-if="!isStructureRootNode(data)"
+                        class="effective-shape-tag"
+                        size="small"
+                        :type="effectiveShapeInfo(data).type"
+                        effect="light"
+                        :disable-transitions="true"
+                      >
+                        {{ effectiveShapeInfo(data).label }}
+                      </el-tag>
+                      <el-tag
+                        v-if="effectiveAlternativeInfo(data)"
+                        class="effective-alternative-tag"
+                        size="small"
+                        :type="effectiveAlternativeInfo(data).type"
+                        effect="light"
+                        :disable-transitions="true"
+                      >
+                        {{ effectiveAlternativeInfo(data).label }}
+                      </el-tag>
+                      <span v-if="hasEffectiveBomChildren(data)" class="node-child-count">
+                        {{ data.children.length }} 个子项
+                      </span>
+                    </div>
+                    <div v-if="shouldShowEffectiveNodeEvidence(data)" class="effective-node-evidence">
+                      <span>规则：{{ effectiveShapeSourceText(data) }}</span>
+                      <span v-if="effectiveSupplierText(data)">{{ effectiveSupplierText(data) }}</span>
+                    </div>
+                  </div>
                 </template>
               </el-tree>
             </div>
+
+              </div>
+
+            </div>
+
+            <QuoteBomAlternativeDrawer
+              v-if="alternativeFeatureEnabled"
+              v-model="alternativeDrawerVisible"
+              :loading="alternativeLoading"
+              :saving-group-key="alternativeSavingGroupKey"
+              :previewing-group-key="alternativePreviewLoadingGroup"
+              :summary="alternativeSummary"
+              :confirmed="isBomConfirmed"
+              :can-select="canSelectAlternative"
+              :histories="alternativeHistories"
+              :history-loading-group="alternativeHistoryLoadingGroup"
+              @save="saveAlternativeSelection"
+              @preview="previewAlternativeSelection"
+              @restore-preview="clearAlternativePreview"
+              @cancel-preview="clearAlternativePreview"
+              @load-history="loadAlternativeHistory"
+            />
+            </template>
+
+            <template v-else>
+              <el-alert
+                class="inline-alert"
+                type="info"
+                show-icon
+                :closable="false"
+                title="最终有效 BOM 当前未启用，本页使用原始 BOM 层级树；原报价流程和历史结果不受影响。"
+              />
+              <div class="tab-toolbar">
+                <div>
+                  <strong>BOM 层级树</strong>
+                  <span>顶层料号：{{ item.materialNo || '-' }}</span>
+                </div>
+                <div class="toolbar-actions">
+                  <el-button size="small" :disabled="!bomTree" @click="expandBomTree">展开全部</el-button>
+                  <el-button size="small" :disabled="!bomTree" @click="collapseBomTree">收起全部</el-button>
+                </div>
+              </div>
+              <div class="bom-tree-panel" v-loading="bomTreeLoading">
+                <div v-if="!item.materialNo" class="empty-tip">当前产品行无产品料号</div>
+                <div v-else-if="!bomTree && !bomTreeLoading" class="empty-tip">暂无 BOM 层级树</div>
+                <div v-else-if="bomTreeEmpty" class="empty-tip">该产品料号未查询到 BOM 层级树</div>
+                <el-tree
+                  v-else
+                  ref="bomTreeRef"
+                  :data="bomTreeData"
+                  :props="bomTreeProps"
+                  node-key="path"
+                  :expand-on-click-node="false"
+                  @node-click="openBomNodeDetail"
+                >
+                  <template #default="{ data }">
+                    <span class="tree-node">
+                      <span class="node-code">{{ data.materialCode }}</span>
+                      <span class="node-name">{{ data.materialName || '' }}</span>
+                      <span v-if="data.qtyPerParent" class="node-qty">x {{ data.qtyPerParent }}</span>
+                      <el-tag
+                        v-if="bomNodeShapeAttr(data)"
+                        size="small"
+                        :type="bomNodeShapeTagType(data)"
+                        effect="plain"
+                      >{{ bomNodeShapeAttr(data) }}</el-tag>
+                      <el-tag v-if="isTakeoverNode(data)" size="small" type="warning">接管</el-tag>
+                      <el-tag v-if="data.isLeaf === 1" size="small" type="success" effect="plain">叶子</el-tag>
+                    </span>
+                  </template>
+                </el-tree>
+              </div>
+            </template>
           </div>
 
           <div v-else-if="isQuoteBomTab(tab.code)" class="quote-bom-tab">
@@ -186,30 +359,41 @@
                 <span>结算行数</span>
                 <strong>{{ bomConfirmation.rowCount ?? bomRows.length }}</strong>
               </div>
-              <div class="metric">
-                <span>人工修改</span>
-                <strong>{{ bomConfirmation.manualModifiedCount ?? modifiedBomCount }}</strong>
+              <div v-if="alternativeFeatureEnabled" class="metric">
+                <span>可替代组</span>
+                <strong>{{ alternativeSummary.groupCount ?? 0 }}</strong>
               </div>
-              <div class="metric">
-                <span>替换料号</span>
-                <strong>{{ bomConfirmation.replaceCount ?? '-' }}</strong>
-              </div>
-              <div class="metric">
-                <span>用量调整</span>
-                <strong>{{ bomConfirmation.usageAdjustCount ?? '-' }}</strong>
+              <div v-if="alternativeFeatureEnabled" class="metric">
+                <span>已选替代</span>
+                <strong>{{ alternativeSummary.manualAlternativeCount ?? bomConfirmation.replaceCount ?? 0 }}</strong>
               </div>
             </div>
+
+            <el-alert
+              v-if="alternativeFeatureEnabled && alternativeReviewMessage"
+              type="error"
+              show-icon
+              :closable="false"
+              class="inline-alert alternative-review-alert"
+              :title="alternativeReviewMessage"
+            />
 
             <div class="tab-toolbar">
               <div>
                 <strong>报价物料明细</strong>
-                <span>{{ tab.blockedReason || '已按当前产品行过滤 BOM 结算行' }}</span>
+                <span>
+                  {{ tab.blockedReason || '已按当前产品行过滤 BOM 结算行' }}
+                  <template v-if="rollupDisplayRowCount > 0">
+                    ；上卷父件已按命中子件生成展示名称，不增加结算行
+                  </template>
+                  <template v-if="alternativeFeatureEnabled">；标准/替代选择会切换整棵 BOM 分支</template>
+                </span>
               </div>
               <div class="toolbar-actions">
                 <el-button
                   type="primary"
                   :loading="bomActionLoading"
-                  :disabled="isBlockedTab(tab) || isBomConfirmed || bomRows.length === 0"
+                  :disabled="isBlockedTab(tab) || isBomConfirmed || bomRows.length === 0 || alternativeNeedsReview"
                   @click="confirmBomRows"
                 >
                   确认报价物料明细
@@ -225,12 +409,12 @@
             </div>
 
             <el-table
-              :data="bomRows"
+              :data="displayBomRows"
               border
               stripe
               scrollbar-always-on
               max-height="calc(100vh - 420px)"
-              row-key="id"
+              row-key="displayKey"
               class="bom-table"
             >
               <el-table-column label="子件料号" min-width="220" fixed="left" show-overflow-tooltip>
@@ -245,30 +429,6 @@
               <el-table-column prop="unit" label="单位" width="100" />
               <el-table-column prop="materialAttribute" label="材料属性" width="150" show-overflow-tooltip />
               <el-table-column prop="shapeAttribute" label="形态属性" width="150" show-overflow-tooltip />
-              <el-table-column label="人工修改" width="100">
-                <template #default="{ row }">
-                  <el-tag :type="row.manualModified ? 'warning' : 'info'" effect="plain">
-                    {{ row.manualModified ? '是' : '否' }}
-                  </el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column prop="modifiedBy" label="修改人" width="120" />
-              <el-table-column label="修改时间" width="180">
-                <template #default="{ row }">{{ formatDateTime(row.modifiedAt) }}</template>
-              </el-table-column>
-              <el-table-column label="操作" width="140" fixed="right">
-                <template #default="{ row }">
-                  <el-button
-                    link
-                    type="primary"
-                    :icon="Edit"
-                    :disabled="Boolean(editingRowId) || isBomConfirmed"
-                    @click="startEdit(row)"
-                  >
-                    替换/调整
-                  </el-button>
-                </template>
-              </el-table-column>
               <template #empty>
                 <el-empty description="暂无 BOM 行" />
               </template>
@@ -869,126 +1029,6 @@
       </el-tabs>
     </section>
 
-    <el-drawer
-      v-model="editDrawerVisible"
-      title="替换子件料号 / 调整用量"
-      size="760px"
-      destroy-on-close
-      @closed="cancelEdit"
-    >
-      <div class="replace-drawer">
-        <section class="drawer-section">
-          <div class="drawer-section-title">当前 BOM 行</div>
-          <el-descriptions :column="1" border>
-            <el-descriptions-item label="当前子件料号">{{ editingRow?.childCode || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="品名">{{ editingRow?.childName || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="型号">{{ editingRow?.childModel || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="当前用量">{{ editingRow?.usageQty ?? '-' }}</el-descriptions-item>
-            <el-descriptions-item label="父件料号">{{ editingRow?.parentCode || '-' }}</el-descriptions-item>
-          </el-descriptions>
-        </section>
-
-        <section class="drawer-section">
-          <div class="drawer-section-title">替换料号</div>
-          <el-form label-position="top">
-            <el-form-item label="从料品库选择子件料号">
-              <div class="material-picker">
-                <el-input
-                  v-model="materialSearchKeyword"
-                  clearable
-                  placeholder="输入料号 / 品名 / 型号 / 规格查询"
-                  class="drawer-control"
-                  @keyup.enter="searchChildMaterials(materialSearchKeyword)"
-                  @clear="searchChildMaterials('')"
-                >
-                  <template #append>
-                    <el-button :loading="materialOptionLoading" @click="searchChildMaterials(materialSearchKeyword)">
-                      查询
-                    </el-button>
-                  </template>
-                </el-input>
-
-                <el-table
-                  v-loading="materialOptionLoading"
-                  :data="materialOptions"
-                  border
-                  highlight-current-row
-                  row-key="materialCode"
-                  size="small"
-                  max-height="260"
-                  class="material-option-table"
-                  @row-dblclick="handleMaterialSelected"
-                >
-                  <el-table-column prop="materialCode" label="料号" min-width="130" show-overflow-tooltip />
-                  <el-table-column prop="materialName" label="品名" min-width="120" show-overflow-tooltip />
-                  <el-table-column label="型号/规格" min-width="150" show-overflow-tooltip>
-                    <template #default="{ row }">{{ materialModelText(row) || '-' }}</template>
-                  </el-table-column>
-                  <el-table-column prop="unit" label="单位" width="70" />
-                  <el-table-column prop="materialAttribute" label="材料属性" width="110" show-overflow-tooltip />
-                  <el-table-column prop="shapeAttribute" label="形态属性" width="110" show-overflow-tooltip />
-                  <el-table-column label="操作" width="76" fixed="right">
-                    <template #default="{ row }">
-                      <el-button link type="primary" @click="handleMaterialSelected(row)">选用</el-button>
-                    </template>
-                  </el-table-column>
-                  <template #empty>
-                    <el-empty description="输入关键字查询料品库" />
-                  </template>
-                </el-table>
-              </div>
-            </el-form-item>
-
-            <div class="material-preview">
-              <div>
-                <span>替换后料号</span>
-                <strong>{{ editForm.childCode || '-' }}</strong>
-              </div>
-              <div>
-                <span>替换后品名</span>
-                <strong>{{ editForm.childName || '-' }}</strong>
-              </div>
-              <div>
-                <span>型号/规格</span>
-                <strong>{{ editForm.childModel || '-' }}</strong>
-              </div>
-              <div>
-                <span>单位</span>
-                <strong>{{ editForm.unit || '-' }}</strong>
-              </div>
-              <div>
-                <span>材料属性</span>
-                <strong>{{ editForm.materialAttribute || '-' }}</strong>
-              </div>
-              <div>
-                <span>形态属性</span>
-                <strong>{{ editForm.shapeAttribute || '-' }}</strong>
-              </div>
-            </div>
-
-            <el-form-item label="本次核算用量">
-              <el-input-number
-                v-model="editForm.usageQty"
-                :controls="false"
-                :min="0"
-                :precision="6"
-                class="drawer-control"
-              />
-            </el-form-item>
-          </el-form>
-        </section>
-      </div>
-
-      <template #footer>
-        <div class="drawer-footer">
-          <el-button @click="cancelEdit">取消</el-button>
-          <el-button type="primary" :loading="savingRowId === editingRow?.id" @click="saveBomRow(editingRow)">
-            保存
-          </el-button>
-        </div>
-      </template>
-    </el-drawer>
-
     <el-drawer v-model="priceTypeDrawerVisible" :title="priceTypeDrawerTitle" size="620px" destroy-on-close>
       <el-form label-position="top">
         <el-form-item label="物料料号">
@@ -1078,10 +1118,11 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Edit, Refresh } from '@element-plus/icons-vue'
+import { ArrowLeft, Refresh } from '@element-plus/icons-vue'
 import BomNodeDetailDrawer from '../components/BomNodeDetailDrawer.vue'
 import BasePagination from '../components/BasePagination.vue'
 import CostRunTraceDrawer from '../components/CostRunTraceDrawer.vue'
+import QuoteBomAlternativeDrawer from '../components/QuoteBomAlternativeDrawer.vue'
 import { getBomHierarchy } from '../api/bom'
 import { fetchMonthlyRepriceActiveLock } from '../api/monthlyReprice'
 import { useUserStore } from '../store/modules/user'
@@ -1091,19 +1132,49 @@ import {
   checkQuotePriceSources,
   confirmCostingBom,
   confirmPriceType,
+  confirmQuoteEffectiveBom,
   confirmQuoteCostRun,
   exportQuoteCostRunVersion,
+  fetchQuoteBomAlternativeGroups,
+  fetchQuoteBomAlternativeFeatureStatus,
+  fetchQuoteBomAlternativeHistory,
   fetchQuoteCostRun,
   fetchQuoteCostingWorkbench,
+  fetchQuoteEffectiveBom,
   fetchQuotePricePrepare,
   fetchQuotePriceTypeConfirmation,
   generateQuotePricePrepare,
   importMissingPriceType,
+  prepareQuoteEffectiveBomCosting,
+  previewQuoteEffectiveBomAlternative,
+  selectQuoteBomAlternative,
   trialQuoteCostRun,
-  updateCostingBomRow,
 } from '../api/quoteRequests'
 import { confirmPricePrepareNoScrap } from '../api/pricePrepare'
-import { fetchU9MaterialOptions } from '../api/u9MaterialMaster'
+import {
+  alternativeErrorMessage,
+  alternativeReviewWarning,
+  alternativeSelectionDisabled,
+  canSelectQuoteBomAlternative,
+  formatAlternativeRebuildSummary,
+  hasManualCostingChanges,
+} from '../utils/quoteBomAlternativeUtils'
+import { expandQuoteBomDisplayRows } from '../utils/quoteCostingBomRows'
+import {
+  buildQuoteEffectiveBomTree,
+  effectiveAlternativeNodeMeta,
+  effectiveBomCanConfirm,
+  effectiveBomMatchesCostingBuild,
+  costingBomMatchesPreparedBuild,
+  effectiveBomIsReadOnly,
+  effectiveBomStateMeta,
+  effectiveShapeMeta,
+  effectiveShapeSourceLabel,
+  effectiveNodeEvidenceVisible,
+  effectiveSupplierEvidence,
+  emptyQuoteEffectiveBom,
+  normalizeQuoteEffectiveBom,
+} from '../utils/quoteEffectiveBom'
 import { formatDateTime, statusLabel, statusTagType } from '../utils/quoteRequestWorkbench'
 import {
   isCostRunLockedByMonthlyReprice,
@@ -1120,20 +1191,25 @@ const itemId = computed(() => String(route.params.itemId || ''))
 const loading = ref(false)
 const refreshingTabs = ref(false)
 const activeTab = ref('PRODUCT_DETAIL')
-const editingRowId = ref(null)
-const editingRow = ref(null)
-const editDrawerVisible = ref(false)
-const savingRowId = ref(null)
 const bomActionLoading = ref(false)
-const materialOptionLoading = ref(false)
-const materialOptions = ref([])
-const materialSearchKeyword = ref('')
-const editForm = ref(emptyEditForm())
 const bomTree = ref(null)
 const bomTreeRef = ref(null)
 const bomTreeLoading = ref(false)
+const effectiveBom = ref(emptyQuoteEffectiveBom())
+const effectiveBomPreview = ref(null)
+const effectiveBomLoading = ref(false)
+const effectiveBomConfirming = ref(false)
 const bomNodeDrawerVisible = ref(false)
 const selectedBomNode = ref(null)
+const alternativeDrawerVisible = ref(false)
+const alternativeFeatureEnabled = ref(false)
+const alternativeLoading = ref(false)
+const alternativeSavingGroupKey = ref('')
+const alternativePreviewLoadingGroup = ref('')
+let alternativePreviewRequestId = 0
+const alternativeHistoryLoadingGroup = ref('')
+const alternativeHistories = ref({})
+const alternativeSummary = ref(emptyAlternativeSummary())
 const priceTypeLoading = ref(false)
 const priceTypeActionLoading = ref(false)
 const priceType = ref(emptyPriceTypeResponse())
@@ -1174,7 +1250,12 @@ const workbench = ref({
 
 const header = computed(() => workbench.value.header || {})
 const item = computed(() => workbench.value.item || {})
+const effectiveBomFeatureEnabled = computed(() => workbench.value.effectiveBomEnabled !== false)
 const bomRows = computed(() => Array.isArray(workbench.value.bomRows) ? workbench.value.bomRows : [])
+const displayBomRows = computed(() => expandQuoteBomDisplayRows(bomRows.value))
+const rollupDisplayRowCount = computed(
+  () => displayBomRows.value.filter((row) => row.rollupDisplay).length,
+)
 const currentItemRows = computed(() => item.value?.id ? [item.value] : [])
 const bomConfirmation = computed(() => workbench.value.latestBomConfirmation || {})
 const latestPriceType = computed(() => workbench.value.latestPriceTypeConfirmation || {})
@@ -1186,12 +1267,22 @@ const latestPrepare = computed(() => {
   }
 })
 const isBomConfirmed = computed(() => bomConfirmation.value.confirmStatus === 'CONFIRMED')
+const canSelectAlternative = computed(() => canSelectQuoteBomAlternative(userStore.permissions))
+const alternativeNeedsReview = computed(() =>
+  Boolean(alternativeSummary.value.reviewRequired)
+  || (alternativeSummary.value.groups || []).some(
+    (group) => group?.reviewRequired
+      || String(group?.selectionStatus || '').toUpperCase() === 'STALE',
+  ))
+const alternativeReviewMessage = computed(() => alternativeReviewWarning({
+  ...alternativeSummary.value,
+  reviewRequired: alternativeNeedsReview.value,
+}))
 const bomConfirmStatusText = computed(() => {
   if (bomConfirmation.value.confirmStatus === 'CONFIRMED') return '已确认'
   if (bomConfirmation.value.confirmStatus === 'VOIDED') return '已撤销'
   return '待确认'
 })
-const modifiedBomCount = computed(() => bomRows.value.filter((row) => row.manualModified).length)
 const tabs = computed(() => {
   const serverTabs = Array.isArray(workbench.value.tabs) ? workbench.value.tabs : []
   const normalizedTabs = serverTabs.length > 0 ? serverTabs : [
@@ -1245,6 +1336,53 @@ const bomTreeProps = {
 }
 const bomTreeData = computed(() => (bomTree.value ? [bomTree.value] : []))
 const bomTreeEmpty = computed(() => bomTree.value && !bomTree.value.materialCode)
+const presentedEffectiveBom = computed(() => effectiveBomPreview.value || effectiveBom.value)
+const effectiveBomPreviewActive = computed(() => Boolean(effectiveBomPreview.value))
+const effectiveBomTreeData = computed(() => buildQuoteEffectiveBomTree(presentedEffectiveBom.value.nodes))
+const effectiveBomDefaultExpandedKeys = computed(() => effectiveBomTreeData.value.map((node) => node.nodeKey))
+const effectiveBomStateInfo = computed(() => {
+  const state = presentedEffectiveBom.value.state
+  if (!isBomConfirmed.value && effectiveBomIsReadOnly(state)) {
+    return { label: '待确认', type: 'warning' }
+  }
+  return effectiveBomStateMeta(state)
+})
+const effectiveBomReadOnly = computed(() => (
+  isBomConfirmed.value && effectiveBomIsReadOnly(effectiveBom.value.state)
+))
+const effectiveBomBlocked = computed(() => (
+  presentedEffectiveBom.value.state === 'BLOCKED'
+  || presentedEffectiveBom.value.state === 'ERROR'
+))
+const pricingBomReadyForNextStep = computed(() => (
+  effectiveBomMatchesCostingBuild(effectiveBom.value, workbench.value)
+))
+const effectiveAlternativeGroupKeys = computed(() => new Set(
+  presentedEffectiveBom.value.alternativeSelections
+    .map((selection) => String(selection?.alternativeGroupKey || '').trim())
+    .filter(Boolean),
+))
+const effectiveAlternativeSummaryText = computed(() => {
+  const selections = presentedEffectiveBom.value.alternativeSelections || []
+  if (selections.length === 0) return '无候选组'
+  const alternativeCount = selections.filter(
+    (selection) => String(selection?.selectedChildType || '').toUpperCase() === 'ALTERNATIVE',
+  ).length
+  return alternativeCount > 0
+    ? `${selections.length} 组，已选替代 ${alternativeCount} 组`
+    : `${selections.length} 组，均使用标准料`
+})
+const effectiveBomPreviewChangedNodeKeys = computed(() => {
+  if (!effectiveBomPreview.value) return new Set()
+  const currentByKey = new Map(
+    effectiveBom.value.nodes.map((node) => [String(node?.nodeKey || ''), effectiveNodeSignature(node)]),
+  )
+  return new Set(
+    effectiveBomPreview.value.nodes
+      .filter((node) => currentByKey.get(String(node?.nodeKey || '')) !== effectiveNodeSignature(node))
+      .map((node) => String(node?.nodeKey || '')),
+  )
+})
 const priceTypeSummary = computed(() => priceType.value.summary || {})
 const flatPriceTypeRows = computed(() => flattenRows(priceType.value.rows || []))
 const missingPriceTypeRows = computed(() => flatPriceTypeRows.value.filter((row) => isMissingPriceTypeRow(row)))
@@ -1384,21 +1522,26 @@ async function loadWorkbench(options = {}) {
   const { resetTab = false, loadChildren = true } = options
   if (!oaNo.value || !itemId.value) return
   loading.value = true
-  cancelEdit()
-  clearBomTree()
   try {
+    clearEffectiveBom()
+    clearBomTree()
     workbench.value = await fetchQuoteCostingWorkbench(oaNo.value, itemId.value)
     if (resetTab || !activeTab.value) {
       activeTab.value = 'PRODUCT_DETAIL'
     }
-    loadBomTree()
+    if (effectiveBomFeatureEnabled.value) {
+      await loadEffectiveBom()
+    } else {
+      await loadBomTree()
+    }
     if (loadChildren) {
       await refreshAllTabData()
     }
     applyInputGapGuide()
-    applyRouteTab()
   } catch (error) {
     workbench.value = { header: {}, item: {}, bomRows: [], tabs: [], workflowStatus: {} }
+    clearEffectiveBom('ERROR')
+    clearBomTree()
     ElMessage.error(error?.message || '获取核算工作台失败')
   } finally {
     loading.value = false
@@ -1413,13 +1556,246 @@ async function refreshWorkbench() {
 
 async function refreshAllTabData() {
   refreshingTabs.value = true
+  if (effectiveBomFeatureEnabled.value) {
+    await loadAlternativeFeatureStatus(false)
+  } else {
+    alternativeFeatureEnabled.value = false
+    alternativeSummary.value = emptyAlternativeSummary()
+  }
   await Promise.allSettled([
-    loadPriceType(false),
+    alternativeFeatureEnabled.value
+      ? loadAlternativeGroups(false)
+      : Promise.resolve(),
+    // 第 2 步尚未确认时，第 3 步接口按业务规则会拒绝访问。
+    // 初始化和进入第 2 步只加载当前阶段数据，避免把正常门禁弹成错误提示。
+    isBomConfirmed.value ? loadPriceType(false) : Promise.resolve(),
     loadPricePrepare(false),
     loadCostRun(false),
     loadActiveRepriceLock(),
   ])
   refreshingTabs.value = false
+}
+
+async function loadAlternativeFeatureStatus(showError = true) {
+  if (!oaNo.value || !itemId.value) {
+    alternativeFeatureEnabled.value = false
+    alternativeSummary.value = emptyAlternativeSummary()
+    return
+  }
+  try {
+    const status = await fetchQuoteBomAlternativeFeatureStatus(
+      oaNo.value,
+      itemId.value,
+    )
+    alternativeFeatureEnabled.value = status?.enabled === true
+  } catch (error) {
+    alternativeFeatureEnabled.value = false
+    if (showError) {
+      ElMessage.error(error?.message || '获取标准/替代功能状态失败')
+    }
+  }
+  if (!alternativeFeatureEnabled.value) {
+    alternativeDrawerVisible.value = false
+    clearAlternativePreview()
+    alternativeSummary.value = emptyAlternativeSummary()
+  }
+}
+
+async function loadAlternativeGroups(showError = true) {
+  if (!alternativeFeatureEnabled.value) {
+    alternativeSummary.value = emptyAlternativeSummary()
+    return
+  }
+  if (!oaNo.value || !itemId.value || !workbench.value.periodMonth) {
+    alternativeSummary.value = emptyAlternativeSummary()
+    return
+  }
+  alternativeLoading.value = true
+  try {
+    alternativeSummary.value = await fetchQuoteBomAlternativeGroups(oaNo.value, itemId.value, {
+      periodMonth: workbench.value.periodMonth,
+    }) || emptyAlternativeSummary()
+  } catch (error) {
+    alternativeSummary.value = emptyAlternativeSummary()
+    if (showError) {
+      ElMessage.error(alternativeErrorMessage(error) || '获取标准/替代组失败')
+    }
+  } finally {
+    alternativeLoading.value = false
+  }
+}
+
+async function openAlternativeDrawer() {
+  if (!alternativeFeatureEnabled.value) return
+  clearAlternativePreview()
+  alternativeDrawerVisible.value = true
+  await loadAlternativeGroups()
+  if (isBomConfirmed.value && canSelectAlternative.value) {
+    await Promise.allSettled(
+      (alternativeSummary.value.groups || []).map((group) =>
+        loadAlternativeHistory(group, false)),
+    )
+  }
+}
+
+async function previewAlternativeSelection({ group, selectedMaterialCode }) {
+  const groupKey = String(group?.alternativeGroupKey || '').trim()
+  const materialCode = String(selectedMaterialCode || '').trim()
+  if (!groupKey || !materialCode || !workbench.value.periodMonth) return
+  const requestId = ++alternativePreviewRequestId
+  alternativePreviewLoadingGroup.value = groupKey
+  try {
+    const result = await previewQuoteEffectiveBomAlternative(
+      oaNo.value,
+      itemId.value,
+      {
+        periodMonth: workbench.value.periodMonth,
+        alternativeGroupKey: groupKey,
+        selectedMaterialCode: materialCode,
+      },
+    )
+    if (requestId !== alternativePreviewRequestId) return
+    effectiveBomPreview.value = normalizeQuoteEffectiveBom(result)
+  } catch (error) {
+    if (requestId !== alternativePreviewRequestId) return
+    effectiveBomPreview.value = null
+    ElMessage.error(alternativeErrorMessage(error) || '计价方案预览失败')
+  } finally {
+    if (requestId === alternativePreviewRequestId) {
+      alternativePreviewLoadingGroup.value = ''
+    }
+  }
+}
+
+function clearAlternativePreview() {
+  alternativePreviewRequestId += 1
+  alternativePreviewLoadingGroup.value = ''
+  effectiveBomPreview.value = null
+}
+
+async function loadAlternativeHistory(group, showError = true) {
+  const groupKey = group?.alternativeGroupKey
+  if (!groupKey || !workbench.value.periodMonth || !canSelectAlternative.value) return
+  alternativeHistoryLoadingGroup.value = groupKey
+  try {
+    const rows = await fetchQuoteBomAlternativeHistory(
+      oaNo.value,
+      itemId.value,
+      groupKey,
+      { periodMonth: workbench.value.periodMonth },
+    )
+    alternativeHistories.value = {
+      ...alternativeHistories.value,
+      [groupKey]: Array.isArray(rows) ? rows : [],
+    }
+  } catch (error) {
+    if (showError) ElMessage.error(alternativeErrorMessage(error))
+  } finally {
+    if (alternativeHistoryLoadingGroup.value === groupKey) {
+      alternativeHistoryLoadingGroup.value = ''
+    }
+  }
+}
+
+async function saveAlternativeSelection({ group, selectedMaterialCode }) {
+  if (!alternativeFeatureEnabled.value) return
+  if (!group?.alternativeGroupKey || !selectedMaterialCode) return
+  if (alternativeSelectionDisabled({
+    confirmed: isBomConfirmed.value,
+    canSelect: canSelectAlternative.value,
+    summary: alternativeSummary.value,
+    group,
+  })) {
+    ElMessage.warning(
+      alternativeReviewMessage.value
+      || (isBomConfirmed.value
+        ? '报价物料明细已确认，请先撤销确认'
+        : '当前不能修改标准/替代选择'),
+    )
+    return
+  }
+
+  let confirmDiscardManualChanges = false
+  if (hasManualCostingChanges(bomConfirmation.value, bomRows.value)) {
+    confirmDiscardManualChanges = await confirmAlternativeManualChangesDiscard()
+    if (!confirmDiscardManualChanges) return
+  }
+
+  alternativeSavingGroupKey.value = group.alternativeGroupKey
+  try {
+    const selectionBody = {
+      periodMonth: workbench.value.periodMonth,
+      selectedMaterialCode,
+      expectedSelectionVersion: group.selectionVersion,
+      expectedBuildBatchId: group.sourceBuildBatchId || workbench.value.buildBatchId,
+      confirmDiscardManualChanges,
+      selectionRemark: '产品明细页面选择标准/替代件',
+    }
+    let result
+    try {
+      result = await selectQuoteBomAlternative(
+        oaNo.value,
+        itemId.value,
+        group.alternativeGroupKey,
+        selectionBody,
+      )
+    } catch (error) {
+      if (
+        !selectionBody.confirmDiscardManualChanges
+        && String(error?.message || '').includes('MANUAL_ROW_CHANGES_EXIST')
+      ) {
+        selectionBody.confirmDiscardManualChanges = await confirmAlternativeManualChangesDiscard()
+        if (!selectionBody.confirmDiscardManualChanges) return
+        result = await selectQuoteBomAlternative(
+          oaNo.value,
+          itemId.value,
+          group.alternativeGroupKey,
+          selectionBody,
+        )
+      } else {
+        throw error
+      }
+    }
+    clearAlternativePreview()
+    await refreshAfterAlternativeSelection()
+    await loadAlternativeHistory(
+      alternativeSummary.value.groups?.find(
+        (candidate) => candidate.alternativeGroupKey === group.alternativeGroupKey,
+      ) || group,
+      false,
+    )
+    ElMessage.success(formatAlternativeRebuildSummary(result))
+  } catch (error) {
+    const message = alternativeErrorMessage(error)
+    ElMessage.error(message)
+    if (/ALT_SELECTION_CONFLICT|ALT_SOURCE_STALE/.test(String(error?.message || ''))) {
+      await loadAlternativeGroups(false)
+    }
+  } finally {
+    alternativeSavingGroupKey.value = ''
+  }
+}
+
+async function confirmAlternativeManualChangesDiscard() {
+  try {
+    await ElMessageBox.confirm(
+      '当前存在人工修改的结算行。切换整棵 BOM 分支会清除这些人工修改，并使后续价格类型、最终价格和成本核算结果失效，确认继续？',
+      '切换标准/替代件',
+      {
+        type: 'warning',
+        confirmButtonText: '确认切换并清除',
+        cancelButtonText: '取消',
+      },
+    )
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function refreshAfterAlternativeSelection() {
+  autoPriceSourceCheckedKey.value = ''
+  await loadWorkbench({ resetTab: false, loadChildren: true })
 }
 
 async function loadActiveRepriceLock() {
@@ -1432,6 +1808,10 @@ async function loadActiveRepriceLock() {
 
 function applyInputGapGuide() {
   if (route.query.guide !== 'costing-input-gap') return
+  if (effectiveBomFeatureEnabled.value && !pricingBomReadyForNextStep.value) {
+    activeTab.value = 'PRODUCT_DETAIL'
+    return
+  }
   const missingTypeCount = currentMissingPriceTypeCount()
   if (missingTypeCount > 0) {
     priceTypeFilter.value = 'MISSING'
@@ -1447,11 +1827,21 @@ function applyInputGapGuide() {
   activeTab.value = blockedStep || 'COST_RUN'
 }
 
-function applyRouteTab() {
+async function applyRouteTab() {
   const requestedTab = normalizeTabCode(route.query.tab)
   if (!requestedTab) return false
   const exists = tabs.value.some((tab) => normalizeTabCode(tab.code) === requestedTab)
   if (!exists) return false
+  if (
+    effectiveBomFeatureEnabled.value
+    && requestedTab !== 'PRODUCT_DETAIL'
+    && !pricingBomReadyForNextStep.value
+  ) {
+    if (effectiveBomBlocked.value || !await preparePricingBomForNextStep()) {
+      activeTab.value = 'PRODUCT_DETAIL'
+      return false
+    }
+  }
   activeTab.value = requestedTab
   return true
 }
@@ -1567,6 +1957,13 @@ function goBack() {
   router.push(`/ingest/quote-requests/${encodeURIComponent(oaNo.value)}`)
 }
 
+function clearEffectiveBom(state = '') {
+  clearAlternativePreview()
+  effectiveBom.value = emptyQuoteEffectiveBom(state)
+  selectedBomNode.value = null
+  bomNodeDrawerVisible.value = false
+}
+
 function clearBomTree() {
   bomTree.value = null
   selectedBomNode.value = null
@@ -1634,6 +2031,55 @@ function priceOrgCodeFromProductText(...values) {
   return /板换|板式换热器|板式热交换器|钎焊板式/.test(text) ? '220' : ''
 }
 
+async function loadEffectiveBom(showError = true) {
+  if (!oaNo.value || !itemId.value) {
+    clearEffectiveBom()
+    return
+  }
+  effectiveBomLoading.value = true
+  try {
+    effectiveBom.value = normalizeQuoteEffectiveBom(
+      await fetchQuoteEffectiveBom(oaNo.value, itemId.value),
+    )
+  } catch (error) {
+    const message = error?.message || '查询最终有效 BOM 失败'
+    effectiveBom.value = normalizeQuoteEffectiveBom({
+      state: 'ERROR',
+      blockIssues: [{ issueCode: 'EFFECTIVE_BOM_LOAD_FAILED', message }],
+    })
+    if (showError) ElMessage.error(message)
+  } finally {
+    effectiveBomLoading.value = false
+  }
+}
+
+async function preparePricingBomForNextStep() {
+  if (pricingBomReadyForNextStep.value) return true
+  if (effectiveBomConfirming.value) return false
+  if (!effectiveBomCanConfirm(effectiveBom.value) && !effectiveBomReadOnly.value) {
+    ElMessage.warning(effectiveBomBlocked.value
+      ? '请先处理本次计价 BOM 的数据问题'
+      : '本次计价 BOM 尚未准备好')
+    return false
+  }
+  effectiveBomConfirming.value = true
+  try {
+    const prepared = await prepareQuoteEffectiveBomCosting(oaNo.value, itemId.value)
+    await loadWorkbench({ resetTab: false, loadChildren: true })
+    if (!costingBomMatchesPreparedBuild(prepared, workbench.value)) {
+      ElMessage.error('本次计价 BOM 自动生成失败，请联系管理员检查')
+      return false
+    }
+    ElMessage.success('已按当前计价 BOM 生成报价物料明细')
+    return true
+  } catch (error) {
+    ElMessage.error(error?.message || '生成报价物料明细失败')
+    return false
+  } finally {
+    effectiveBomConfirming.value = false
+  }
+}
+
 function openBomNodeDetail(node) {
   selectedBomNode.value = node
   bomNodeDrawerVisible.value = true
@@ -1648,10 +2094,53 @@ function collapseBomTree() {
 }
 
 function setBomTreeExpanded(expanded) {
-  const nodesMap = bomTreeRef.value?.store?.nodesMap || {}
-  Object.values(nodesMap).forEach((node) => {
+  const store = bomTreeRef.value?.store
+  const allNodes = store?._getAllNodes?.() || Object.values(store?.nodesMap || {})
+  allNodes.forEach((node) => {
     node.expanded = expanded
   })
+}
+
+function effectiveShapeInfo(node) {
+  return effectiveShapeMeta(node?.effectiveMaterialShape)
+}
+
+function isStructureRootNode(node) {
+  return node?.shapeResolutionSource === 'STRUCTURE_ROOT'
+}
+
+function effectiveNodeSignature(node) {
+  return [
+    node?.parentNodeKey,
+    node?.materialCode,
+    node?.effectiveMaterialShape,
+    node?.alternativeChildType,
+    node?.shapeResolutionSource,
+  ].map((value) => String(value ?? '')).join('|')
+}
+
+function isEffectiveBomPreviewChanged(node) {
+  return effectiveBomPreviewChangedNodeKeys.value.has(String(node?.nodeKey || ''))
+}
+
+function hasEffectiveBomChildren(node) {
+  return Array.isArray(node?.children) && node.children.length > 0
+}
+
+function effectiveAlternativeInfo(node) {
+  return effectiveAlternativeNodeMeta(node, effectiveAlternativeGroupKeys.value)
+}
+
+function shouldShowEffectiveNodeEvidence(node) {
+  return !isStructureRootNode(node) && effectiveNodeEvidenceVisible(node)
+}
+
+function effectiveShapeSourceText(node) {
+  return effectiveShapeSourceLabel(node?.shapeResolutionSource)
+}
+
+function effectiveSupplierText(node) {
+  return effectiveSupplierEvidence(node)
 }
 
 function isTakeoverNode(node) {
@@ -1672,118 +2161,26 @@ function bomNodeShapeTagType(node) {
   return ''
 }
 
-function emptyEditForm() {
-  return {
-    childCode: '',
-    childName: '',
-    childModel: '',
-    usageQty: null,
-    unit: '',
-    materialAttribute: '',
-    shapeAttribute: '',
-  }
-}
-
-function isEditing(row) {
-  return editingRowId.value === row.id
-}
-
-function startEdit(row) {
-  editingRow.value = row
-  editingRowId.value = row.id
-  editDrawerVisible.value = true
-  materialSearchKeyword.value = row.childCode || ''
-  editForm.value = {
-    childCode: row.childCode || '',
-    childName: row.childName || '',
-    childModel: row.childModel || '',
-    usageQty: row.usageQty ?? null,
-    unit: row.unit || '',
-    materialAttribute: row.materialAttribute || '',
-    shapeAttribute: row.shapeAttribute || '',
-  }
-  materialOptions.value = row.childCode ? [optionFromRow(row)] : []
-  searchChildMaterials(row.childCode || '')
-}
-
-function cancelEdit() {
-  editingRowId.value = null
-  editingRow.value = null
-  editDrawerVisible.value = false
-  savingRowId.value = null
-  editForm.value = emptyEditForm()
-  materialOptions.value = []
-  materialSearchKeyword.value = ''
-}
-
-async function searchChildMaterials(keyword) {
-  const query = String(keyword || '').trim()
-  materialOptionLoading.value = true
-  try {
-    materialOptions.value = await fetchU9MaterialOptions(query, 20)
-  } catch (error) {
-    materialOptions.value = []
-    ElMessage.error(error?.message || '搜索子件料号失败')
-  } finally {
-    materialOptionLoading.value = false
-  }
-}
-
-function handleMaterialSelected(material) {
-  const selected = typeof material === 'string'
-    ? materialOptions.value.find((option) => option.materialCode === material)
-    : material
-  if (!selected) return
-  editForm.value.childCode = selected.materialCode || ''
-  editForm.value.childName = selected.materialName || ''
-  editForm.value.childModel = materialModelText(selected)
-  editForm.value.unit = selected.unit || ''
-  editForm.value.materialAttribute = selected.materialAttribute || ''
-  editForm.value.shapeAttribute = selected.shapeAttribute || ''
-  materialSearchKeyword.value = formatMaterialOption(selected)
-}
-
-async function saveBomRow(row = editingRow.value) {
-  if (!row || !isEditing(row)) return
-  if (!String(editForm.value.childCode || '').trim()) {
-    ElMessage.error('请选择子件料号')
-    return
-  }
-  if (editForm.value.usageQty === null || editForm.value.usageQty === '' || !Number.isFinite(Number(editForm.value.usageQty))) {
-    ElMessage.error('请输入有效用量')
-    return
-  }
-  savingRowId.value = row.id
-  try {
-    const saved = await updateCostingBomRow(oaNo.value, itemId.value, row.id, {
-      childCode: editForm.value.childCode,
-      childName: editForm.value.childName,
-      childModel: editForm.value.childModel,
-      usageQty: editForm.value.usageQty,
-      unit: editForm.value.unit,
-      materialAttribute: editForm.value.materialAttribute,
-      shapeAttribute: editForm.value.shapeAttribute,
-    })
-    Object.assign(row, saved)
-    ElMessage.success('BOM 行已保存')
-    cancelEdit()
-    await loadWorkbench({ resetTab: false, loadChildren: false })
-  } catch (error) {
-    ElMessage.error(error?.message || '保存 BOM 行失败')
-  } finally {
-    if (savingRowId.value === row.id) {
-      savingRowId.value = null
-    }
-  }
-}
-
 async function confirmBomRows() {
+  if (alternativeNeedsReview.value) {
+    alternativeDrawerVisible.value = true
+    ElMessage.error(
+      alternativeReviewMessage.value
+      || '标准/替代选择需要重新确认，完成前不能确认报价物料明细',
+    )
+    return
+  }
   bomActionLoading.value = true
   try {
-    await confirmCostingBom(oaNo.value, itemId.value, {
+    const request = {
       periodMonth: workbench.value.periodMonth,
       confirmRemark: '前端确认报价物料明细',
-    })
+    }
+    if (effectiveBomFeatureEnabled.value) {
+      await confirmQuoteEffectiveBom(oaNo.value, itemId.value, request)
+    } else {
+      await confirmCostingBom(oaNo.value, itemId.value, request)
+    }
     await loadWorkbench({ resetTab: false, loadChildren: true })
     guidePriceTypeAfterBomConfirm()
   } catch (error) {
@@ -2356,31 +2753,6 @@ async function openCostRunTrace(row) {
   traceDrawerVisible.value = true
 }
 
-function optionFromRow(row) {
-  return {
-    materialCode: row.childCode || '',
-    materialName: row.childName || '',
-    childModel: row.childModel || '',
-    materialModel: row.childModel || '',
-    materialSpec: row.childModel || '',
-    unit: row.unit || '',
-    materialAttribute: row.materialAttribute || '',
-    shapeAttribute: row.shapeAttribute || '',
-  }
-}
-
-function formatMaterialOption(option) {
-  return [
-    option.materialCode,
-    option.materialName,
-    materialModelText(option),
-  ].filter(Boolean).join(' / ')
-}
-
-function materialModelText(material) {
-  return material?.childModel || material?.materialModel || material?.materialSpec || ''
-}
-
 function formatMoney(value) {
   if (value === null || value === undefined || value === '') return '-'
   return Number.isFinite(Number(value)) ? Number(value).toLocaleString('zh-CN') : value
@@ -2491,9 +2863,24 @@ function isBlockedTab(tab) {
   return tab?.status === 'BLOCKED'
 }
 
+async function beforeWorkbenchTabLeave(nextName, previousName) {
+  const nextCode = normalizeTabCode(nextName)
+  const previousCode = normalizeTabCode(previousName)
+  if (previousCode !== 'PRODUCT_DETAIL' || nextCode === 'PRODUCT_DETAIL') return true
+  if (!effectiveBomFeatureEnabled.value) return true
+  if (pricingBomReadyForNextStep.value) return true
+  if (effectiveBomBlocked.value) {
+    ElMessage.error('本次计价 BOM 存在数据问题，暂时不能进入下一步')
+    return false
+  }
+  return preparePricingBomForNextStep()
+}
+
 function tabBadgeLabel(tab) {
   const code = normalizeTabCode(tab?.code)
-  if (code === 'PRODUCT_DETAIL') return bomTree.value ? '已加载' : '查看'
+  if (code === 'PRODUCT_DETAIL') {
+    return effectiveBomFeatureEnabled.value ? effectiveBomStateInfo.value.label : '旧版原始 BOM'
+  }
   if (code === 'QUOTE_BOM') return isBomConfirmed.value ? '已确认' : '待确认'
   if (code === 'PRICE_TYPE_CONFIRMATION') {
     const missingTypeCount = currentMissingPriceTypeCount()
@@ -2527,7 +2914,9 @@ function tabBadgeLabel(tab) {
 
 function tabBadgeType(tab) {
   const code = normalizeTabCode(tab?.code)
-  if (code === 'PRODUCT_DETAIL') return 'info'
+  if (code === 'PRODUCT_DETAIL') {
+    return effectiveBomFeatureEnabled.value ? effectiveBomStateInfo.value.type : 'info'
+  }
   if (code === 'QUOTE_BOM') return isBomConfirmed.value ? 'success' : 'warning'
   if (code === 'PRICE_TYPE_CONFIRMATION') return currentMissingPriceTypeCount() > 0 ? 'danger' : (tab?.status === 'DONE' ? 'success' : 'warning')
   if (code === 'PRICE_SOURCE_SUPPLEMENT') {
@@ -2629,6 +3018,16 @@ function emptyPriceTypeResponse() {
   return {
     summary: {},
     rows: [],
+  }
+}
+
+function emptyAlternativeSummary() {
+  return {
+    periodMonth: '',
+    groupCount: 0,
+    manualAlternativeCount: 0,
+    reviewRequired: false,
+    groups: [],
   }
 }
 
@@ -2764,6 +3163,7 @@ function priceTypeTagType(row) {
 
 async function initializeWorkbench() {
   await loadWorkbench({ resetTab: true, loadChildren: true })
+  await applyRouteTab()
   await refreshPriceSourceFromReturn()
   await ensurePriceSourceChecked()
 }
@@ -2776,8 +3176,8 @@ watch(activeTab, () => {
   ensurePriceSourceChecked()
 })
 
-watch(() => route.query.tab, () => {
-  applyRouteTab()
+watch(() => route.query.tab, async () => {
+  await applyRouteTab()
   ensurePriceSourceChecked()
 })
 
@@ -3089,6 +3489,56 @@ onMounted(() => initializeWorkbench())
   gap: 12px;
 }
 
+.pricing-bom-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid #dbe7f5;
+  border-radius: 6px;
+  background: #f7faff;
+}
+
+.pricing-bom-summary > div,
+.pricing-bom-summary-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pricing-bom-summary span {
+  color: #697386;
+  font-size: 13px;
+}
+
+.pricing-bom-summary-status {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.effective-bom-message-list {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+
+.effective-bom-message-list li + li {
+  margin-top: 4px;
+}
+
+.pricing-bom-designer {
+  display: block;
+  min-width: 0;
+}
+
+.pricing-bom-tree-column {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+}
+
 .bom-tree-panel {
   min-height: 360px;
   max-height: calc(100vh - 360px);
@@ -3109,6 +3559,143 @@ onMounted(() => initializeWorkbench())
   align-items: center;
   gap: 8px;
   padding: 2px 0;
+}
+
+.effective-tree-node {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 3px;
+  width: max-content;
+  max-width: calc(100% - 8px);
+  padding: 5px 6px;
+  border-radius: 6px;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.effective-bom-tree :deep(.el-tree-node__content) {
+  height: auto;
+  min-height: 32px;
+  align-items: flex-start;
+  width: max-content;
+  min-width: 100%;
+  padding-right: 10px;
+  border-radius: 6px;
+  box-sizing: border-box;
+}
+
+.effective-bom-tree :deep(.el-tree-node__content:hover),
+.effective-bom-tree :deep(.el-tree-node:focus > .el-tree-node__content) {
+  background: #f7f9fc;
+}
+
+.effective-bom-tree :deep(.el-tree-node__expand-icon) {
+  flex-shrink: 0;
+  margin-top: 8px;
+  color: #8290a3;
+}
+
+.effective-bom-tree :deep(.el-tree-node__children) {
+  overflow: visible;
+  margin-left: 11px;
+  padding-left: 17px;
+  border-left: 1px solid #d8e1ec;
+}
+
+.effective-bom-tree :deep(.el-tree-node__children > .el-tree-node) {
+  position: relative;
+}
+
+.effective-bom-tree :deep(.el-tree-node__children > .el-tree-node::before) {
+  position: absolute;
+  z-index: 1;
+  top: 16px;
+  left: -17px;
+  width: 15px;
+  border-top: 1px solid #d8e1ec;
+  content: '';
+}
+
+.effective-bom-tree :deep(.el-tree-node__children > .el-tree-node:last-child::after) {
+  position: absolute;
+  z-index: 0;
+  top: 17px;
+  bottom: 0;
+  left: -18px;
+  width: 2px;
+  background: #ffffff;
+  content: '';
+}
+
+.effective-tree-parent {
+  margin: 1px 0;
+}
+
+.effective-tree-parent .node-code,
+.effective-tree-parent .node-name {
+  color: #26364a;
+  font-weight: 600;
+}
+
+.effective-tree-root {
+  margin-bottom: 5px;
+  padding: 7px 10px;
+  border: 1px solid #dbe8f7;
+  border-left: 3px solid #4d8fd8;
+  border-radius: 7px;
+  background: #f5f9fe;
+}
+
+.effective-tree-preview-change {
+  box-shadow: inset 3px 0 0 #e6a23c;
+  background: #fff9ef;
+}
+
+.node-child-count {
+  color: #8a97a8;
+  font-size: 11px;
+}
+
+.effective-node-main :deep(.el-tag) {
+  height: 22px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  font-weight: 500;
+  line-height: 22px;
+}
+
+.effective-shape-tag.el-tag--primary {
+  color: #3f73ad;
+  background: #eaf2fb;
+}
+
+.effective-shape-tag.el-tag--success {
+  color: #4d865e;
+  background: #edf7ef;
+}
+
+.effective-shape-tag.el-tag--warning {
+  color: #a66b22;
+  background: #fff4e5;
+}
+
+.effective-alternative-tag {
+  color: #7256b8;
+  background: #f2effb;
+}
+
+.effective-node-main,
+.effective-node-evidence {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.effective-node-evidence {
+  color: #7f8b9c;
+  font-size: 11px;
 }
 
 .node-code {
@@ -3281,66 +3868,8 @@ onMounted(() => initializeWorkbench())
   color: #909399;
 }
 
-.replace-drawer,
-.drawer-section {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.drawer-section-title {
-  color: #1f2937;
-  font-size: 14px;
-  font-weight: 600;
-}
-
 .drawer-control {
   width: 100%;
-}
-
-.material-preview {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  margin-bottom: 18px;
-}
-
-.material-picker {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: 100%;
-}
-
-.material-option-table {
-  width: 100%;
-}
-
-.material-preview div {
-  min-width: 0;
-  padding: 10px 12px;
-  border: 1px solid #e5eaf3;
-  border-radius: 4px;
-  background: #f9fafb;
-}
-
-.material-preview span {
-  display: block;
-  color: #697386;
-  font-size: 12px;
-  line-height: 1.35;
-}
-
-.material-preview strong {
-  display: block;
-  margin-top: 4px;
-  color: #1f2937;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.35;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .drawer-footer {
@@ -3366,7 +3895,6 @@ onMounted(() => initializeWorkbench())
     justify-content: flex-start;
   }
 
-  .material-preview,
   .version-strip {
     grid-template-columns: 1fr;
   }

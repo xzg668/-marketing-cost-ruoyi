@@ -12,15 +12,53 @@ export const fetchQuoteRequestDetail = (oaNo) =>
 export const fetchQuoteCostingWorkbench = (oaNo, itemId) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/costing-workbench`)
 
+export const fetchQuoteEffectiveBom = (oaNo, itemId) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/effective-bom`)
+
+export const rebuildQuoteEffectiveBom = (oaNo, itemId) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/effective-bom/rebuild`, {
+    method: 'POST',
+  })
+
+export const previewQuoteEffectiveBomAlternative = (oaNo, itemId, body) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/effective-bom/alternative-preview`, {
+    method: 'POST',
+    body,
+  })
+
+export const confirmQuoteEffectiveBom = (oaNo, itemId, body = {}) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/effective-bom/confirm`, {
+    method: 'POST',
+    body,
+  })
+
+export const prepareQuoteEffectiveBomCosting = (oaNo, itemId) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/effective-bom/prepare-costing`, {
+    method: 'POST',
+  })
+
 export const launchQuoteCostingWorkbench = (oaNo, itemId) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/costing-workbench/launch`, {
     method: 'POST',
   })
 
-export const updateCostingBomRow = (oaNo, itemId, rowId, body) =>
-  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/costing-bom/rows/${encodePath(rowId)}`, {
+export const fetchQuoteBomAlternativeGroups = (oaNo, itemId, params) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/costing-bom/alternative-groups`, {
+    params,
+  })
+
+export const fetchQuoteBomAlternativeFeatureStatus = (oaNo, itemId) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/costing-bom/alternative-groups/feature-status`)
+
+export const selectQuoteBomAlternative = (oaNo, itemId, groupKey, body) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/costing-bom/alternative-groups/${encodePath(groupKey)}/selection`, {
     method: 'PUT',
     body,
+  })
+
+export const fetchQuoteBomAlternativeHistory = (oaNo, itemId, groupKey, params) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/costing-bom/alternative-groups/${encodePath(groupKey)}/history`, {
+    params,
   })
 
 export const confirmCostingBom = (oaNo, itemId, body = {}) =>
