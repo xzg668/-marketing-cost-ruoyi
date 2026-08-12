@@ -423,9 +423,11 @@
               <el-table-column prop="childName" label="品名" min-width="180" fixed="left" show-overflow-tooltip />
               <el-table-column prop="childModel" label="型号" min-width="170" show-overflow-tooltip />
               <el-table-column label="用量" width="140" align="right">
-                <template #default="{ row }">{{ formatMoney(row.usageQty) }}</template>
+                <template #default="{ row }">{{ formatSnapshotDecimal(row.usageQty, 8) }}</template>
               </el-table-column>
-              <el-table-column prop="qtyPerTop" label="顶层用量" width="120" align="right" />
+              <el-table-column label="顶层用量" width="120" align="right">
+                <template #default="{ row }">{{ formatSnapshotDecimal(row.qtyPerTop, 8) }}</template>
+              </el-table-column>
               <el-table-column prop="unit" label="单位" width="100" />
               <el-table-column prop="materialAttribute" label="材料属性" width="150" show-overflow-tooltip />
               <el-table-column prop="shapeAttribute" label="形态属性" width="150" show-overflow-tooltip />

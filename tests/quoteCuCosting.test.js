@@ -26,6 +26,15 @@ describe('FCQ-11 成本金额格式', () => {
     assert.equal(formatSnapshotDecimal('-0.00000001'), '-0.00000001')
     assert.equal(formatSnapshotDecimal(null), '—')
   })
+
+  it('报价物料用量保留八位小数精度，不把微小正负用量显示成零', () => {
+    assert.equal(formatSnapshotDecimal('0.00013000', 8), '0.00013')
+    assert.equal(formatSnapshotDecimal('-0.00008800', 8), '-0.000088')
+    assert.equal(formatSnapshotDecimal('0.00008220', 8), '0.0000822')
+    assert.match(pageSource, /formatSnapshotDecimal\(row\.usageQty, 8\)/)
+    assert.match(pageSource, /formatSnapshotDecimal\(row\.qtyPerTop, 8\)/)
+    assert.doesNotMatch(pageSource, /formatMoney\(row\.usageQty\)/)
+  })
 })
 
 describe('FCQ-11 价格差额展示', () => {
