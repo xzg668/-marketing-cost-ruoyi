@@ -57,10 +57,17 @@ describe('响应拦截器', () => {
 
 describe('业务错误处理', () => {
   it('CommonResult code !== 0 走 handleBusinessError', () => {
-    assert.match(content, /throw\s+handleBusinessError\(payload\)/)
+    assert.match(content, /throw\s+handleBusinessError\(payload,\s*\{\s*notify:\s*!suppressErrorToast\s*\}\)/)
   })
 
   it('保留 CommonResult code === 0 的 data 解包', () => {
     assert.match(content, /return\s+payload\.data/)
+  })
+
+  it('允许页面接管预期权限错误且保留错误元数据', () => {
+    assert.match(content, /suppressErrorToast\s*=\s*false/)
+    assert.match(content, /error\.config\?\.suppressErrorToast/)
+    assert.match(content, /normalized\.userNotified/)
+    assert.match(content, /normalized\.domainCode/)
   })
 })

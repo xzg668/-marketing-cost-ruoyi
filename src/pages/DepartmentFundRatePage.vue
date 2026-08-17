@@ -45,6 +45,12 @@
         <el-table-column prop="planRate" label="计划（元/分钟）" width="150" />
         <el-table-column prop="upliftRatio" label="上浮比例" width="120" />
         <el-table-column prop="quoteRatio" label="报价比例（元/分钟）" width="170" />
+        <el-table-column label="费率口径" width="140">
+          <template #default="{ row }">{{ formatDepartmentFundRateMode(row.rateCalculationMode) }}</template>
+        </el-table-column>
+        <el-table-column label="核算使用费率" width="140">
+          <template #default="{ row }">{{ formatRate(resolveDepartmentFundEffectiveRate(row)) }}</template>
+        </el-table-column>
         <el-table-column prop="manhourRate" label="工时率" width="120" />
         <el-table-column prop="rateYear" label="年度" width="90" />
         <el-table-column prop="remark" label="备注" min-width="150" />
@@ -112,6 +118,14 @@ import {
   updateDepartmentFundRate,
   deleteDepartmentFundRate,
 } from '../api/departmentFundRates'
+import {
+  RATE_CALCULATION_MODE_FINAL_QUOTE,
+  RATE_CALCULATION_MODE_PLAN_UPLIFT,
+  formatDepartmentFundRateMode,
+  parseDepartmentFundRateRows,
+  parseNumber,
+  resolveDepartmentFundEffectiveRate,
+} from './departmentFundRateImportUtils'
 
 const currentYear = new Date().getFullYear()
 const loading = ref(false)
@@ -134,6 +148,7 @@ const blankForm = () => ({
   planRate: '',
   upliftRatio: '',
   quoteRatio: '',
+  rateCalculationMode: RATE_CALCULATION_MODE_FINAL_QUOTE,
   manhourRate: '',
   remark: '',
 })
@@ -144,15 +159,6 @@ const tableRows = ref([])
 const dialogTitle = computed(() =>
   editingId.value ? '编辑部门经费率' : '新增部门经费率',
 )
-
-const parseNumber = (value) => {
-  const text = String(value ?? '').replace(/,/g, '').trim()
-  if (!text) {
-    return null
-  }
-  const parsed = Number(text)
-  return Number.isNaN(parsed) ? null : parsed
-}
 
 const parseYear = (value) => {
   const parsed = parseNumber(value)
@@ -208,6 +214,8 @@ const openEdit = (row) => {
     planRate: row.planRate ?? '',
     upliftRatio: row.upliftRatio ?? '',
     quoteRatio: row.quoteRatio ?? '',
+    rateCalculationMode:
+      row.rateCalculationMode || RATE_CALCULATION_MODE_PLAN_UPLIFT,
     manhourRate: row.manhourRate ?? '',
     remark: row.remark ?? '',
   }
@@ -234,6 +242,7 @@ const submitRow = async () => {
     planRate: parseNumber(formModel.value.planRate),
     upliftRatio: parseNumber(formModel.value.upliftRatio),
     quoteRatio: parseNumber(formModel.value.quoteRatio),
+    rateCalculationMode: formModel.value.rateCalculationMode,
     manhourRate: parseNumber(formModel.value.manhourRate),
     remark: String(formModel.value.remark || '').trim(),
   }
@@ -269,15 +278,12 @@ const removeRow = async (row) => {
   }
 }
 
-const normalizeHeader = (value) =>
-  String(value || '')
-    .replace(/^\uFEFF/, '')
-    .replace(/[：:]/g, '')
-    .replace(/[()（）]/g, '')
-    .replace(/[\s\u3000]+/g, '')
-    .trim()
-
-const normalizeCell = (value) => String(value ?? '').trim()
+const formatRate = (value) => {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) {
+    return '-'
+  }
+  return Number(value).toFixed(6).replace(/0+$/, '').replace(/\.$/, '')
+}
 
 const fillMergedCells = (sheet, XLSX) => {
   const merges = sheet['!merges'] || []
@@ -314,115 +320,25 @@ const handleFileChange = async (uploadFile) => {
     const workbook = XLSX.read(buffer, { type: 'array', cellDates: true })
     const sheet = workbook.Sheets[workbook.SheetNames[0]]
     fillMergedCells(sheet, XLSX)
-    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false })
-    const headerAliases = {
-      businessDivision: ['事业部'],
-      expenseSubject: ['费用科目'],
-      budgetAmount: ['预算费用'],
-      totalWorkMinutes: ['总工时'],
-      planRate: ['计划元/分钟', '计划'],
-      upliftRatio: ['上浮比例'],
-      quoteRatio: ['报价比例元/分钟', '报价比例'],
-      manhourRate: ['工时率'],
-      remark: ['备注'],
-    }
-    const headerMap = Object.entries(headerAliases).reduce((acc, [key, values]) => {
-      values.forEach((value) => {
-        acc[normalizeHeader(value)] = key
-      })
-      return acc
-    }, {})
-    const headerKeys = Object.keys(headerMap).sort((a, b) => b.length - a.length)
-    const resolveHeaderField = (cell) => {
-      const normalized = normalizeHeader(cell)
-      if (!normalized) {
-        return null
-      }
-      if (headerMap[normalized]) {
-        return headerMap[normalized]
-      }
-      const matched = headerKeys.find((key) => normalized.includes(key))
-      return matched ? headerMap[matched] : null
-    }
-    const headerIndex = rows.reduce(
-      (best, row, index) => {
-        const hitCount = row.reduce((count, cell) => {
-          return resolveHeaderField(cell) ? count + 1 : count
-        }, 0)
-        return hitCount > best.count ? { index, count: hitCount } : best
-      },
-      { index: -1, count: 0 },
-    ).index
-    if (headerIndex === -1) {
-      ElMessage.error('未找到表头，请确认Excel格式是否正确')
+    // 使用原始数值，避免把公式单元格按显示位数截断；H 列作为最终报价费率入库。
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true })
+    const parsed = parseDepartmentFundRateRows(rows)
+    if (parsed.missingHeaders.length > 0) {
+      ElMessage.error(`缺少表头：${parsed.missingHeaders.join('、')}`)
       return
     }
-    const fieldIndex = {}
-    rows[headerIndex].forEach((cell, index) => {
-      const field = resolveHeaderField(cell)
-      if (field) {
-        fieldIndex[field] = index
-      }
-    })
-    const requiredFields = ['businessDivision', 'expenseSubject', 'quoteRatio']
-    const requiredLabels = {
-      businessDivision: '事业部',
-      expenseSubject: '费用科目',
-      quoteRatio: '报价比例（元/分钟）',
-    }
-    const missing = requiredFields.filter((field) => fieldIndex[field] === undefined)
-    if (missing.length > 0) {
-      const names = missing.map((field) => requiredLabels[field] || field)
-      ElMessage.error(`缺少表头：${names.join('、')}`)
+    if (parsed.errors.length > 0) {
+      ElMessage.error(`${parsed.errors[0]}${parsed.errors.length > 1 ? `，另有${parsed.errors.length - 1}处` : ''}`)
       return
     }
-    let lastBusinessDivision = ''
-    let lastTotalWorkMinutes = null
-    let lastManhourRate = null
-    const dataRows = rows
-      .slice(headerIndex + 1)
-      .map((row, index) => {
-        const businessDivision = normalizeCell(row[fieldIndex.businessDivision]) || lastBusinessDivision
-        const totalWorkMinutes =
-          fieldIndex.totalWorkMinutes === undefined
-            ? lastTotalWorkMinutes
-            : parseNumber(row[fieldIndex.totalWorkMinutes]) ?? lastTotalWorkMinutes
-        const manhourRate =
-          fieldIndex.manhourRate === undefined
-            ? lastManhourRate
-            : parseNumber(row[fieldIndex.manhourRate]) ?? lastManhourRate
-        if (businessDivision) {
-          lastBusinessDivision = businessDivision
-        }
-        if (totalWorkMinutes !== null) {
-          lastTotalWorkMinutes = totalWorkMinutes
-        }
-        if (manhourRate !== null) {
-          lastManhourRate = manhourRate
-        }
-        return {
-          rowNo: headerIndex + index + 2,
-          businessDivision,
-          businessUnit: businessDivision,
-          expenseSubject: normalizeCell(row[fieldIndex.expenseSubject]),
-          budgetAmount:
-            fieldIndex.budgetAmount === undefined ? null : parseNumber(row[fieldIndex.budgetAmount]),
-          totalWorkMinutes,
-          planRate: fieldIndex.planRate === undefined ? null : parseNumber(row[fieldIndex.planRate]),
-          upliftRatio:
-            fieldIndex.upliftRatio === undefined ? null : parseNumber(row[fieldIndex.upliftRatio]),
-          quoteRatio: parseNumber(row[fieldIndex.quoteRatio]),
-          manhourRate,
-          remark: fieldIndex.remark === undefined ? '' : normalizeCell(row[fieldIndex.remark]),
-        }
-      })
-      .filter((row) => row.businessDivision && row.expenseSubject && row.quoteRatio !== null)
+    const dataRows = parsed.rows
     if (dataRows.length === 0) {
       ElMessage.warning('未解析到有效数据')
       return
     }
     const result = await importDepartmentFundRates({
       rateYear: parseYear(filters.value.rateYear) || currentYear,
+      sourceBatchNo: `${rawFile.name}-${Date.now()}`,
       rows: dataRows,
     })
     const imported = (result?.inserted || 0) + (result?.updated || 0)

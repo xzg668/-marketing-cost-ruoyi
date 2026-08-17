@@ -471,11 +471,11 @@
 
             <div class="filter-bar">
               <el-radio-group v-model="priceTypeFilter" size="small">
-                <el-radio-button label="ALL">全部</el-radio-button>
-                <el-radio-button label="MISSING">缺价格类型</el-radio-button>
-                <el-radio-button label="NORMAL">采购件</el-radio-button>
-                <el-radio-button label="MAKE_PART">自制件</el-radio-button>
-                <el-radio-button label="PACKAGE">包装件</el-radio-button>
+                <el-radio-button value="ALL">全部</el-radio-button>
+                <el-radio-button value="MISSING">缺价格类型</el-radio-button>
+                <el-radio-button value="NORMAL">采购件</el-radio-button>
+                <el-radio-button value="MAKE_PART">自制件</el-radio-button>
+                <el-radio-button value="PACKAGE">包装件</el-radio-button>
               </el-radio-group>
               <div class="toolbar-actions">
                 <el-input
@@ -1956,7 +1956,10 @@ async function selectCostRunVersion(row) {
 }
 
 function goBack() {
-  router.push(`/ingest/quote-requests/${encodeURIComponent(oaNo.value)}`)
+  router.push({
+    path: `/ingest/quote-requests/${encodeURIComponent(oaNo.value)}`,
+    query: { itemId: route.query.returnItemId || itemId.value },
+  })
 }
 
 function clearEffectiveBom(state = '') {

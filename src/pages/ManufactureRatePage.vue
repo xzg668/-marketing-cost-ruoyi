@@ -31,6 +31,7 @@
       <el-table :data="tableRows" stripe v-loading="loading">
         <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="businessDivision" label="事业部" min-width="160" />
+        <el-table-column prop="productCategory" label="产品大类" min-width="130" />
         <el-table-column prop="productCode" label="料号" min-width="150" />
         <el-table-column prop="productName" label="产品名称" min-width="160" />
         <el-table-column prop="productModel" label="产品型号" min-width="160" />
@@ -62,6 +63,9 @@
         </el-form-item>
         <el-form-item label="料号">
           <el-input v-model="formModel.productCode" />
+        </el-form-item>
+        <el-form-item label="产品大类">
+          <el-input v-model="formModel.productCategory" placeholder="例如 J系列" />
         </el-form-item>
         <el-form-item label="产品名称">
           <el-input v-model="formModel.productName" />
@@ -97,6 +101,13 @@ import {
   updateManufactureRate,
   deleteManufactureRate,
 } from '../api/manufactureRates'
+import {
+  normalizeManufactureRateModel,
+  normalizeManufactureRatePlaceholder,
+  parseManufactureRate,
+  parseManufactureRateRows,
+  selectManufactureRateSheetName,
+} from './manufactureRateImportUtils.js'
 
 const loading = ref(false)
 const importing = ref(false)
@@ -111,6 +122,7 @@ const filters = ref({
 
 const emptyForm = () => ({
   businessDivision: '',
+  productCategory: '',
   productCode: '',
   productName: '',
   productModel: '',
@@ -169,6 +181,7 @@ const openEdit = (row) => {
   editingId.value = row.id
   formModel.value = {
     businessDivision: row.businessDivision || row.businessUnit || '',
+    productCategory: row.productCategory ?? '',
     productCode: row.productCode ?? '',
     productName: row.productName ?? '',
     productModel: row.productModel ?? '',
@@ -177,19 +190,6 @@ const openEdit = (row) => {
     remark: row.remark ?? '',
   }
   dialogVisible.value = true
-}
-
-const parseRate = (value) => {
-  const text = String(value ?? '').replace(/,/g, '').trim()
-  if (!text) {
-    return null
-  }
-  if (text.endsWith('%')) {
-    const parsed = Number(text.slice(0, -1).trim())
-    return Number.isNaN(parsed) ? null : parsed / 100
-  }
-  const parsed = Number(text)
-  return Number.isNaN(parsed) ? null : parsed
 }
 
 const formatRate = (value) => {
@@ -201,17 +201,19 @@ const formatRate = (value) => {
 }
 
 const submitRow = async () => {
-  const feeRate = parseRate(formModel.value.feeRate)
+  const feeRate = parseManufactureRate(formModel.value.feeRate)
   const businessDivision = formModel.value.businessDivision.trim()
-  const productCode = formModel.value.productCode.trim()
+  const productCategory = formModel.value.productCategory.trim()
+  const productCode = normalizeManufactureRatePlaceholder(formModel.value.productCode)
   const productName = formModel.value.productName.trim()
-  const productModel = formModel.value.productModel.trim()
+  const normalizedModel = normalizeManufactureRateModel(formModel.value.productModel)
+  const productModel = normalizedModel.value
   if (feeRate === null) {
     ElMessage.warning('制造费用率必填')
     return
   }
   if (!productCode && !productModel && !(businessDivision && productName) && !businessDivision) {
-    ElMessage.warning('料号、产品型号、产品名称+事业部、事业部至少满足一个匹配条件')
+    ElMessage.warning('料号、产品型号、产品大类+事业部、产品名称+事业部、事业部至少满足一个匹配条件')
     return
   }
   const payload = {
@@ -219,12 +221,13 @@ const submitRow = async () => {
     period: `${currentYear}-01`,
     businessDivision,
     businessUnit: businessDivision,
+    productCategory,
     productCode,
     productName,
     productModel,
     productSpec: formModel.value.productSpec,
     feeRate,
-    remark: formModel.value.remark,
+    remark: [formModel.value.remark.trim(), normalizedModel.note].filter(Boolean).join('；'),
   }
   try {
     if (editingId.value) {
@@ -258,13 +261,6 @@ const removeRow = async (row) => {
   }
 }
 
-const normalizeHeader = (value) =>
-  String(value || '')
-    .replace(/^\uFEFF/, '')
-    .replace(/[：:]/g, '')
-    .replace(/[\s\u3000]+/g, '')
-    .trim()
-
 const handleFileChange = async (uploadFile) => {
   const rawFile = uploadFile.raw
   if (!rawFile) {
@@ -282,95 +278,21 @@ const handleFileChange = async (uploadFile) => {
     }
     const buffer = await rawFile.arrayBuffer()
     const workbook = XLSX.read(buffer, { type: 'array', cellDates: true })
-    const sheet = workbook.Sheets[workbook.SheetNames[0]]
+    const sheetName = selectManufactureRateSheetName(workbook.SheetNames)
+    if (!sheetName) {
+      ElMessage.error('未找到“制造费用”工作表，请确认Sheet名称')
+      return
+    }
+    const sheet = workbook.Sheets[sheetName]
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false })
-    const headerAliases = {
-      businessDivision: ['事业部', '生产事业部'],
-      productCode: ['料号', '产品料号'],
-      productName: ['产品名称', '品名'],
-      productModel: ['产品型号', '型号'],
-      productSpec: ['产品规格', '规格'],
-      feeRate: ['制造费用率', '费用率'],
-      remark: ['备注'],
-    }
-    const headerMap = Object.entries(headerAliases).reduce((acc, [key, values]) => {
-      values.forEach((value) => {
-        acc[normalizeHeader(value)] = key
-      })
-      return acc
-    }, {})
-    const headerKeys = Object.keys(headerMap).sort((a, b) => b.length - a.length)
-    const resolveHeaderField = (cell) => {
-      const normalized = normalizeHeader(cell)
-      if (!normalized) {
-        return null
-      }
-      if (headerMap[normalized]) {
-        return headerMap[normalized]
-      }
-      const matched = headerKeys.find((key) => normalized.includes(key))
-      return matched ? headerMap[matched] : null
-    }
-    const headerSearch = rows.reduce(
-      (best, row, index) => {
-        const hitCount = row.reduce((count, cell) => {
-          return resolveHeaderField(cell) ? count + 1 : count
-        }, 0)
-        if (hitCount > best.count) {
-          return { index, count: hitCount }
-        }
-        return best
-      },
-      { index: -1, count: 0 },
-    )
-    if (headerSearch.index === -1 || headerSearch.count < 3) {
-      ElMessage.error('未找到表头，请确认Excel格式是否正确')
-      return
-    }
-    const headerRow = rows[headerSearch.index]
-    const fieldIndex = {}
-    headerRow.forEach((cell, index) => {
-      const field = resolveHeaderField(cell)
-      if (field) {
-        fieldIndex[field] = index
-      }
-    })
-    if (fieldIndex.feeRate === undefined) {
-      ElMessage.error('缺少表头：制造费用率')
-      return
-    }
-    const dataRows = rows
-      .slice(headerSearch.index + 1)
-      .map((row, index) => ({
-        rowNo: headerSearch.index + index + 2,
-        businessDivision: String(row[fieldIndex.businessDivision] || '').trim(),
-        businessUnit: String(row[fieldIndex.businessDivision] || '').trim(),
-        productCode: String(row[fieldIndex.productCode] || '').trim(),
-        productName: String(row[fieldIndex.productName] || '').trim(),
-        productModel: String(row[fieldIndex.productModel] || '').trim(),
-        productSpec: String(row[fieldIndex.productSpec] || '').trim(),
-        feeRate: parseRate(row[fieldIndex.feeRate]),
-        remark: String(row[fieldIndex.remark] || '').trim(),
-        rateYear: currentYear,
-        period: `${currentYear}-01`,
-      }))
-      .filter(
-        (row) =>
-          row.feeRate !== null ||
-          row.businessDivision ||
-          row.productCode ||
-          row.productName ||
-          row.productModel ||
-          row.productSpec ||
-          row.remark,
-      )
-    if (dataRows.length === 0) {
-      ElMessage.warning('未解析到有效数据')
+    const parsed = parseManufactureRateRows(rows, { rateYear: currentYear })
+    if (parsed.error) {
+      ElMessage.error(parsed.error)
       return
     }
     const result = await importManufactureRates({
       rateYear: currentYear,
-      rows: dataRows,
+      rows: parsed.rows,
     })
     const imported = (result?.inserted || 0) + (result?.updated || 0)
     if (result?.errors) {

@@ -9,6 +9,32 @@ export const fetchQuoteRequests = (params) =>
 export const fetchQuoteRequestDetail = (oaNo) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}`)
 
+export const fetchQuoteCollaborationSummary = (oaNo) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/collaboration-summary`)
+
+export const scanQuoteItemCollaboration = (oaNo, itemId) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/collaboration/scan`, {
+    method: 'POST',
+  })
+
+export const fetchQuoteTechnicianCandidates = (oaNo, itemId) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/collaboration/technician-candidates`)
+
+export const startQuoteItemCollaboration = (oaNo, itemId, body = {}) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/collaboration/start`, {
+    method: 'POST',
+    body,
+  })
+
+export const batchStartQuoteCollaboration = (oaNo, body) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/collaboration/batch-start`, {
+    method: 'POST',
+    body,
+  })
+
+export const fetchQuoteItemCollaborationHistory = (oaNo, itemId) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/collaboration/history`)
+
 export const fetchQuoteCostingWorkbench = (oaNo, itemId) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/costing-workbench`)
 

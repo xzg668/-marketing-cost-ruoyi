@@ -21,6 +21,12 @@ import {
   statusTagType,
 } from '../src/utils/quoteRequestWorkbench.js'
 import { expandQuoteBomDisplayRows } from '../src/utils/quoteCostingBomRows.js'
+import {
+  buildCollaborationBatchStartItems,
+  canBatchStartCollaboration,
+  collaborationTagType,
+  mergeCollaborationSummary,
+} from '../src/utils/quoteCollaboration.js'
 
 const LIST_PAGE_FILE = path.resolve(import.meta.dirname, '../src/views/ingest/quote-requests/index.vue')
 const PRODUCT_BOM_PAGE_FILE = path.resolve(import.meta.dirname, '../src/views/ingest/quote-request-products/bom/index.vue')
@@ -326,23 +332,36 @@ describe('T11 报价单接入页面契约', () => {
     assert.doesNotMatch(productBomPageContent, /后续 T15/)
   })
 
-  it('详情页展示基础业务信息、产品明细和操作日志，不展示其他技术接入标签', () => {
+  it('QCBP-08 当前详情页使用六个业务列、唯一操作和真实协作接口', () => {
     assert.match(detailPageContent, /fetchQuoteRequestDetail/)
     assert.match(detailPageContent, /申请单位/)
     assert.match(detailPageContent, /申请部门/)
     assert.match(detailPageContent, /申请处室/)
     assert.match(detailPageContent, /el-tabs/)
     assert.match(detailPageContent, /产品明细/)
-    assert.match(detailPageContent, /包装类型/)
+    assert.match(detailPageContent, /packageText/)
     assert.match(detailPageContent, /操作日志/)
     assert.match(detailPageContent, /ingestLog/)
     assert.doesNotMatch(detailPageContent, /分类状态/)
-    assert.match(detailPageContent, /BOM 状态/)
-    assert.match(detailPageContent, /row\.bomStatus\?\.bomStatus/)
+    assert.match(detailPageContent, /BOM状态/)
+    assert.match(detailPageContent, /价格状态/)
+    assert.match(detailPageContent, /处理人/)
+    assert.match(detailPageContent, /当前状态/)
+    assert.match(detailPageContent, /row\.collaboration\?\.bomStatus/)
     assert.match(detailPageContent, /type="selection"/)
-    assert.match(detailPageContent, /批量发起补录/)
-    assert.match(detailPageContent, /createQuoteProductBomTasks/)
-    assert.match(detailPageContent, /pushQuoteProductBomOaTodo/)
+    assert.match(detailPageContent, /批量指定\/发起补录/)
+    assert.match(detailPageContent, /batchStartQuoteCollaboration/)
+    assert.match(detailPageContent, /startQuoteItemCollaboration/)
+    assert.match(detailPageContent, /fetchQuoteCollaborationSummary/)
+    assert.match(detailPageContent, /fetchQuoteItemCollaborationHistory/)
+    assert.match(detailPageContent, /fetchQuoteTechnicianCandidates/)
+    assert.match(quoteRequestApiContent, /collaboration\/technician-candidates/)
+    assert.match(detailPageContent, /指定技术负责人/)
+    assert.match(detailPageContent, /确定并发起补录/)
+    assert.match(detailPageContent, /technicianUserId:\s*assignmentDialog\.selectedUserId/)
+    assert.doesNotMatch(detailPageContent, /createQuoteProductBomTasks/)
+    assert.doesNotMatch(detailPageContent, /pushQuoteProductBomOaTodo/)
+    assert.doesNotMatch(detailPageContent, /OA待办已推送|OA 待办已推送/)
     assert.match(detailPageContent, /fixed="left"/)
     assert.doesNotMatch(detailPageContent, /额外费用/)
     assert.doesNotMatch(detailPageContent, /费用粒度/)
@@ -357,7 +376,7 @@ describe('T11 报价单接入页面契约', () => {
     assert.doesNotMatch(detailPageContent, /itemExtraFields/)
     assert.doesNotMatch(detailPageContent, /接入原文/)
     assert.doesNotMatch(detailPageContent, /操作记录/)
-    assert.match(detailPageContent, /checkQuoteBomStatus/)
+    assert.doesNotMatch(detailPageContent, /checkQuoteBomStatus/)
     assert.match(detailPageContent, /发起核算/)
     assert.match(detailPageContent, /openCostingWorkbench/)
     assert.match(detailPageContent, /\/ingest\/quote-requests\/\$\{encodeURIComponent\(oaNo\.value\)\}\/items\/\$\{encodeURIComponent\(row\.id\)\}\/costing/)
@@ -375,25 +394,50 @@ describe('T11 报价单接入页面契约', () => {
     assert.match(routerContent, /QuoteProductCostingWorkbenchPage/)
     assert.match(quoteRequestApiContent, /fetchQuoteCostingWorkbench/)
     assert.match(quoteRequestApiContent, /\/items\/\$\{encodePath\(itemId\)\}\/costing-workbench/)
-    assert.match(detailPageContent, /canStartCosting/)
-    assert.match(detailPageContent, /isCostReadyBomStatus/)
+    assert.match(detailPageContent, /nextAction !== 'START_COSTING'/)
     assert.match(detailPageContent, /async function startCosting[\s\S]*openCostingWorkbench\(row, \{ tab: 'QUOTE_BOM' \}\)/)
     assert.match(costingWorkbenchPageContent, /async function applyRouteTab[\s\S]*preparePricingBomForNextStep\(\)[\s\S]*activeTab\.value = requestedTab/)
   })
 
-  it('QCB-05 产品行操作按 BOM 和核算状态展示四种入口', () => {
-    assert.match(detailPageContent, /canSelectForSupplement\(row\)[\s\S]*发起补录/)
-    assert.match(detailPageContent, /costingOperationState\(row\) === 'COMPLETED'[\s\S]*查看结果[\s\S]*重新核算/)
-    assert.match(detailPageContent, /costingOperationState\(row\) === 'INCOMPLETE'[\s\S]*继续核算/)
-    assert.match(detailPageContent, /@click="startCosting\(row\)"[\s\S]*发起核算/)
+  it('QCBP-08 产品行只按服务端 nextAction 执行一个明确入口', () => {
+    assert.match(detailPageContent, /handleRowAction\(row\)/)
+    assert.match(detailPageContent, /STARTABLE_COLLABORATION_ACTIONS\.has\(action\)/)
+    assert.match(detailPageContent, /action === 'VIEW_SUPPLEMENT'/)
+    assert.match(detailPageContent, /action === 'START_COSTING'/)
+    assert.match(detailPageContent, /action === 'CONTINUE_COSTING'/)
+    assert.match(detailPageContent, /action === 'VIEW_COSTING_RESULT'/)
+    assert.doesNotMatch(detailPageContent, /查看进度|查看审核进度/)
     assert.match(detailPageContent, /async function viewCostingResult[\s\S]*fetchQuoteCostRun[\s\S]*name: 'cost-run-detail'/)
-    assert.match(detailPageContent, /legacyResultAvailable = hasCostingResult\(row\)/)
     assert.match(detailPageContent, /query\.legacyResult = '1'/)
-    assert.match(detailPageContent, /query\.versionNo = '历史核算结果'/)
+    assert.match(detailPageContent, /'历史核算结果'/)
     assert.match(costRunDetailPageContent, /legacyResult: String\(route\.query\.legacyResult/)
     assert.match(costRunDetailPageContent, /legacyResult: meta\.value\.legacyResult \|\| undefined/)
     assert.match(detailPageContent, /function continueCosting[\s\S]*tab: 'COST_RUN'/)
     assert.match(detailPageContent, /confirmedCostVersionId/)
+  })
+
+  it('QCBP-08 协作投影合并、批量可选与状态颜色由统一工具决定', () => {
+    const merged = mergeCollaborationSummary({ items: [{ id: 7, materialNo: 'M-7' }] }, {
+      summaryVersion: 'S1',
+      items: [{ itemId: 7, nextAction: 'START_PRICE_SUPPLEMENT', batchSelectable: true }],
+    })
+    assert.equal(merged.collaborationSummaryVersion, 'S1')
+    assert.equal(merged.items[0].collaboration.nextAction, 'START_PRICE_SUPPLEMENT')
+    assert.equal(canBatchStartCollaboration(merged.items[0]), true)
+    assert.equal(canBatchStartCollaboration({
+      id: 9,
+      collaboration: { nextAction: 'ASSIGN_TECHNICIAN', batchSelectable: true },
+    }), true)
+    assert.equal(canBatchStartCollaboration({ id: 8, collaboration: { nextAction: 'VIEW_SUPPLEMENT', batchSelectable: false } }), false)
+    assert.deepEqual(buildCollaborationBatchStartItems([
+      { id: 9, collaboration: { nextAction: 'ASSIGN_TECHNICIAN', batchSelectable: true, projectionVersion: 'V9' } },
+      { id: 10, collaboration: { nextAction: 'START_BOM_SUPPLEMENT', batchSelectable: true, projectionVersion: 'V10' } },
+    ], 602), [
+      { itemId: 9, technicianUserId: 602, expectedProjectionVersion: 'V9' },
+      { itemId: 10, technicianUserId: undefined, expectedProjectionVersion: 'V10' },
+    ])
+    assert.equal(collaborationTagType('READY_FOR_COSTING'), 'success')
+    assert.equal(collaborationTagType('MISSING_PRICE'), 'danger')
   })
 
   it('QEB-14 工作台初始化展示最终有效 BOM 树和后续真实接口 tab', () => {

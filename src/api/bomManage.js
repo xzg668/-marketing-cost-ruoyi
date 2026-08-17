@@ -1,8 +1,8 @@
 import { request } from './http'
 
 // BOM 数据页（/base/material）相关的 API 封装
-// 查询走老的 /bom-manage 接口（T5.5 时底层已切到 lp_bom_costing_row）；
-// "计算"按钮走新的 /bom/flatten 接口（T7.5 修复）—— 老 /bom-manage/refresh 已降级为 no-op。
+// 查询走 /bom-manage，只读消费报价上下文产生的 lp_bom_costing_row；
+// “计算”按钮走 /bom/flatten，不提供源 BOM 导入或重建能力。
 
 export const fetchBomManageItems = (params) =>
   request('/api/v1/bom-manage', { params })
@@ -30,14 +30,3 @@ export const flattenBomForOa = (body) =>
       asOfDate: body.asOfDate || new Date().toISOString().slice(0, 10),
     },
   })
-
-/**
- * 兼容旧签名：保留 refreshBomManageItems 函数名不破坏可能的其他引用，
- * 但内部只是转发到新的 flattenBomForOa（语义已变 —— 老 /refresh 端点是 no-op）。
- *
- * 如果外部已经用了这个函数，需要同步改调用方式：以前传
- * `{oaNo, bomCode}`，现在需要传 `{oaNo, topProductCode}`。
- *
- * @deprecated 请改用 flattenBomForOa
- */
-export const refreshBomManageItems = (body) => flattenBomForOa(body)

@@ -81,12 +81,6 @@ export const batchSyncQuoteProductBomStatus = (oaFormItemIds) =>
     body: { oaFormItemIds },
   })
 
-export const batchCreateQuoteProductBomOaTasks = (oaFormItemIds) =>
-  request('/api/v1/quote-request-products/bom/batch-oa-task', {
-    method: 'POST',
-    body: { oaFormItemIds },
-  })
-
 export const prepareQuoteProductBom = (oaFormItemId) =>
   request(`/api/v1/quote-product-bom-preparation/${encodePath(oaFormItemId)}/prepare`, {
     method: 'POST',

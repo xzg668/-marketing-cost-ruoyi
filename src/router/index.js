@@ -3,7 +3,6 @@ import MainLayout from '../layout/index.vue'
 import CostRunResultPage from '../pages/CostRunResultPage.vue'
 import CostRunDetailPage from '../pages/CostRunDetailPage.vue'
 import OaFormDetailPage from '../pages/OaFormDetailPage.vue'
-import BomPipelineAdvancedPage from '../pages/BomPipelineAdvancedPage.vue'
 import LoginPage from '../pages/LoginPage.vue'
 import NotFoundPage from '../pages/NotFoundPage.vue'
 import { useUserStore } from '../store/modules/user'
@@ -15,7 +14,7 @@ import { usePermissionStore } from '../store/modules/permission'
  *   2. 业务详情页（带路由参数，业务代码硬编码跳转依赖）：
  *      - /cost/run/:oaNo、/cost/run/:oaNo/detail
  *      - /ingest/oa-form/:id
- *   3. 后台工具页：/admin/bom-pipeline、/system/dict/data
+ *   3. 后台工具页：/system/dict/data
  *
  * 所有业务列表页（/cost/run、/ingest/oa-form、/base/* 等）改由
  * permissionStore.generateRoutes() 根据后端 sys_menu 返回的 /auth/routers 动态 addRoute 注册。
@@ -54,7 +53,6 @@ const staticRoutes = [
   {
     path: '/',
     component: MainLayout,
-    redirect: '/ingest/quote-requests',
     children: [
       {
         path: '/cost/run/:oaNo',
@@ -93,15 +91,20 @@ const staticRoutes = [
         meta: { title: '单产品核算工作台', activeMenu: '/ingest/quote-requests' },
       },
       {
-        path: '/price/linked',
-        redirect: '/price/linked/result',
+        path: '/collaboration/product-tasks/:taskId',
+        name: 'technical-collaboration-task',
+        component: () => import('../pages/TechnicalCollaborationTaskPage.vue'),
+        meta: { title: '技术协作任务', activeMenu: '/collaboration/tasks' },
       },
       {
-        // 老三阶段 BOM 流水线（隐藏路由，不挂菜单）——面向 IT / 测试单独重跑某阶段
-        path: '/admin/bom-pipeline',
-        name: 'admin-bom-pipeline',
-        component: BomPipelineAdvancedPage,
-        meta: { title: 'BOM 流水线（高级）', activeMenu: '/base/u9Bom' },
+        path: '/collaboration/finance-reviews/:reviewId',
+        name: 'finance-collaboration-review',
+        component: () => import('../views/collaboration/finance/index.vue'),
+        meta: { title: '补录审核', activeMenu: '/collaboration/finance-reviews' },
+      },
+      {
+        path: '/price/linked',
+        redirect: '/price/linked/result',
       },
       {
         path: '/system/dict/data',
@@ -119,6 +122,20 @@ const router = createRouter({
 })
 
 const CATCH_ALL_NAME = 'dyn-catch-all'
+const QUOTE_REQUEST_LIST_PATH = '/ingest/quote-requests'
+const TECHNICAL_TASK_LIST_PATH = '/collaboration/tasks'
+
+function isTechnicalOnlyUser(userStore) {
+  return userStore.roles.some(
+    (role) => String(role).toUpperCase() === 'OA_COLLABORATOR'
+  ) && !userStore.permissions.includes('ingest:quote:list')
+}
+
+function resolveLandingPath(userStore) {
+  return isTechnicalOnlyUser(userStore)
+    ? TECHNICAL_TASK_LIST_PATH
+    : QUOTE_REQUEST_LIST_PATH
+}
 
 /**
  * 将 permissionStore.generateRoutes() 返回的顶层路由逐一 addRoute。
@@ -178,6 +195,12 @@ router.beforeEach(async (to, from, next) => {
       await userStore.getInfo()
       const dynRoutes = await permissionStore.generateRoutes()
       registerDynamicRoutes(dynRoutes, permissionStore)
+      if (to.path === '/') {
+        return next({ path: resolveLandingPath(userStore), replace: true })
+      }
+      if (isTechnicalOnlyUser(userStore) && to.path === QUOTE_REQUEST_LIST_PATH) {
+        return next({ path: TECHNICAL_TASK_LIST_PATH, replace: true })
+      }
       // replace:true 避免历史栈出现加载跳板
       return next({ ...to, replace: true })
     } catch (err) {
@@ -186,6 +209,13 @@ router.beforeEach(async (to, from, next) => {
       resetDynamicRoutes()
       return next({ path: '/login', query: { redirect: to.fullPath } })
     }
+  }
+
+  if (to.path === '/') {
+    return next({ path: resolveLandingPath(userStore), replace: true })
+  }
+  if (isTechnicalOnlyUser(userStore) && to.path === QUOTE_REQUEST_LIST_PATH) {
+    return next({ path: TECHNICAL_TASK_LIST_PATH, replace: true })
   }
 
   next()

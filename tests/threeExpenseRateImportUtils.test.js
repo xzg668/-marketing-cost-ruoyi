@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  normalizeApplicantDepartment,
   parsePeriod,
   parseRate,
   parseThreeExpenseRateRows,
@@ -30,6 +31,16 @@ describe('threeExpenseRateImportUtils', () => {
     })
   })
 
+  it('normalizes only sales-mode suffixes and preserves the plate special label', () => {
+    assert.equal(normalizeApplicantDepartment('欧洲业务管理部（直销）'), '欧洲业务管理部-直销')
+    assert.equal(normalizeApplicantDepartment('欧洲业务管理部(海外)'), '欧洲业务管理部-海外')
+    assert.equal(normalizeApplicantDepartment('美洲区业务部（代销）'), '美洲区业务部-代销')
+    assert.equal(
+      normalizeApplicantDepartment('板换科技（仅原锦直销产品）'),
+      '板换科技（仅原锦直销产品）',
+    )
+  })
+
   it('parses one workbook containing all six matrix sections into one row set', () => {
     const rows = [
       ['期间', '2026.3'],
@@ -57,9 +68,10 @@ describe('threeExpenseRateImportUtils', () => {
       ],
     )
     assert.equal(result.rows[0].applicantOffice, '')
+    assert.equal(result.rows[0].applicantDepartment, '欧美业务部-直销')
     assert.equal(result.rows[0].threeExpenseTotalRate, 0.3)
     assert.equal(result.rows[0].oemExpenseRate, 0.05)
-    assert.equal(result.rows[3].businessUnitType, 'HOUSEHOLD')
+    assert.equal(result.rows[3].businessUnitType, null)
     assert.equal(Object.hasOwn(result.rows[0], 'rawPeriod'), false)
   })
 

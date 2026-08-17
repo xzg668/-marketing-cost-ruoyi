@@ -5,8 +5,14 @@ import path from 'node:path'
 
 const ROUTER_FILE = path.resolve(import.meta.dirname, '../src/router/index.js')
 const routerContent = fs.readFileSync(ROUTER_FILE, 'utf-8')
+const indexHtmlContent = fs.readFileSync(path.resolve(import.meta.dirname, '../index.html'), 'utf-8')
 
 describe('路由配置检查', () => {
+
+  it('应用声明内嵌图标，避免浏览器默认请求不存在的 favicon.ico', () => {
+    assert.match(indexHtmlContent, /rel="icon"/)
+    assert.match(indexHtmlContent, /data:image\/svg\+xml/)
+  })
 
   it('导入 LoginPage 组件', () => {
     assert.match(routerContent, /import\s+LoginPage\s+from/)
@@ -44,6 +50,17 @@ describe('路由配置检查', () => {
     // 检查存在 token && 目标是 /login 时 next('/') 的逻辑
     assert.match(routerContent, /\/login/)
     assert.match(routerContent, /next\(['"]\/['"]\)/)
+  })
+
+  it('权限路由加载完成后再决定首页，避免先重定向到尚未注册的报价单列表', () => {
+    assert.doesNotMatch(
+      routerContent,
+      /path:\s*['"]\/['"][\s\S]{0,100}redirect:\s*['"]\/ingest\/quote-requests['"]/
+    )
+    assert.match(routerContent, /if \(to\.path === '\/'\)/)
+    assert.match(routerContent, /resolveLandingPath\(userStore\)/)
+    assert.match(routerContent, /QUOTE_REQUEST_LIST_PATH/)
+    assert.match(routerContent, /TECHNICAL_TASK_LIST_PATH/)
   })
 })
 

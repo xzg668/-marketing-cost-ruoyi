@@ -1,30 +1,21 @@
 <template>
   <section class="quote-page" v-loading="loading">
     <div class="page-head">
-      <div>
-        <h1>报价单详情</h1>
-        <p>{{ oaNo }}</p>
-      </div>
+      <div><h1>报价单详情</h1><p>{{ oaNo }}</p></div>
       <div class="page-actions">
         <el-button :icon="ArrowLeft" @click="goBack">返回</el-button>
-        <el-button type="primary" :loading="checking" @click="handleCheckBom">检查 BOM</el-button>
-        <el-button v-if="canConfirmClassification(detail)" type="warning" @click="openConfirmDialog">
-          确认分类
-        </el-button>
+        <el-button type="primary" :loading="checking" @click="refreshCollaboration">刷新状态</el-button>
+        <el-button v-if="canConfirmClassification(detail)" type="warning" @click="openConfirmDialog">确认分类</el-button>
       </div>
     </div>
 
     <el-descriptions :column="3" border>
       <el-descriptions-item label="报价单号">{{ detail.oaNo || '-' }}</el-descriptions-item>
-      <el-descriptions-item label="来源">
-        {{ statusLabel('sourceType', detail.sourceType) }}
-      </el-descriptions-item>
+      <el-descriptions-item label="来源">{{ statusLabel('sourceType', detail.sourceType) }}</el-descriptions-item>
       <el-descriptions-item label="外部单号">{{ detail.externalFormNo || '-' }}</el-descriptions-item>
       <el-descriptions-item label="流程类型">{{ detail.processCode || '-' }}</el-descriptions-item>
       <el-descriptions-item label="流程名称">{{ detail.processName || '-' }}</el-descriptions-item>
-      <el-descriptions-item label="报价场景">
-        {{ statusLabel('quoteScenario', detail.quoteScenario) }}
-      </el-descriptions-item>
+      <el-descriptions-item label="报价场景">{{ statusLabel('quoteScenario', detail.quoteScenario) }}</el-descriptions-item>
       <el-descriptions-item label="客户名称">{{ detail.customer || '-' }}</el-descriptions-item>
       <el-descriptions-item label="申请日期">{{ detail.applyDate || '-' }}</el-descriptions-item>
       <el-descriptions-item label="申请单位">{{ detail.applicantUnit || '-' }}</el-descriptions-item>
@@ -41,104 +32,79 @@
 
     <el-tabs v-model="activeTab" class="detail-tabs">
       <el-tab-pane label="产品明细" name="items">
+        <el-alert type="info" :closable="false" show-icon class="guide-alert">
+          <template #title>系统已先查 U9，再判断是否需要补 BOM、补包装或补明细价格</template>
+          每个产品只显示一个当前状态和一个下一步；同月已有任务只关联，半年有效结果直接复用。
+        </el-alert>
         <div class="table-toolbar">
-          <div class="table-toolbar__meta">已选择 {{ selectedItems.length }} 行</div>
-          <el-button
-            type="warning"
-            :disabled="selectedItems.length === 0"
-            :loading="tasking"
-            @click="handleBatchSupplement"
-          >
-            批量发起补录
+          <div class="table-toolbar__meta">已选择 {{ selectedItems.length }} 项</div>
+          <el-button type="warning" :disabled="selectedItems.length === 0" :loading="tasking" @click="handleBatchSupplement">
+            批量指定/发起补录
           </el-button>
         </div>
         <el-table
+          ref="itemsTableRef"
           :data="detail.items || []"
           border
-          stripe
           row-key="id"
           class="items-table"
+          :row-class-name="rowClassName"
           @selection-change="selectedItems = $event"
         >
-          <el-table-column type="selection" width="48" fixed="left" :selectable="canSelectForSupplement" />
-          <el-table-column prop="seq" label="行号" width="72" fixed="left" />
-          <el-table-column prop="materialNo" label="产品料号" min-width="160" fixed="left" show-overflow-tooltip />
-          <el-table-column label="BOM 状态" width="180" fixed="left">
+          <el-table-column type="selection" width="48" fixed="left" :selectable="canBatchStartCollaboration" />
+          <el-table-column label="产品" min-width="320" fixed="left">
             <template #default="{ row }">
-              <el-tag :type="statusTagType('bomStatus', row.bomStatus?.bomStatus)" effect="plain">
-                {{ statusLabel('bomStatus', row.bomStatus?.bomStatus) }}
+              <div class="product-cell">
+                <div><span class="product-seq">{{ row.seq }}</span><strong>{{ row.materialNo || '新品暂无料号' }}</strong></div>
+                <div class="product-name">{{ row.productName || '-' }} · {{ row.sunlModel || row.spec || '-' }}</div>
+                <div class="product-meta">
+                  {{ row.businessType || '业务类型未填' }} · {{ packageText(row) }}
+                </div>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="BOM状态" min-width="190">
+            <template #default="{ row }">
+              <el-tag :type="collaborationTagType(row.collaboration?.bomStatus)" effect="plain">
+                {{ row.collaboration?.bomStatusLabel || '待检查' }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="productName" label="产品名称" min-width="160" show-overflow-tooltip />
-          <el-table-column prop="sunlModel" label="三花型号" min-width="150" show-overflow-tooltip />
-          <el-table-column prop="businessType" label="业务类型" width="130" />
-          <el-table-column prop="packageType" label="包装类型" width="120" />
-          <el-table-column prop="packageMethod" label="包装方式" width="120" />
-          <el-table-column prop="packageComponentCode" label="包装组件" min-width="140" />
-          <el-table-column prop="shippingFee" label="运费" width="100" />
-          <el-table-column prop="annualVolume" label="预计年用量" width="120" />
-          <el-table-column prop="totalWithShip" label="含运费总价" width="120" />
-          <el-table-column prop="totalNoShip" label="不含运费总价" width="130" />
-          <el-table-column prop="technicianName" label="技术员" width="120" />
-          <el-table-column label="BOM 来源" width="120">
-            <template #default="{ row }">{{ bomSourceLabel(row.bomStatus?.bomSource) }}</template>
-          </el-table-column>
-          <el-table-column label="最近检查时间" width="180">
-            <template #default="{ row }">{{ formatDateTime(row.bomStatus?.checkedAt) }}</template>
-          </el-table-column>
-          <el-table-column label="操作" width="190" fixed="right">
+          <el-table-column label="价格状态" min-width="170">
             <template #default="{ row }">
-              <el-button
-                v-if="canSelectForSupplement(row)"
-                link
-                type="warning"
-                :loading="actionLoadingId === rowActionKey(row)"
-                @click="openSupplement(row)"
-              >
-                发起补录
-              </el-button>
-              <template v-else-if="costingOperationState(row) === 'COMPLETED'">
-                <el-button
-                  link
-                  type="primary"
-                  :loading="actionLoadingId === costingViewActionKey(row)"
-                  @click="viewCostingResult(row)"
-                >
-                  查看结果
-                </el-button>
-                <el-button
-                  link
-                  type="warning"
-                  :loading="actionLoadingId === costingActionKey(row)"
-                  @click="restartCosting(row)"
-                >
-                  重新核算
-                </el-button>
-              </template>
-              <el-button
-                v-else-if="costingOperationState(row) === 'INCOMPLETE'"
-                link
-                type="primary"
-                @click="continueCosting(row)"
-              >
-                继续核算
-              </el-button>
-              <el-button
-                v-else
-                link
-                type="primary"
-                :disabled="!canStartCosting(row)"
-                :loading="actionLoadingId === costingActionKey(row)"
-                @click="startCosting(row)"
-              >
-                发起核算
-              </el-button>
+              <el-tag :type="collaborationTagType(row.collaboration?.priceStatus === 'READY' ? 'AVAILABLE' : row.collaboration?.currentStatus)" effect="plain">
+                {{ row.collaboration?.priceStatusLabel || '待检查' }}
+              </el-tag>
             </template>
           </el-table-column>
-          <template #empty>
-            <el-empty description="暂无产品明细" />
-          </template>
+          <el-table-column label="处理人" min-width="120">
+            <template #default="{ row }">{{ row.collaboration?.assigneeName || row.technicianName || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="当前状态" min-width="160">
+            <template #default="{ row }">
+              <el-tag :type="collaborationTagType(row.collaboration?.currentStatus)" effect="plain">
+                {{ row.collaboration?.currentStatusLabel || '待检查' }}
+              </el-tag>
+              <div v-if="row.collaboration?.message" class="state-message" :title="row.collaboration.message">
+                {{ row.collaboration.message }}
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="150" fixed="right">
+            <template #default="{ row }">
+              <el-button
+                v-if="row.collaboration?.actionEnabled"
+                link
+                :type="operationType(row.collaboration?.nextAction)"
+                :loading="actionLoadingId === rowActionKey(row)"
+                @click="handleRowAction(row)"
+              >
+                {{ row.collaboration?.nextActionLabel }}
+              </el-button>
+              <span v-else class="no-action">—</span>
+            </template>
+          </el-table-column>
+          <template #empty><el-empty description="暂无产品明细" /></template>
         </el-table>
       </el-tab-pane>
 
@@ -147,34 +113,86 @@
           <el-descriptions-item label="流水 ID">{{ detail.ingestLog?.id || '-' }}</el-descriptions-item>
           <el-descriptions-item label="请求 ID">{{ detail.ingestLog?.requestId || '-' }}</el-descriptions-item>
           <el-descriptions-item label="幂等键">{{ detail.ingestLog?.idempotencyKey || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="接入状态">
-            {{ statusLabel('ingestStatus', detail.ingestLog?.ingestStatus) }}
-          </el-descriptions-item>
-          <el-descriptions-item label="接收时间">
-            {{ formatDateTime(detail.ingestLog?.receivedAt) }}
-          </el-descriptions-item>
-          <el-descriptions-item label="处理时间">
-            {{ formatDateTime(detail.ingestLog?.processedAt) }}
-          </el-descriptions-item>
+          <el-descriptions-item label="接入状态">{{ statusLabel('ingestStatus', detail.ingestLog?.ingestStatus) }}</el-descriptions-item>
+          <el-descriptions-item label="接收时间">{{ formatDateTime(detail.ingestLog?.receivedAt) }}</el-descriptions-item>
+          <el-descriptions-item label="处理时间">{{ formatDateTime(detail.ingestLog?.processedAt) }}</el-descriptions-item>
         </el-descriptions>
       </el-tab-pane>
     </el-tabs>
+
+    <el-dialog v-model="historyDialog.visible" title="补录内容与状态记录" width="720px">
+      <el-descriptions :column="2" border class="history-summary">
+        <el-descriptions-item label="产品任务">{{ historyDialog.data.productTaskNo || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="当前处理人">{{ historyDialog.data.assigneeName || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="当前状态" :span="2">{{ historyDialog.data.currentStatusLabel || '-' }}</el-descriptions-item>
+      </el-descriptions>
+      <el-timeline v-if="historyDialog.data.entries?.length">
+        <el-timeline-item v-for="(entry, index) in historyDialog.data.entries" :key="`${entry.occurredAt}-${index}`" :timestamp="formatDateTime(entry.occurredAt)">
+          <strong>{{ entry.title }}</strong><div class="history-description">{{ entry.description }}</div>
+        </el-timeline-item>
+      </el-timeline>
+      <el-empty v-else description="暂无变更记录" />
+      <template #footer><el-button @click="historyDialog.visible = false">关闭</el-button></template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="assignmentDialog.visible"
+      :title="assignmentDialog.rows.length > 1 ? '批量指定技术负责人' : '指定技术负责人'"
+      width="520px"
+      :close-on-click-modal="false"
+    >
+      <el-alert type="info" :closable="false" show-icon class="assignment-alert">
+        <template #title>
+          {{ assignmentDialog.rows.length > 1
+            ? `将为 ${assignmentDialog.unresolvedCount} 个未匹配产品指定同一负责人`
+            : '选择实际处理本产品的技术人员' }}
+        </template>
+        {{ assignmentDialog.message || '候选人只包含当前业务单元中有效的技术协作账号。' }}
+      </el-alert>
+      <el-form label-position="top" v-loading="assignmentDialog.loading">
+        <el-form-item label="技术负责人" required>
+          <el-select
+            v-model="assignmentDialog.selectedUserId"
+            filterable
+            placeholder="请选择技术负责人"
+            style="width: 100%"
+            :disabled="assignmentDialog.candidates.length === 0"
+          >
+            <el-option
+              v-for="candidate in assignmentDialog.candidates"
+              :key="candidate.userId"
+              :value="candidate.userId"
+              :label="candidateLabel(candidate)"
+            />
+          </el-select>
+        </el-form-item>
+        <el-empty
+          v-if="!assignmentDialog.loading && assignmentDialog.candidates.length === 0"
+          :description="assignmentDialog.message || '暂无可选技术负责人'"
+          :image-size="72"
+        />
+      </el-form>
+      <template #footer>
+        <el-button :disabled="assignmentDialog.submitting" @click="assignmentDialog.visible = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="assignmentDialog.submitting"
+          :disabled="!assignmentDialog.selectedUserId"
+          @click="submitTechnicianAssignment"
+        >
+          确定并发起补录
+        </el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog v-model="confirmDialog.visible" title="确认报价单分类" width="460px">
       <el-form :model="confirmDialog.form" label-width="96px">
         <el-form-item label="报价场景">
           <el-select v-model="confirmDialog.form.quoteScenario" placeholder="请选择报价场景">
-            <el-option
-              v-for="item in QUOTE_SCENARIO_OPTIONS.filter((option) => option.value !== 'UNKNOWN')"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
+            <el-option v-for="item in QUOTE_SCENARIO_OPTIONS.filter((option) => option.value !== 'UNKNOWN')" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
         </el-form-item>
-        <el-form-item label="事业部类型">
-          <el-input v-model="confirmDialog.form.businessUnitType" placeholder="COMMERCIAL" />
-        </el-form-item>
+        <el-form-item label="事业部类型"><el-input v-model="confirmDialog.form.businessUnitType" placeholder="COMMERCIAL" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="confirmDialog.visible = false">取消</el-button>
@@ -185,34 +203,39 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import {
+  batchStartQuoteCollaboration,
   confirmQuoteRequestClassification,
+  fetchQuoteCollaborationSummary,
   fetchQuoteCostRun,
+  fetchQuoteItemCollaborationHistory,
   fetchQuoteRequestDetail,
+  fetchQuoteTechnicianCandidates,
   launchQuoteCostingWorkbench,
+  startQuoteItemCollaboration,
 } from '../api/quoteRequests'
 import {
-  checkQuoteBomStatus,
-  createQuoteProductBomTasks,
-  pushQuoteProductBomOaTodo,
-} from '../api/quoteIngest'
+  ASSIGN_TECHNICIAN_ACTION,
+  buildCollaborationBatchStartItems,
+  canBatchStartCollaboration,
+  collaborationTagType,
+  mergeCollaborationSummary,
+  STARTABLE_COLLABORATION_ACTIONS,
+} from '../utils/quoteCollaboration'
 import {
   QUOTE_SCENARIO_OPTIONS,
   canConfirmClassification,
   formatDateTime,
-  isCostReadyBomStatus,
-  mergeBomStatusToDetail,
   statusLabel,
   statusTagType,
 } from '../utils/quoteRequestWorkbench'
 
 const route = useRoute()
 const router = useRouter()
-
 const oaNo = computed(() => String(route.params.oaNo || ''))
 const loading = ref(false)
 const checking = ref(false)
@@ -222,20 +245,31 @@ const actionLoadingId = ref('')
 const activeTab = ref('items')
 const detail = ref({})
 const selectedItems = ref([])
-const confirmDialog = reactive({
+const itemsTableRef = ref()
+const historyDialog = reactive({ visible: false, data: {} })
+const assignmentDialog = reactive({
   visible: false,
-  form: {
-    quoteScenario: '',
-    businessUnitType: 'COMMERCIAL',
-  },
+  loading: false,
+  submitting: false,
+  rows: [],
+  candidates: [],
+  selectedUserId: null,
+  unresolvedCount: 0,
+  message: '',
 })
+const confirmDialog = reactive({ visible: false, form: { quoteScenario: '', businessUnitType: 'COMMERCIAL' } })
 
 async function loadDetail() {
   if (!oaNo.value) return
   loading.value = true
   try {
-    detail.value = await fetchQuoteRequestDetail(oaNo.value)
+    const [base, summary] = await Promise.all([
+      fetchQuoteRequestDetail(oaNo.value),
+      fetchQuoteCollaborationSummary(oaNo.value),
+    ])
+    detail.value = mergeCollaborationSummary(base, summary)
     selectedItems.value = []
+    await locateReturnRow()
   } catch (error) {
     detail.value = {}
     ElMessage.error(error?.message || '获取报价单详情失败')
@@ -244,235 +278,204 @@ async function loadDetail() {
   }
 }
 
-function goBack() {
-  router.push('/ingest/quote-requests')
-}
-
-async function handleCheckBom() {
+async function refreshCollaboration(showMessage = true) {
   checking.value = true
   try {
-    const response = await checkQuoteBomStatus(oaNo.value)
-    detail.value = mergeBomStatusToDetail(detail.value, response)
-    ElMessage.success('BOM 已刷新')
+    const summary = await fetchQuoteCollaborationSummary(oaNo.value)
+    detail.value = mergeCollaborationSummary(detail.value, summary)
+    selectedItems.value = []
+    if (showMessage) ElMessage.success('产品状态已按 U9、协作任务和价格结果刷新')
   } catch (error) {
-    ElMessage.error(error?.message || '检查 BOM 失败')
+    ElMessage.error(error?.message || '刷新产品状态失败')
   } finally {
     checking.value = false
   }
 }
 
+function goBack() { router.push('/ingest/quote-requests') }
 function openConfirmDialog() {
-  confirmDialog.form.quoteScenario =
-    detail.value.quoteScenario === 'UNKNOWN' ? '' : detail.value.quoteScenario || ''
+  confirmDialog.form.quoteScenario = detail.value.quoteScenario === 'UNKNOWN' ? '' : detail.value.quoteScenario || ''
   confirmDialog.form.businessUnitType = detail.value.businessUnitType || 'COMMERCIAL'
   confirmDialog.visible = true
 }
-
 async function submitClassification() {
-  if (!confirmDialog.form.quoteScenario) {
-    ElMessage.warning('请选择报价场景')
-    return
-  }
+  if (!confirmDialog.form.quoteScenario) return ElMessage.warning('请选择报价场景')
   confirming.value = true
   try {
-    detail.value = await confirmQuoteRequestClassification(oaNo.value, {
-      quoteScenario: confirmDialog.form.quoteScenario,
-      businessUnitType: confirmDialog.form.businessUnitType,
-    })
+    await confirmQuoteRequestClassification(oaNo.value, confirmDialog.form)
     confirmDialog.visible = false
+    await loadDetail()
     ElMessage.success('分类已确认')
-  } catch (error) {
-    ElMessage.error(error?.message || '确认分类失败')
-  } finally {
-    confirming.value = false
-  }
+  } catch (error) { ElMessage.error(error?.message || '确认分类失败') }
+  finally { confirming.value = false }
 }
 
-async function openSupplement(row) {
-  if (!canSelectForSupplement(row)) return
+async function handleRowAction(row) {
+  const action = row?.collaboration?.nextAction
+  if (action === ASSIGN_TECHNICIAN_ACTION) return openTechnicianAssignment([row])
+  if (STARTABLE_COLLABORATION_ACTIONS.has(action)) return startCollaboration(row)
+  if (action === 'VIEW_SUPPLEMENT') return openHistory(row)
+  if (action === 'START_COSTING') return startCosting(row)
+  if (action === 'CONTINUE_COSTING') return continueCosting(row)
+  if (action === 'VIEW_COSTING_RESULT') return viewCostingResult(row)
+}
+async function startCollaboration(row) {
   actionLoadingId.value = rowActionKey(row)
   try {
-    await createAndPushSupplementTasks([row])
-    await loadDetail()
-  } catch (error) {
-    ElMessage.error(error?.message || '发起补录失败')
-  } finally {
-    actionLoadingId.value = ''
-  }
+    const response = await startQuoteItemCollaboration(oaNo.value, row.id, {
+      expectedProjectionVersion: row.collaboration?.projectionVersion,
+    })
+    await refreshCollaboration(false)
+    ElMessage.success(response?.message || '协作状态已更新')
+  } catch (error) { ElMessage.error(error?.message || '发起补录失败') }
+  finally { actionLoadingId.value = '' }
 }
-
 async function handleBatchSupplement() {
-  const rows = selectedItems.value.filter(canSelectForSupplement)
-  if (rows.length === 0) {
-    ElMessage.warning('请选择无 BOM 的产品行')
-    return
+  const rows = selectedItems.value.filter(canBatchStartCollaboration)
+  if (!rows.length) return ElMessage.warning('请选择可发起补录的产品')
+  if (rows.some(row => row.collaboration?.nextAction === ASSIGN_TECHNICIAN_ACTION)) {
+    return openTechnicianAssignment(rows)
   }
+  return executeBatchStart(rows)
+}
+async function executeBatchStart(rows, technicianUserId = null) {
   tasking.value = true
   try {
-    await createAndPushSupplementTasks(rows)
-    await loadDetail()
+    const response = await batchStartQuoteCollaboration(oaNo.value, {
+      items: buildCollaborationBatchStartItems(rows, technicianUserId),
+    })
+    await refreshCollaboration(false)
+    if (response.failureCount) {
+      const failureSummary = (response.results || [])
+        .filter(result => !result.success)
+        .slice(0, 2)
+        .map(result => `${result.itemId || '未知产品'}：${result.message || '发起失败'}`)
+        .join('；')
+      ElMessage.warning(`成功 ${response.successCount} 项，失败 ${response.failureCount} 项${failureSummary ? `；${failureSummary}` : ''}`)
+    }
+    else ElMessage.success(`已处理 ${response.successCount} 项补录协作`)
+  } catch (error) { ElMessage.error(error?.message || '批量发起补录失败') }
+  finally { tasking.value = false }
+}
+
+async function openTechnicianAssignment(rows) {
+  const unresolvedRows = rows.filter(row => row.collaboration?.nextAction === ASSIGN_TECHNICIAN_ACTION)
+  const first = unresolvedRows[0]
+  if (!first) return executeBatchStart(rows)
+  assignmentDialog.visible = true
+  assignmentDialog.loading = true
+  assignmentDialog.rows = rows
+  assignmentDialog.unresolvedCount = unresolvedRows.length
+  assignmentDialog.candidates = []
+  assignmentDialog.selectedUserId = null
+  assignmentDialog.message = ''
+  try {
+    const response = await fetchQuoteTechnicianCandidates(oaNo.value, first.id)
+    assignmentDialog.candidates = response?.candidates || []
+    assignmentDialog.message = response?.message || ''
+    const recommended = assignmentDialog.candidates.filter(candidate => candidate.recommended)
+    if (recommended.length === 1) assignmentDialog.selectedUserId = recommended[0].userId
   } catch (error) {
-    ElMessage.error(error?.message || '批量发起补录失败')
+    assignmentDialog.message = error?.message || '获取技术负责人失败'
+    ElMessage.error(assignmentDialog.message)
   } finally {
-    tasking.value = false
+    assignmentDialog.loading = false
   }
 }
 
-async function createAndPushSupplementTasks(rows) {
-  const ids = [...new Set(rows.map((row) => row.id).filter(Boolean))]
-  if (ids.length === 0) {
-    throw new Error('未找到可发起补录的产品行')
+async function submitTechnicianAssignment() {
+  if (!assignmentDialog.selectedUserId) return ElMessage.warning('请选择技术负责人')
+  const rows = [...assignmentDialog.rows]
+  assignmentDialog.submitting = true
+  try {
+    if (rows.length === 1) {
+      const row = rows[0]
+      const response = await startQuoteItemCollaboration(oaNo.value, row.id, {
+        technicianUserId: assignmentDialog.selectedUserId,
+        expectedProjectionVersion: row.collaboration?.projectionVersion,
+      })
+      await refreshCollaboration(false)
+      assignmentDialog.visible = false
+      ElMessage.success(response?.message || '已指定负责人并发起补录')
+      return
+    }
+    assignmentDialog.visible = false
+    await executeBatchStart(rows, assignmentDialog.selectedUserId)
+  } catch (error) {
+    ElMessage.error(error?.message || '指定技术负责人失败')
+  } finally {
+    assignmentDialog.submitting = false
   }
-  const result = await createQuoteProductBomTasks(ids)
-  const taskIds = [...new Set((result?.tasks || []).map((item) => item?.taskId).filter(Boolean))]
-  const pushResults = []
-  for (const taskId of taskIds) {
-    pushResults.push(await pushQuoteProductBomOaTodo(taskId))
-  }
-  const failed = pushResults.filter((item) => item?.pushStatus === 'FAILED').length
-  const created = (result?.createdTaskCount || 0) + (result?.reusedTaskCount || 0)
-  if (failed > 0) {
-    ElMessage.warning(`补录任务已创建/复用 ${created} 个，${failed} 个 OA 待办推送失败`)
-  } else {
-    ElMessage.success(`补录任务已创建/复用 ${created} 个，OA 待办已推送 ${pushResults.length} 个`)
-  }
 }
-
-function canSelectForSupplement(row) {
-  return row?.bomStatus?.bomStatus === 'NO_BOM' && Boolean(row?.id)
-}
-
-function rowActionKey(row) {
-  return `supplement:${row?.id || row?.materialNo || ''}`
-}
-
-function costingActionKey(row) {
-  return `costing:${row?.id || row?.materialNo || ''}`
-}
-
-function costingViewActionKey(row) {
-  return `costing:view:${row?.id || row?.materialNo || ''}`
-}
-
-function canStartCosting(row) {
-  return isCostReadyBomStatus(row?.bomStatus?.bomStatus) && Boolean(row?.materialNo)
+async function openHistory(row) {
+  actionLoadingId.value = rowActionKey(row)
+  try {
+    historyDialog.data = await fetchQuoteItemCollaborationHistory(oaNo.value, row.id)
+    historyDialog.visible = true
+  } catch (error) { ElMessage.error(error?.message || '获取补录内容失败') }
+  finally { actionLoadingId.value = '' }
 }
 
 function openCostingWorkbench(row, query = {}) {
   router.push({
     path: `/ingest/quote-requests/${encodeURIComponent(oaNo.value)}/items/${encodeURIComponent(row.id)}/costing`,
-    query,
+    query: { ...query, returnItemId: row.id },
   })
 }
-
 async function startCosting(row) {
-  if (!canStartCosting(row)) {
-    ElMessage.warning('请先确认该产品已有可用 BOM')
-    return
-  }
-  actionLoadingId.value = costingActionKey(row)
+  if (row?.collaboration?.nextAction !== 'START_COSTING') return ElMessage.warning('当前产品尚未具备核算条件')
+  actionLoadingId.value = rowActionKey(row)
   try {
     const response = await launchQuoteCostingWorkbench(oaNo.value, row.id)
-    if (response?.snapshotGenerated) {
-      ElMessage.success('已按最新结算规则刷新报价物料明细')
-    }
+    if (response?.snapshotGenerated) ElMessage.success('已按最新结算规则刷新报价物料明细')
     openCostingWorkbench(row, { tab: 'QUOTE_BOM' })
-  } catch (error) {
-    ElMessage.error(error?.message || '发起核算失败')
-  } finally {
-    actionLoadingId.value = ''
-  }
+  } catch (error) { ElMessage.error(error?.message || '发起核算失败') }
+  finally { actionLoadingId.value = '' }
 }
-
+function continueCosting(row) { openCostingWorkbench(row, { tab: 'COST_RUN' }) }
 async function viewCostingResult(row) {
-  if (!row?.id || !row?.materialNo) {
-    ElMessage.error('当前产品缺少核算结果定位信息')
-    return
-  }
-  actionLoadingId.value = costingViewActionKey(row)
+  actionLoadingId.value = rowActionKey(row)
   try {
-    const response = await fetchQuoteCostRun(oaNo.value, row.id, {
-      versionId: row.confirmedCostVersionId || undefined,
-    })
+    const response = await fetchQuoteCostRun(oaNo.value, row.id, { versionId: row.confirmedCostVersionId || undefined })
     const versions = Array.isArray(response?.versions) ? response.versions : []
-    const confirmedVersionId = Number(row.confirmedCostVersionId)
-    const displayVersion = [
-      response?.currentDisplayVersion,
-      response?.latestConfirmed,
-      ...versions,
-    ].find((version) => {
+    const confirmedId = Number(row.confirmedCostVersionId)
+    const displayVersion = [response?.currentDisplayVersion, response?.latestConfirmed, ...versions].find((version) => {
       if (!version?.costRunNo) return false
-      if (Number.isFinite(confirmedVersionId) && confirmedVersionId > 0) {
-        return Number(version.id) === confirmedVersionId
-      }
-      return version.currentConfirmed || version.status === 'CONFIRMED'
+      return confirmedId > 0 ? Number(version.id) === confirmedId : version.currentConfirmed || version.status === 'CONFIRMED'
     })
-    const legacyResultAvailable = hasCostingResult(row)
-    if (!displayVersion?.costRunNo && !legacyResultAvailable) {
-      throw new Error('当前产品没有可查看的已确认核算版本')
-    }
-    const resultHeader = response?.resultHeader || {}
-    const productCode = resultHeader.productCode || row.materialNo
+    if (!displayVersion?.costRunNo && !hasCostingResult(row)) throw new Error('当前产品没有可查看的已确认核算版本')
+    const header = response?.resultHeader || {}
+    const productCode = header.productCode || row.materialNo
     const query = {
-      customer: detail.value.customer || '',
-      productName: resultHeader.productName || row.productName || '',
-      productModel: resultHeader.productModel || row.sunlModel || row.spec || '',
-      productCode,
-      materialCode: productCode,
-      customerDrawing: row.customerDrawing || '',
+      customer: detail.value.customer || '', productName: header.productName || row.productName || '',
+      productModel: header.productModel || row.sunlModel || row.spec || '', productCode, materialCode: productCode,
+      customerDrawing: row.customerDrawing || '', costRunNo: displayVersion?.costRunNo,
+      versionNo: displayVersion?.versionNo || displayVersion?.costRunNo || '历史核算结果', returnItemId: row.id,
     }
-    if (displayVersion?.costRunNo) {
-      query.costRunNo = displayVersion.costRunNo
-      query.versionNo = displayVersion.versionNo || displayVersion.costRunNo
-    } else {
-      query.legacyResult = '1'
-      query.versionNo = '历史核算结果'
-    }
+    if (!displayVersion?.costRunNo) query.legacyResult = '1'
     await router.push({
       name: 'cost-run-detail',
       params: { oaNo: oaNo.value },
       query,
     })
-  } catch (error) {
-    ElMessage.error(error?.message || '查看核算结果失败')
-  } finally {
-    actionLoadingId.value = ''
-  }
+  } catch (error) { ElMessage.error(error?.message || '查看核算结果失败') }
+  finally { actionLoadingId.value = '' }
 }
 
-function continueCosting(row) {
-  openCostingWorkbench(row, { tab: 'COST_RUN' })
+function hasCostingResult(row) { return Boolean(row?.confirmedCostVersionId || row?.calcAt || row?.unitCost || row?.costAmount) }
+function rowActionKey(row) { return `row:${row?.id || ''}` }
+function packageText(row) { return [row.packageType, row.packageMethod, row.packageComponentCode].filter(Boolean).join(' / ') || '包装信息未填' }
+function candidateLabel(candidate) {
+  const identity = candidate.loginName && candidate.loginName !== candidate.userName ? `（${candidate.loginName}）` : ''
+  return `${candidate.userName}${identity}${candidate.recommended ? ' · 系统推荐' : ''}`
 }
-
-async function restartCosting(row) {
-  await startCosting(row)
-}
-
-function normalizedCalcStatus(value) {
-  const text = String(value || '未核算').trim()
-  if (['CALCULATED', 'DONE', 'SUCCESS', '已核算'].includes(text)) return '已核算'
-  if (['CALCULATING', 'RUNNING', '试算中'].includes(text)) return '试算中'
-  if (['NEED_RECALC', 'STALE', 'DIRTY', '需重新核算', '重新核算'].includes(text)) return '重新核算'
-  return '未核算'
-}
-
-function hasCostingResult(row) {
-  return Boolean(row?.confirmedCostVersionId || row?.calcAt || row?.unitCost || row?.costAmount)
-}
-
-function costingOperationState(row) {
-  const status = normalizedCalcStatus(row?.calcStatus)
-  if (status === '试算中') return 'INCOMPLETE'
-  if (status === '已核算' || hasCostingResult(row)) return 'COMPLETED'
-  return 'PENDING'
-}
-
-function bomSourceLabel(source) {
-  const value = String(source || '').trim()
-  if (!value) return '-'
-  if (value === 'COSTING_SNAPSHOT') return '核算快照'
-  if (value === 'U9_SOURCE') return 'U9'
-  return value
+function operationType(action) { return STARTABLE_COLLABORATION_ACTIONS.has(action) || action === ASSIGN_TECHNICIAN_ACTION ? 'warning' : 'primary' }
+function rowClassName({ row }) { return String(route.query.itemId || '') === String(row.id) ? 'return-row' : '' }
+async function locateReturnRow() {
+  if (!route.query.itemId) return
+  await nextTick()
+  const row = detail.value.items?.find((item) => String(item.id) === String(route.query.itemId))
+  if (row) itemsTableRef.value?.setCurrentRow?.(row)
 }
 
 watch(oaNo, loadDetail)
@@ -480,67 +483,23 @@ onMounted(loadDetail)
 </script>
 
 <style scoped>
-.quote-page {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.page-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.page-head h1 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  color: #1f2a37;
-}
-
-.page-head p {
-  margin: 6px 0 0;
-  color: #6b7280;
-  font-size: 13px;
-}
-
-.page-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.detail-tabs {
-  padding: 16px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #ffffff;
-}
-
-.table-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.table-toolbar__meta {
-  color: #6b7280;
-  font-size: 13px;
-}
-
-.items-table {
-  width: 100%;
-}
-
-@media (max-width: 860px) {
-  .page-head {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-}
+.quote-page { display: flex; flex-direction: column; gap: 16px; }
+.page-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.page-head h1 { margin: 0; font-size: 20px; font-weight: 600; color: #1f2a37; }
+.page-head p { margin: 6px 0 0; color: #6b7280; font-size: 13px; }
+.page-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.detail-tabs { padding: 16px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; }
+.guide-alert { margin-bottom: 12px; }
+.table-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.table-toolbar__meta, .product-meta, .state-message, .history-description { color: #6b7280; font-size: 12px; }
+.items-table { width: 100%; }
+.product-cell { line-height: 1.55; }
+.product-seq { display: inline-block; width: 28px; color: #9ca3af; }
+.product-name { color: #374151; }
+.state-message { margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.no-action { color: #9ca3af; }
+.history-summary { margin-bottom: 20px; }
+.assignment-alert { margin-bottom: 18px; }
+:deep(.el-table .return-row > td) { background: #ecf5ff !important; }
+@media (max-width: 860px) { .page-head { align-items: flex-start; flex-direction: column; } }
 </style>

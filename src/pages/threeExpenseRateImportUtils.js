@@ -166,7 +166,9 @@ function parseSection(rows, section, endRowIndex, globalPeriodText, defaultPerio
     if (isBlankRow(row) || row.some((cell) => resolveTitle(cell))) {
       continue
     }
-    const department = readText(row, fieldIndex.applicantDepartment) || lastDepartment
+    const department = normalizeApplicantDepartment(
+      readText(row, fieldIndex.applicantDepartment) || lastDepartment,
+    )
     const officeRaw = readText(row, fieldIndex.applicantOffice) || lastOffice
     if (department) {
       lastDepartment = department
@@ -182,7 +184,6 @@ function parseSection(rows, section, endRowIndex, globalPeriodText, defaultPerio
     const oem = fieldIndex.oemExpenseRate === undefined ? null : parseRate(row[fieldIndex.oemExpenseRate])
     const businessUnitType = resolveBusinessUnitType(
       fieldIndex.businessUnitType === undefined ? '' : row[fieldIndex.businessUnitType],
-      section.productCategory,
     )
     const periodValue =
       fieldIndex.periodText === undefined ? globalPeriodText : readText(row, fieldIndex.periodText) || globalPeriodText
@@ -229,7 +230,7 @@ function parseSection(rows, section, endRowIndex, globalPeriodText, defaultPerio
   }
 }
 
-function resolveBusinessUnitType(value, productCategory) {
+function resolveBusinessUnitType(value) {
   const normalized = String(value || '').trim().toUpperCase()
   if (normalized === 'COMMERCIAL' || normalized === '商用') {
     return 'COMMERCIAL'
@@ -237,7 +238,13 @@ function resolveBusinessUnitType(value, productCategory) {
   if (normalized === 'HOUSEHOLD' || normalized === '家用') {
     return 'HOUSEHOLD'
   }
-  return productCategory === '家代商代销产品' ? 'HOUSEHOLD' : 'COMMERCIAL'
+  return null
+}
+
+export function normalizeApplicantDepartment(value) {
+  return String(value ?? '')
+    .trim()
+    .replace(/[（(](直销|海外|代销)[）)]$/, '-$1')
 }
 
 function parseLegacyRows(rows, importBatchNo, errors) {
@@ -261,10 +268,10 @@ function parseLegacyRows(rows, importBatchNo, errors) {
     return {
       company: readText(row, fieldIndex.company),
       businessUnit: readText(row, fieldIndex.businessUnit),
-      department: readText(row, fieldIndex.applicantDepartment),
+      department: normalizeApplicantDepartment(readText(row, fieldIndex.applicantDepartment)),
       period: periodText,
       periodYear: period.periodYear,
-      applicantDepartment: readText(row, fieldIndex.applicantDepartment),
+      applicantDepartment: normalizeApplicantDepartment(readText(row, fieldIndex.applicantDepartment)),
       applicantOffice: normalizeApplicantOffice(readText(row, fieldIndex.applicantOffice)),
       managementExpenseRate: management,
       financeExpenseRate: finance,

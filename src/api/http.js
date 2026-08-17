@@ -46,7 +46,7 @@ instance.interceptors.response.use(
     if (axios.isCancel(error)) {
       return Promise.reject(error)
     }
-    handleHttpError(error)
+    if (!error.config?.suppressErrorToast) handleHttpError(error)
     return Promise.reject(error)
   }
 )
@@ -68,7 +68,7 @@ export const cancelPendingRequests = (pathPrefix) => {
 
 export const request = async (
   path,
-  { method = 'GET', params, body, dedupKey, timeout } = {}
+  { method = 'GET', params, body, dedupKey, timeout, suppressErrorToast = false } = {}
 ) => {
   // GET request dedup: reuse in-flight promise for same URL
   const isGet = method === 'GET'
@@ -86,6 +86,7 @@ export const request = async (
         url: path,
         method,
         signal: controller.signal,
+        suppressErrorToast,
       }
       if (timeout !== undefined) {
         config.timeout = timeout
@@ -114,7 +115,7 @@ export const request = async (
       if (payload && typeof payload.code === 'number') {
         if (payload.code !== 0) {
           // T35：业务错误统一交给 errorHandler 弹 toast，并抛出 Error 供调用方 catch
-          throw handleBusinessError(payload)
+          throw handleBusinessError(payload, { notify: !suppressErrorToast })
         }
         return payload.data
       }
@@ -130,7 +131,12 @@ export const request = async (
         (respData && (respData.msg || respData.message)) ||
         error.message ||
         '请求失败'
-      throw new Error(message)
+      const normalized = new Error(message)
+      normalized.userNotified = Boolean(error?.userNotified)
+      normalized.resultCode = error?.resultCode ?? error?.response?.status
+      normalized.domainCode = error?.domainCode
+        || String(message).split(':', 1)[0]
+      throw normalized
     } finally {
       if (isGet) {
         pendingGets.delete(cacheKey)

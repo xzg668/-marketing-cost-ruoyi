@@ -60,6 +60,7 @@ export const handleHttpError = (error) => {
   }
 
   if (status === 401) {
+    error.userNotified = true
     if (window.location.pathname === '/login') {
       return true
     }
@@ -69,6 +70,7 @@ export const handleHttpError = (error) => {
 
   if (status === 403) {
     ElMessage.warning('权限不足')
+    error.userNotified = true
     return true
   }
 
@@ -81,12 +83,14 @@ export const handleHttpError = (error) => {
       duration: 0,
       showClose: true,
     })
+    error.userNotified = true
     return true
   }
 
   // 其他 HTTP 状态（如 400 参数错误）：提示后端 msg
   const msg = (respData && (respData.msg || respData.message)) || error.message || '请求失败'
   ElMessage.error(msg)
+  error.userNotified = true
   return true
 }
 
@@ -94,8 +98,21 @@ export const handleHttpError = (error) => {
  * 业务错误：HTTP 200 但 CommonResult.code !== 0。
  * 不展示 traceId（业务错误一般可操作，例如重名、字段缺失），仅 toast msg。
  */
-export const handleBusinessError = (payload) => {
+export const handleBusinessError = (payload, { notify = true } = {}) => {
   const msg = (payload && payload.msg) || '操作失败'
-  ElMessage.error(msg)
-  return new Error(msg)
+  if (notify) ElMessage.error(msg)
+  const error = new Error(msg)
+  error.userNotified = notify
+  error.resultCode = payload?.code
+  error.domainCode = String(msg).split(':', 1)[0]
+  return error
 }
+
+/** 页面 catch 的统一出口：请求层已经提示过时不再重复弹窗。 */
+export const showErrorOnce = (error, fallback = '操作失败') => {
+  if (error?.userNotified) return
+  ElMessage.error(error?.message || fallback)
+  if (error && typeof error === 'object') error.userNotified = true
+}
+
+export const isDomainError = (error, code) => error?.domainCode === code

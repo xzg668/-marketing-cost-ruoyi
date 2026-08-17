@@ -1,5 +1,5 @@
 <script>
-// 动态菜单 ingest/u9Bom/index 的实际渲染组件：U9 BOM 一键上传页（接 /api/v1/bom/import-and-build）
-import Component from '../../../pages/U9BomPage.vue'
+// 历史动态菜单兼容入口：只读查看 EasyData 已写入的 BOM，不再提供 Excel 导入或应用内构建。
+import Component from '../../../pages/BomTreeViewerPage.vue'
 export default Component
 </script>

@@ -74,6 +74,18 @@ describe('业务错误分支', () => {
   })
 
   it('handleBusinessError 返回 Error 对象', () => {
-    assert.match(content, /return\s+new\s+Error\(/)
+    assert.match(content, /const\s+error\s*=\s*new\s+Error\(/)
+    assert.match(content, /return\s+error/)
+  })
+
+  it('错误对象记录是否已经提示，页面 catch 不重复弹窗', () => {
+    assert.match(content, /error\.userNotified\s*=\s*notify/)
+    assert.match(content, /export\s+const\s+showErrorOnce/)
+    assert.match(content, /if\s*\(error\?\.userNotified\)\s*return/)
+  })
+
+  it('业务错误保存稳定的领域错误码供页面做权限态展示', () => {
+    assert.match(content, /error\.domainCode/)
+    assert.match(content, /export\s+const\s+isDomainError/)
   })
 })
