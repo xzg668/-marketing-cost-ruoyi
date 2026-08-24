@@ -23,10 +23,17 @@ import {
 import { expandQuoteBomDisplayRows } from '../src/utils/quoteCostingBomRows.js'
 import {
   buildCollaborationBatchStartItems,
+  buildStoredCollaborationSummary,
   canBatchStartCollaboration,
   collaborationTagType,
   mergeCollaborationSummary,
 } from '../src/utils/quoteCollaboration.js'
+import {
+  countCarriedForwardPrices,
+  isCarriedForwardPrice,
+  priceReadyLabel,
+  priceValidityText,
+} from '../src/utils/pricePrepareDisplay.js'
 
 const LIST_PAGE_FILE = path.resolve(import.meta.dirname, '../src/views/ingest/quote-requests/index.vue')
 const PRODUCT_BOM_PAGE_FILE = path.resolve(import.meta.dirname, '../src/views/ingest/quote-request-products/bom/index.vue')
@@ -205,8 +212,8 @@ describe('T11 报价单接入工作台工具', () => {
   })
 })
 
-describe('报价物料上卷展示名称', () => {
-  it('使用父件料号图号和父件-子件品名，不生成原材料或废料子行', () => {
+describe('报价物料上卷展示', () => {
+  it('品名、料号、图号都按父件换行【子件】展示，不增加结算行', () => {
     const parent = {
       id: 4057,
       childCode: '201190083',
@@ -218,6 +225,7 @@ describe('报价物料上卷展示名称', () => {
       rollupComponents: [{
         childCode: '301050120',
         childName: '拉制铜管',
+        childDrawingNo: 'CHILD-DRAWING',
         parentDrawingNo: 'T-JG-0029',
         usageQty: 0.00381546,
         qtyPerTop: 0.00381546,
@@ -228,9 +236,9 @@ describe('报价物料上卷展示名称', () => {
     const rows = expandQuoteBomDisplayRows([parent])
 
     assert.equal(rows.length, 1)
-    assert.equal(rows[0].childCode, '201190083')
-    assert.equal(rows[0].childName, '接管-拉制铜管')
-    assert.equal(rows[0].childModel, 'T-JG-0029')
+    assert.equal(rows[0].childCode, '201190083\n【301050120】')
+    assert.equal(rows[0].childName, '接管\n【拉制铜管】')
+    assert.equal(rows[0].childModel, 'T-JG-0029\n【CHILD-DRAWING】')
     assert.equal(rows[0].usageQty, 0.00381546)
     assert.equal(rows[0].shapeAttribute, '制造件')
     assert.equal(rows[0].sourceRow, parent)
@@ -244,19 +252,43 @@ describe('报价物料上卷展示名称', () => {
       childName: 'A板片组件',
       childModel: 'A-DRAWING',
       rollupComponents: [
-        { childCode: 'RAW-CU', childName: '铜箔' },
-        { childCode: 'RAW-SUS', childName: '不锈钢卷' },
+        { childCode: 'RAW-CU', childName: '铜箔', childDrawingNo: 'CU-DRAWING' },
+        { childCode: 'RAW-SUS', childName: '不锈钢卷', childDrawingNo: 'SUS-DRAWING' },
       ],
     }
 
     const rows = expandQuoteBomDisplayRows([parent])
 
     assert.deepEqual(rows.map((row) => row.childName), [
-      'A板片组件-铜箔',
-      'A板片组件-不锈钢卷',
+      'A板片组件\n【铜箔】',
+      'A板片组件\n【不锈钢卷】',
     ])
-    assert.ok(rows.every((row) => row.childCode === 'A-PLATE'))
+    assert.deepEqual(rows.map((row) => row.childCode), [
+      'A-PLATE\n【RAW-CU】',
+      'A-PLATE\n【RAW-SUS】',
+    ])
+    assert.deepEqual(rows.map((row) => row.childModel), [
+      'A-DRAWING\n【CU-DRAWING】',
+      'A-DRAWING\n【SUS-DRAWING】',
+    ])
     assert.ok(rows.every((row) => row.sourceRow === parent))
+  })
+
+  it('普通结算行的品名、料号、图号保持不变', () => {
+    const normal = {
+      id: 6001,
+      childCode: 'NORMAL-001',
+      childName: '普通采购件',
+      childModel: 'NORMAL-DRAWING',
+    }
+
+    const rows = expandQuoteBomDisplayRows([normal])
+
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0].childCode, 'NORMAL-001')
+    assert.equal(rows[0].childName, '普通采购件')
+    assert.equal(rows[0].childModel, 'NORMAL-DRAWING')
+    assert.equal(rows[0].rollupDisplay, false)
   })
 })
 
@@ -339,7 +371,12 @@ describe('T11 报价单接入页面契约', () => {
     assert.match(detailPageContent, /申请处室/)
     assert.match(detailPageContent, /el-tabs/)
     assert.match(detailPageContent, /产品明细/)
-    assert.match(detailPageContent, /packageText/)
+    assert.match(detailPageContent, /label="产品料号"/)
+    assert.match(detailPageContent, /label="产品名称"/)
+    assert.match(detailPageContent, /label="三花型号"/)
+    assert.match(detailPageContent, /label="包装类型"/)
+    assert.match(detailPageContent, /label="包装方式"/)
+    assert.match(detailPageContent, /label="包装组件"/)
     assert.match(detailPageContent, /操作日志/)
     assert.match(detailPageContent, /ingestLog/)
     assert.doesNotMatch(detailPageContent, /分类状态/)
@@ -352,7 +389,11 @@ describe('T11 报价单接入页面契约', () => {
     assert.match(detailPageContent, /批量指定\/发起补录/)
     assert.match(detailPageContent, /batchStartQuoteCollaboration/)
     assert.match(detailPageContent, /startQuoteItemCollaboration/)
-    assert.match(detailPageContent, /fetchQuoteCollaborationSummary/)
+    assert.doesNotMatch(detailPageContent, /fetchQuoteCollaborationSummary/)
+    assert.match(detailPageContent, /buildStoredCollaborationSummary/)
+    assert.doesNotMatch(detailPageContent, /loadCollaborationInBackground/)
+    assert.doesNotMatch(detailPageContent, /Promise\.all\(\[\s*fetchQuoteRequestDetail[\s\S]*fetchQuoteCollaborationSummary/)
+    assert.match(quoteRequestApiContent, /collaboration-summary\/refresh/)
     assert.match(detailPageContent, /fetchQuoteItemCollaborationHistory/)
     assert.match(detailPageContent, /fetchQuoteTechnicianCandidates/)
     assert.match(quoteRequestApiContent, /collaboration\/technician-candidates/)
@@ -377,7 +418,7 @@ describe('T11 报价单接入页面契约', () => {
     assert.doesNotMatch(detailPageContent, /接入原文/)
     assert.doesNotMatch(detailPageContent, /操作记录/)
     assert.doesNotMatch(detailPageContent, /checkQuoteBomStatus/)
-    assert.match(detailPageContent, /发起核算/)
+    assert.match(detailPageContent, /submitQuoteProductCostRun/)
     assert.match(detailPageContent, /openCostingWorkbench/)
     assert.match(detailPageContent, /\/ingest\/quote-requests\/\$\{encodeURIComponent\(oaNo\.value\)\}\/items\/\$\{encodeURIComponent\(row\.id\)\}\/costing/)
     assert.doesNotMatch(detailPageContent, /查看 BOM/)
@@ -395,8 +436,41 @@ describe('T11 报价单接入页面契约', () => {
     assert.match(quoteRequestApiContent, /fetchQuoteCostingWorkbench/)
     assert.match(quoteRequestApiContent, /\/items\/\$\{encodePath\(itemId\)\}\/costing-workbench/)
     assert.match(detailPageContent, /nextAction !== 'START_COSTING'/)
-    assert.match(detailPageContent, /async function startCosting[\s\S]*openCostingWorkbench\(row, \{ tab: 'QUOTE_BOM' \}\)/)
-    assert.match(costingWorkbenchPageContent, /async function applyRouteTab[\s\S]*preparePricingBomForNextStep\(\)[\s\S]*activeTab\.value = requestedTab/)
+    assert.match(quoteRequestApiContent, /submitQuoteProductCostRun/)
+    assert.match(quoteRequestApiContent, /\/items\/\$\{encodePath\(itemId\)\}\/cost-runs/)
+    assert.doesNotMatch(quoteRequestApiContent, /cost-run\/trial|costing-workbench\/launch/)
+    assert.match(detailPageContent, /async function startCosting[\s\S]*submitSingleProductCosting\(row, 'USER_REQUEST'\)/)
+    assert.match(detailPageContent, /async function restartCosting[\s\S]*submitSingleProductCosting\(row, 'INPUT_CHANGED'\)/)
+    assert.match(detailPageContent, /async function submitSingleProductCosting[\s\S]*submitQuoteProductCostRun/)
+    assert.match(costingWorkbenchPageContent, /async function applyRouteTab[\s\S]*activeTab\.value = requestedTab/)
+    assert.doesNotMatch(costingWorkbenchPageContent, /async function applyRouteTab[\s\S]{0,500}preparePricingBomForNextStep/)
+  })
+
+  it('T13 价格类型只保留自动识别接口，不再暴露人工确认写入口', () => {
+    assert.match(quoteRequestApiContent, /fetchQuotePriceTypeRecognition/)
+    assert.match(quoteRequestApiContent, /\/price-type-recognition/)
+    assert.doesNotMatch(quoteRequestApiContent, /price-type-confirmation/)
+    assert.doesNotMatch(quoteRequestApiContent, /import-missing|adjustPriceType/)
+    assert.match(costingWorkbenchPageContent, /latestPriceTypeRecognition/)
+    assert.doesNotMatch(costingWorkbenchPageContent, /latestPriceTypeConfirmation/)
+  })
+
+  it('T10 整单一键核算使用单个 OA 接口并被动轮询轻量进度', () => {
+    assert.match(detailPageContent, /整单一键核算/)
+    assert.match(detailPageContent, /submitWholeQuoteCosting/)
+    assert.match(detailPageContent, /submitQuoteBatchCostRun\(oaNo\.value, \{ mode: 'ALL' \}\)/)
+    assert.match(detailPageContent, /fetchCurrentQuoteBatchCostRun/)
+    assert.match(detailPageContent, /window\.setTimeout\(pollBatchProgress, 2000\)/)
+    assert.match(detailPageContent, /成功 \{\{ batchRun\.successCount/)
+    assert.match(detailPageContent, /协作 \{\{ batchRun\.collaborationCount/)
+    assert.match(detailPageContent, /跳过 \{\{ batchRun\.skippedCurrentCount/)
+    assert.match(detailPageContent, /v-if="batchRun\.message"/)
+    assert.match(detailPageContent, /:title="batchRun\.message"/)
+    assert.match(detailPageContent, /next\?\.status === 'FAILED'/)
+    assert.match(quoteRequestApiContent, /export const submitQuoteBatchCostRun/)
+    assert.match(quoteRequestApiContent, /export const fetchCurrentQuoteBatchCostRun/)
+    assert.match(quoteRequestApiContent, /\/quote-requests\/\$\{encodePath\(oaNo\)\}\/cost-runs/)
+    assert.doesNotMatch(detailPageContent, /for\s*\([^)]*detail\.value\.items[\s\S]{0,300}submitQuoteProductCostRun/)
   })
 
   it('QCBP-08 产品行只按服务端 nextAction 执行一个明确入口', () => {
@@ -404,16 +478,30 @@ describe('T11 报价单接入页面契约', () => {
     assert.match(detailPageContent, /STARTABLE_COLLABORATION_ACTIONS\.has\(action\)/)
     assert.match(detailPageContent, /action === 'VIEW_SUPPLEMENT'/)
     assert.match(detailPageContent, /action === 'START_COSTING'/)
-    assert.match(detailPageContent, /action === 'CONTINUE_COSTING'/)
+    assert.match(detailPageContent, /action === 'RESTART_COSTING'/)
+    assert.match(detailPageContent, /action === 'RETRY_COSTING'/)
     assert.match(detailPageContent, /action === 'VIEW_COSTING_RESULT'/)
-    assert.doesNotMatch(detailPageContent, /查看进度|查看审核进度/)
-    assert.match(detailPageContent, /async function viewCostingResult[\s\S]*fetchQuoteCostRun[\s\S]*name: 'cost-run-detail'/)
-    assert.match(detailPageContent, /query\.legacyResult = '1'/)
-    assert.match(detailPageContent, /'历史核算结果'/)
-    assert.match(costRunDetailPageContent, /legacyResult: String\(route\.query\.legacyResult/)
-    assert.match(costRunDetailPageContent, /legacyResult: meta\.value\.legacyResult \|\| undefined/)
-    assert.match(detailPageContent, /function continueCosting[\s\S]*tab: 'COST_RUN'/)
-    assert.match(detailPageContent, /confirmedCostVersionId/)
+    assert.match(detailPageContent, /action === 'VIEW_COSTING_PROGRESS'/)
+    assert.match(detailPageContent, /action === 'VIEW_COSTING_GAP'/)
+    assert.doesNotMatch(detailPageContent, /PREPARE_COSTING|CONTINUE_COSTING|launchQuoteCostingWorkbench/)
+    assert.match(detailPageContent, /VIEW_COSTING_RESULT'[\s\S]*openCostResultHistory/)
+    assert.match(detailPageContent, /fetchQuoteCostResultHistory/)
+    assert.match(detailPageContent, /原报价结果、月度调价结果分别保存/)
+    assert.match(detailPageContent, /versionId: selected\.versionId/)
+    assert.match(detailPageContent, /historyResult: 'quote'/)
+    assert.match(detailPageContent, /historyResultKind: selected\.resultTypeLabel === '报价重新核算结果'/)
+    assert.match(costingWorkbenchPageContent, /historyViewMode/)
+    assert.match(costingWorkbenchPageContent, /versionId: historyVersionId\.value/)
+    assert.match(costingWorkbenchPageContent, /正在查看.*historyResultLabel/)
+    assert.match(costingWorkbenchPageContent, /historyResultKind === 'recalculation'/)
+    assert.match(detailPageContent, /function openCostingGap[\s\S]*guide: 'costing-input-gap'/)
+  })
+
+  it('T11 缺 BOM 引导优先于尚未执行的价格检查', () => {
+    assert.match(costingWorkbenchPageContent,
+      /workspaceStatus === 'WAIT_BOM' \|\| blockedStep === 'QUOTE_BOM'/)
+    assert.match(costingWorkbenchPageContent,
+      /当前产品缺少可核算 BOM，请由产品技术补录后重新核算本产品/)
   })
 
   it('QCBP-08 协作投影合并、批量可选与状态颜色由统一工具决定', () => {
@@ -440,6 +528,121 @@ describe('T11 报价单接入页面契约', () => {
     assert.equal(collaborationTagType('MISSING_PRICE'), 'danger')
   })
 
+  it('详情首屏只使用持久化工作区状态并标识待重新核算', () => {
+    const stored = buildStoredCollaborationSummary({
+      items: [
+        { id: 1, calcStatus: '未核算', bomStatus: { bomStatus: 'U9_BOM_EXISTS' } },
+        { id: 2, calcStatus: '未核算', bomStatus: { bomStatus: 'NO_BOM' } },
+        { id: 3, calcStatus: '已核算', confirmedCostVersionId: 33, bomStatus: { bomStatus: 'SYNCED' } },
+        {
+          id: 4,
+          calcStatus: '已核算',
+          confirmedCostVersionId: 34,
+          bomStatus: { bomStatus: 'SYNCED' },
+          costingWorkspace: { workspaceStatus: 'STALE', inputChanged: true },
+        },
+        {
+          id: 5,
+          calcStatus: '未核算',
+          bomStatus: { bomStatus: 'SYNCED' },
+          costingWorkspace: { workspaceStatus: 'BOM_READY', currentStep: 'PRICE_TYPE_CONFIRMATION' },
+        },
+        {
+          id: 6,
+          calcStatus: '已核算',
+          confirmedCostVersionId: 35,
+          bomStatus: { bomStatus: 'SYNCED' },
+          costingWorkspace: {
+            workspaceStatus: 'WAIT_PRICE',
+            gapCount: 2,
+            lastErrorCode: 'FINANCE_BASE_PRICE_MISSING',
+            lastErrorMessage: '缺少财务基准价格',
+          },
+        },
+        {
+          id: 7,
+          calcStatus: '试算中',
+          bomStatus: { bomStatus: 'SYNCED' },
+          costingWorkspace: { workspaceStatus: 'WAIT_PRICE_TYPE', gapCount: 4 },
+        },
+        {
+          id: 8,
+          calcStatus: '试算中',
+          bomStatus: { bomStatus: 'SYNCED' },
+        },
+      ],
+    })
+
+    assert.equal(stored.items[0].bomStatusLabel, 'U9有此BOM')
+    assert.equal(stored.items[0].currentStatusLabel, '未开始')
+    assert.equal(stored.items[0].actionEnabled, true)
+    assert.equal(stored.items[0].nextAction, 'START_COSTING')
+    assert.equal(stored.items[1].currentStatusLabel, '待补BOM')
+    assert.equal(stored.items[1].priceStatusLabel, '待BOM补齐后检查')
+    assert.equal(stored.items[2].currentStatusLabel, '核算完成')
+    assert.equal(stored.items[2].priceStatusLabel, '价格齐全')
+    assert.equal(stored.items[2].nextAction, 'VIEW_COSTING_RESULT')
+    assert.equal(stored.items[2].nextActionLabel, '查看结果')
+    assert.match(stored.items[2].message, /当前成功结果/)
+    assert.equal(stored.items[3].currentStatusLabel, '待重新核算')
+    assert.equal(stored.items[3].nextAction, 'RESTART_COSTING')
+    assert.match(stored.items[3].message, /原核算结果仍可查看/)
+    assert.equal(stored.items[4].currentStatusLabel, '可核算')
+    assert.equal(stored.items[4].nextAction, 'START_COSTING')
+    assert.equal(stored.items[4].nextActionLabel, '核算本产品')
+    assert.equal(stored.items[4].actionEnabled, true)
+    assert.equal(stored.items[5].currentStatusLabel, '缺价格')
+    assert.equal(stored.items[5].nextAction, 'VIEW_COSTING_GAP')
+    assert.equal(stored.items[5].nextActionLabel, '查看缺口')
+    assert.equal(stored.items[5].assigneeName, '财务报价')
+    assert.equal(stored.items[5].message, '缺少财务基准价格')
+    assert.equal(stored.items[6].currentStatusLabel, '缺价格类型')
+    assert.equal(stored.items[6].nextAction, 'VIEW_COSTING_GAP')
+    assert.match(stored.items[6].message, /4 个待处理缺口/)
+    assert.equal(stored.items[7].currentStatusLabel, '核算中')
+    assert.equal(stored.items[7].nextAction, 'VIEW_COSTING_PROGRESS')
+  })
+
+  it('T12 已核算产品聚合展示沿用历史价提醒', () => {
+    const stored = buildStoredCollaborationSummary({
+      items: [{
+        id: 12,
+        calcStatus: '已核算',
+        confirmedCostVersionId: 120,
+        bomStatus: { bomStatus: 'SYNCED' },
+        costingWorkspace: { workspaceStatus: 'SUCCESS', carriedForwardPriceCount: 3 },
+      }],
+    })
+
+    assert.equal(stored.items[0].priceStatusLabel, '价格齐全 · 3项沿用历史价')
+    assert.match(stored.items[0].message, /不阻断报价/)
+  })
+
+  it('T12 第 5 步逐物料显示历史价标签和审批有效期说明', () => {
+    const historical = {
+      carriedForward: 1,
+      sourceEffectiveTo: '2026-07-31',
+      warningMessage: '沿用历史价：价格有效期至 2026-07-31，本次核算日 2026-08-01',
+    }
+    const current = { carriedForward: 0, sourceEffectiveFrom: '2026-08-01', sourceEffectiveTo: null }
+
+    assert.equal(priceReadyLabel(2), '价格齐全 · 2项沿用历史价')
+    assert.equal(isCarriedForwardPrice(historical), true)
+    assert.equal(countCarriedForwardPrices([historical, current]), 1)
+    assert.match(priceValidityText(historical), /2026-07-31/)
+    assert.equal(priceValidityText(current), '有效期：2026-08-01 至 长期')
+    assert.match(costingWorkbenchPageContent, /沿用历史价/)
+    assert.match(costingWorkbenchPageContent, /priceHistoryWarningText/)
+    assert.match(costingWorkbenchPageContent, /priceValidityText\(row\)/)
+  })
+
+  it('T11 财务基准价缺失从详情页直达第 5 步最终价格', () => {
+    assert.match(detailPageContent,
+      /FINANCE_BASE_PRICE_MISSING'\) return 'PRICE_PREPARE'/)
+    assert.match(detailPageContent,
+      /row\?\.costingWorkspace\?\.lastErrorCode/)
+  })
+
   it('QEB-14 工作台初始化展示最终有效 BOM 树和后续真实接口 tab', () => {
     assert.match(costingWorkbenchPageContent, /fetchQuoteCostingWorkbench/)
     assert.match(costingWorkbenchPageContent, /fetchQuoteEffectiveBom/)
@@ -458,7 +661,7 @@ describe('T11 报价单接入页面契约', () => {
     assert.match(costingWorkbenchPageContent, /expandBomTree/)
     assert.match(costingWorkbenchPageContent, /collapseBomTree/)
     assert.match(costingWorkbenchPageContent, /报价物料明细/)
-    assert.match(costingWorkbenchPageContent, /价格类型确认/)
+    assert.match(costingWorkbenchPageContent, /价格类型识别/)
     assert.match(costingWorkbenchPageContent, /价格准备/)
     assert.match(costingWorkbenchPageContent, /成本核算/)
     assert.match(costingWorkbenchPageContent, /tab\.code === 'PRODUCT_DETAIL'/)
@@ -483,6 +686,8 @@ describe('T11 报价单接入页面契约', () => {
     assert.match(costingWorkbenchPageContent, /tab-index/)
     assert.match(costingWorkbenchPageContent, /tabBadgeLabel\(tab\)/)
     assert.match(costingWorkbenchPageContent, /tabBadgeType\(tab\)/)
+    assert.match(costingWorkbenchPageContent, /currentSuccessVersion\.value\?\.id && versionNo\) return `核算成功/)
+    assert.match(costingWorkbenchPageContent, /if \(currentSuccessVersion\.value\?\.id\) return 'success'/)
     assert.doesNotMatch(costingWorkbenchPageContent, /workflow-strip/)
     assert.doesNotMatch(costingWorkbenchPageContent, /当前处理/)
     assert.match(costingWorkbenchPageContent, /STALE: '需更新'/)
@@ -490,30 +695,32 @@ describe('T11 报价单接入页面契约', () => {
   })
 
   it('QWB-08 工作台接入 BOM、价格类型、价格准备和成本核算主动作接口', () => {
-    assert.match(quoteRequestApiContent, /confirmCostingBom/)
-    assert.match(quoteRequestApiContent, /cancelCostingBomConfirm/)
-    assert.match(quoteRequestApiContent, /fetchQuotePriceTypeConfirmation/)
-    assert.match(quoteRequestApiContent, /importMissingPriceType/)
-    assert.match(quoteRequestApiContent, /adjustPriceType/)
-    assert.match(quoteRequestApiContent, /confirmPriceType/)
+    assert.match(quoteRequestApiContent, /prepareQuoteEffectiveBomCosting/)
+    assert.doesNotMatch(quoteRequestApiContent, /confirmCostingBom|cancelCostingBomConfirm/)
+    assert.match(quoteRequestApiContent, /fetchQuotePriceTypeRecognition/)
+    assert.doesNotMatch(quoteRequestApiContent, /importMissingPriceType/)
+    assert.doesNotMatch(quoteRequestApiContent, /adjustPriceType/)
+    assert.doesNotMatch(quoteRequestApiContent, /confirmPriceType/)
     assert.match(quoteRequestApiContent, /fetchQuotePricePrepare/)
     assert.match(quoteRequestApiContent, /checkQuotePriceSources/)
     assert.match(quoteRequestApiContent, /price-prepare\/check/)
     assert.match(quoteRequestApiContent, /generateQuotePricePrepare/)
     assert.match(quoteRequestApiContent, /fetchQuoteCostRun/)
-    assert.match(quoteRequestApiContent, /trialQuoteCostRun/)
-    assert.match(quoteRequestApiContent, /confirmQuoteCostRun/)
+    assert.match(quoteRequestApiContent, /submitQuoteProductCostRun/)
+    assert.match(quoteRequestApiContent, /\/cost-runs/)
+    assert.doesNotMatch(quoteRequestApiContent, /cost-run\/trial/)
+    assert.doesNotMatch(quoteRequestApiContent, /confirmQuoteCostRun/)
     assert.match(quoteRequestApiContent, /exportQuoteCostRunVersion/)
-    assert.match(costingWorkbenchPageContent, /确认报价物料明细/)
-    assert.match(costingWorkbenchPageContent, /撤销确认/)
+    assert.match(costingWorkbenchPageContent, /按当前规则重新生成/)
+    assert.doesNotMatch(costingWorkbenchPageContent, /确认报价物料明细|撤销确认/)
     assert.match(costingWorkbenchPageContent, /去物料价格类型维护/)
     assert.match(costingWorkbenchPageContent, /openMaterialPriceTypePage/)
     assert.match(costingWorkbenchPageContent, /path: '\/base\/map'/)
-    assert.match(costingWorkbenchPageContent, /调整类型/)
-    assert.match(costingWorkbenchPageContent, /priceTypeDrawerMode\.value === 'IMPORT_MISSING'/)
-    assert.match(costingWorkbenchPageContent, /importMissingPriceType\(oaNo\.value, itemId\.value/)
-    assert.match(costingWorkbenchPageContent, /value-format="YYYY-MM"/)
-    assert.match(costingWorkbenchPageContent, /确认价格类型/)
+    assert.doesNotMatch(costingWorkbenchPageContent, /调整类型/)
+    assert.doesNotMatch(costingWorkbenchPageContent, /priceTypeDrawerMode/)
+    assert.doesNotMatch(costingWorkbenchPageContent, /importMissingPriceType/)
+    assert.doesNotMatch(costingWorkbenchPageContent, /确认价格类型/)
+    assert.match(costingWorkbenchPageContent, /价格类型已自动识别/)
     assert.match(costingWorkbenchPageContent, /价格源维护/)
     assert.doesNotMatch(costingWorkbenchPageContent, /价格源补充/)
     assert.match(costingWorkbenchPageContent, /生成最终价格/)
@@ -524,17 +731,19 @@ describe('T11 报价单接入页面契约', () => {
     assert.match(costingWorkbenchPageContent, /pricePrepare\.financeCuPricePerKg/)
     assert.match(costingWorkbenchPageContent, /visiblePricePrepareDifferences/)
     assert.match(costingWorkbenchPageContent, /pricePrepare\.value = await checkQuotePriceSources/)
+    assert.doesNotMatch(costingWorkbenchPageContent, /latestPriceType\.value\.confirmNo/)
+    assert.doesNotMatch(costingWorkbenchPageContent, /priceTypeConfirmNo:/)
     assert.doesNotMatch(costingWorkbenchPageContent, /generatePricePrepare\(successText, false\)/)
     assert.match(costingWorkbenchPageContent, /oaPricePrepareReady\.value && financePricePrepareReady\.value/)
     assert.match(costingWorkbenchPageContent, /前置条件检查/)
-    assert.match(costingWorkbenchPageContent, /开始核算/)
-    assert.match(costingWorkbenchPageContent, /确认核算/)
+    assert.match(costingWorkbenchPageContent, /核算本产品/)
+    assert.doesNotMatch(costingWorkbenchPageContent, /确认核算/)
     assert.match(costingWorkbenchPageContent, /查看一览表/)
     assert.match(costingWorkbenchPageContent, /refreshAfterAction/)
-    assert.match(costingWorkbenchPageContent, /const response = await trialQuoteCostRun/)
-    assert.match(costingWorkbenchPageContent, /pricePrepareNo: oaPrepareBatch\.value\.prepareNo/)
-    assert.match(costingWorkbenchPageContent, /costRun\.value = response/)
-    assert.match(costingWorkbenchPageContent, /isBlockedTab\(tab\)/)
+    assert.match(costingWorkbenchPageContent, /const result = await submitQuoteProductCostRun/)
+    assert.match(costingWorkbenchPageContent, /pipelineStatus === 'SUCCESS'/)
+    assert.match(costingWorkbenchPageContent, /productCostingResultTab/)
+    assert.match(costingWorkbenchPageContent, /立即重新核算/)
   })
 
   it('T9 成本核算 Tab 使用成本版本表并按当前行打开一览表和底稿', () => {
@@ -545,20 +754,25 @@ describe('T11 报价单接入页面契约', () => {
     assert.match(costingWorkbenchPageContent, /openCostRunTrace\(row\)/)
     assert.match(costingWorkbenchPageContent, /productCode,/)
     assert.match(costingWorkbenchPageContent, /materialCode: productCode/)
-    assert.match(costingWorkbenchPageContent, /新试算待确认/)
+    assert.match(costingWorkbenchPageContent, /核算成功后自动生成正式版本/)
+    assert.match(costingWorkbenchPageContent, /当前成功/)
+    assert.match(costingWorkbenchPageContent, /历史版本/)
+    assert.doesNotMatch(costingWorkbenchPageContent, /新试算待确认/)
     assert.doesNotMatch(costingWorkbenchPageContent, /当前可查看成本表/)
     assert.match(costRunDetailApiContent, /fetchCostRunTraces/)
     assert.match(costRunDetailApiContent, /\/api\/v1\/cost-run\/detail\/\$\{encodeURIComponent/)
     assert.match(costRunDetailApiContent, /\/traces/)
   })
 
-  it('QWB-09 确认报价物料后自动引导到价格类型确认', () => {
-    assert.match(costingWorkbenchPageContent, /guidePriceTypeAfterBomConfirm/)
-    assert.match(costingWorkbenchPageContent, /await loadWorkbench\(\{ resetTab: false, loadChildren: true \}\)\s*\n\s*guidePriceTypeAfterBomConfirm\(\)/)
+  it('QWB-09 重新生成报价物料后自动引导到价格类型识别', () => {
+    assert.match(costingWorkbenchPageContent, /guidePriceTypeAfterBomBuild/)
+    assert.match(costingWorkbenchPageContent, /preparePricingBomForNextStep\(true\)[\s\S]*guidePriceTypeAfterBomBuild\(\)/)
     assert.match(costingWorkbenchPageContent, /activeTab\.value = 'PRICE_TYPE_CONFIRMATION'/)
     assert.match(costingWorkbenchPageContent, /priceTypeFilter\.value = 'MISSING'/)
-    assert.match(costingWorkbenchPageContent, /报价物料明细已确认，发现 \$\{missingTypeCount\} 项缺价格类型，请到“物料价格类型”导入或维护后再确认/)
+    assert.match(costingWorkbenchPageContent, /报价物料明细已生成，系统发现 \$\{missingTypeCount\} 项缺价格类型，请到“物料价格类型”导入或维护/)
     assert.match(costingWorkbenchPageContent, /workflowGuideVisible/)
+    assert.match(costingWorkbenchPageContent, /!currentSuccessVersion\.value\?\.id/)
+    assert.match(costingWorkbenchPageContent, /delete nextQuery\.guide/)
     assert.match(costingWorkbenchPageContent, /workflowGuideText/)
   })
 

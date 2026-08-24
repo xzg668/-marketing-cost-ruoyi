@@ -4,8 +4,9 @@ const CHILD_TYPE_ORDER = {
 }
 
 const WORKFLOW_LABELS = {
-  BOM_CONFIRMATION: '报价物料确认',
-  PRICE_TYPE_CONFIRMATION: '价格类型确认',
+  QUOTE_BOM: '报价物料明细',
+  PRICE_TYPE: '价格类型识别',
+  PRICE_TYPE_CONFIRMATION: '价格类型识别',
   PRICE_PREPARE: '最终价格',
   FINAL_PRICE: '最终价格',
   COST_RUN: '成本核算',
@@ -49,24 +50,18 @@ export const canSelectQuoteBomAlternative = (permissions) => {
 }
 
 export const alternativeSelectionDisabled = ({
-  confirmed = false,
   canSelect = false,
   summary = {},
   group = {},
 } = {}) =>
-  Boolean(confirmed)
-  || !canSelect
+  !canSelect
   || Boolean(summary?.reviewRequired)
   || Boolean(group?.reviewRequired)
   || String(group?.selectionStatus || '').toUpperCase() === 'STALE'
 
-export const hasManualCostingChanges = (confirmation = {}, rows = []) =>
-  Number(confirmation?.manualModifiedCount || 0) > 0
-  || (Array.isArray(rows) && rows.some((row) => Boolean(row?.manualModified)))
-
 export const alternativeReviewWarning = (summary = {}) => {
   if (!summary?.reviewRequired) return ''
-  return 'BOM 版本或来源批次已变化，当前标准/替代选择已失效。请刷新后重新确认各替代组，完成前不能确认报价物料明细。'
+  return 'BOM 版本或来源批次已变化，当前标准/替代选择已失效。请刷新后重新选择，再按当前规则重新生成。'
 }
 
 export const alternativeErrorMessage = (error) => {
@@ -77,26 +72,21 @@ export const alternativeErrorMessage = (error) => {
   if (message.includes('ALT_SOURCE_STALE')) {
     return 'BOM 版本或来源批次已变化，请刷新并重新确认标准/替代选择。'
   }
-  if (message.includes('BOM_ALREADY_CONFIRMED')) {
-    return '报价物料明细已确认；如需切换标准/替代件，请先撤销确认。'
-  }
-  if (message.includes('MANUAL_ROW_CHANGES_EXIST')) {
-    return '当前存在人工修改的结算行，切换分支会清除这些修改，请确认后再继续。'
-  }
   return message || '保存标准/替代选择失败'
 }
 
 export const formatAlternativeRebuildSummary = (result = {}) => {
-  const before = Number(result?.rowsBefore || 0)
-  const after = Number(result?.rowsAfter || 0)
+  if (result?.idempotent) return '当前方案未变化'
   const workflowLabels = [...new Set(
     (Array.isArray(result?.workflowInvalidated) ? result.workflowInvalidated : [])
       .map((code) => WORKFLOW_LABELS[String(code || '').toUpperCase()] || code)
       .filter(Boolean),
   )]
   const invalidatedText = workflowLabels.length > 0
-    ? `；已使${workflowLabels.join('、')}失效，需按流程重新确认`
+    ? `，${workflowLabels.join('、')}将在重算后更新`
     : ''
-  const manualText = result?.manualChangesDiscarded ? '；原人工修改已清除' : ''
-  return `报价物料明细已按所选分支重建：${before} → ${after} 行${manualText}${invalidatedText}`
+  if (result?.recalculationRequired !== false) {
+    return `计价方案已保存，请点击“按当前规则重新生成”后继续核算${invalidatedText}`
+  }
+  return `计价方案已保存${invalidatedText}`
 }

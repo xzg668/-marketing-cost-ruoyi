@@ -23,14 +23,6 @@
         左侧实时展示整支 BOM 和特殊规则结果，预览不会写入数据库。
       </div>
       <el-alert
-        v-if="confirmed"
-        type="warning"
-        show-icon
-        :closable="false"
-        class="drawer-alert"
-        title="当前产品的本月计价 BOM 已确认，标准/替代选择只能查看。"
-      />
-      <el-alert
         v-if="reviewWarning"
         type="error"
         show-icon
@@ -185,10 +177,6 @@ const props = defineProps({
     type: Object,
     default: () => ({}),
   },
-  confirmed: {
-    type: Boolean,
-    default: false,
-  },
   canSelect: {
     type: Boolean,
     default: false,
@@ -264,7 +252,6 @@ function candidateTags(candidate, group) {
 
 function groupDisabled(group) {
   return alternativeSelectionDisabled({
-    confirmed: props.confirmed,
     canSelect: props.canSelect,
     summary: props.summary,
     group,

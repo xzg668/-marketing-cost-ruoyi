@@ -49,10 +49,13 @@ describe('FCQ-11 页面与接口契约', () => {
   it('第六步只保留成本版本和结果入口，不重复第五步的Cu差额展示', () => {
     assert.doesNotMatch(apiSource, /fetchQuoteCuMaterialDifferences|cu-material-differences/)
     assert.match(apiSource, /\.xlsx`/)
-    assert.doesNotMatch(apiSource, /cost-run\/batch|quote-batch|submitQuote/)
+    assert.doesNotMatch(apiSource, /cost-run\/batch|quote-batch/)
+    assert.match(apiSource, /items\/\$\{encodePath\(itemId\)\}\/cost-runs/)
     assert.doesNotMatch(pageSource, /Cu差额与最终报价|最终报价 =|版本快照已锁定|Cu材料费差异明细/)
     assert.match(pageSource, /成本版本/)
     assert.match(pageSource, /查看完整成本表/)
+    assert.match(pageSource, /@click="openCostRunDetail\(\)"/)
+    assert.doesNotMatch(pageSource, /@click="openCostRunDetail"/)
     assert.match(pageSource, /selectCostRunVersion/)
     assert.match(pageSource, /versionId/)
     assert.doesNotMatch(pageSource, /整单核算|批次进度|一键核算/)
@@ -79,7 +82,8 @@ describe('FCQ-11 页面与接口契约', () => {
 
   it('页面禁用锁定期试算且同步接口在后端再次强制校验', () => {
     assert.match(pageSource, /fetchMonthlyRepriceActiveLock/)
-    assert.match(pageSource, /:disabled="isBlockedTab\(tab\) \|\| !canStartCostRun"/)
+    assert.match(pageSource, /:disabled="costRunRepriceLocked"/)
+    assert.match(pageSource, /submitProductCosting\('USER_REQUEST'\)/)
     assert.match(pageSource, /costRunRepriceLocked/)
     assert.match(pageSource, /当前业务单元正在月度调价，暂不能发起成本核算/)
     assert.match(controllerSource, /repriceLockGuard\.assertCostRunAllowed\(oaNo\)/)

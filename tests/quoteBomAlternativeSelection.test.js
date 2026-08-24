@@ -9,7 +9,6 @@ import {
   alternativeSelectionDisabled,
   canSelectQuoteBomAlternative,
   formatAlternativeRebuildSummary,
-  hasManualCostingChanges,
   isAlternativeCandidateSelected,
   sortAlternativeCandidates,
 } from '../src/utils/quoteBomAlternativeUtils.js'
@@ -74,12 +73,10 @@ describe('QBA-11 标准/替代选择纯函数', () => {
     )
   })
 
-  it('已确认、无权限和 STALE 均禁用选择', () => {
-    assert.equal(alternativeSelectionDisabled({ confirmed: true, canSelect: true }), true)
-    assert.equal(alternativeSelectionDisabled({ confirmed: false, canSelect: false }), true)
+  it('无权限和 STALE 均禁用选择，历史确认状态不再参与当前方案编辑', () => {
+    assert.equal(alternativeSelectionDisabled({ canSelect: false }), true)
     assert.equal(
       alternativeSelectionDisabled({
-        confirmed: false,
         canSelect: true,
         summary: { reviewRequired: true },
       }),
@@ -87,13 +84,12 @@ describe('QBA-11 标准/替代选择纯函数', () => {
     )
     assert.equal(
       alternativeSelectionDisabled({
-        confirmed: false,
         canSelect: true,
         group: { selectionStatus: 'STALE' },
       }),
       true,
     )
-    assert.equal(alternativeSelectionDisabled({ confirmed: false, canSelect: true }), false)
+    assert.equal(alternativeSelectionDisabled({ canSelect: true }), false)
   })
 
   it('权限只接受超级权限或标准/替代选择权限', () => {
@@ -102,28 +98,20 @@ describe('QBA-11 标准/替代选择纯函数', () => {
     assert.equal(canSelectQuoteBomAlternative(['ingest:quote:list']), false)
   })
 
-  it('人工修改判断不把替代数量误当成人工修改', () => {
-    assert.equal(hasManualCostingChanges({ manualModifiedCount: 1, replaceCount: 0 }), true)
-    assert.equal(hasManualCostingChanges({ manualModifiedCount: 0, replaceCount: 2 }), false)
-    assert.equal(hasManualCostingChanges({}, [{ manualModified: true }]), true)
-  })
-
-  it('STALE、并发、已确认和人工修改错误提示可直接指导业务处理', () => {
+  it('STALE 和并发错误提示可直接指导业务处理', () => {
     assert.match(alternativeReviewWarning({ reviewRequired: true }), /BOM 版本或来源批次已变化/)
     assert.match(alternativeErrorMessage(new Error('ALT_SELECTION_CONFLICT: 选择版本已变化')), /刷新/)
     assert.match(alternativeErrorMessage(new Error('ALT_SOURCE_STALE: 来源已变化')), /重新确认/)
-    assert.match(alternativeErrorMessage(new Error('BOM_ALREADY_CONFIRMED: 已确认')), /撤销确认/)
-    assert.match(alternativeErrorMessage(new Error('MANUAL_ROW_CHANGES_EXIST: 有人工修改')), /人工修改/)
   })
 
-  it('重建摘要同时说明行数变化和下游失效', () => {
+  it('保存摘要明确要求用户重算，并说明受影响的下游步骤', () => {
     const text = formatAlternativeRebuildSummary({
-      rowsBefore: 35,
-      rowsAfter: 37,
+      recalculationRequired: true,
       workflowInvalidated: ['PRICE_TYPE_CONFIRMATION', 'PRICE_PREPARE', 'COST_RUN'],
     })
-    assert.match(text, /35 → 37/)
-    assert.match(text, /价格类型确认、最终价格、成本核算/)
+    assert.match(text, /按当前规则重新生成/)
+    assert.match(text, /价格类型识别、最终价格、成本核算/)
+    assert.equal(formatAlternativeRebuildSummary({ idempotent: true }), '当前方案未变化')
   })
 })
 
@@ -158,17 +146,16 @@ describe('QBA-11 标准/替代选择页面契约', () => {
     assert.doesNotMatch(drawerContent, /el-checkbox/)
   })
 
-  it('工作台显示两个汇总、只读/STALE保护、二次确认及整页刷新', () => {
+  it('工作台显示两个汇总，保存选择后刷新为待重算且不隐式重建', () => {
     assert.match(workbenchContent, /可替代组/)
     assert.match(workbenchContent, /已选替代/)
     assert.match(workbenchContent, /选择计价方案/)
     assert.match(workbenchContent, /QuoteBomAlternativeDrawer/)
     assert.match(workbenchContent, /loadAlternativeGroups/)
-    assert.match(workbenchContent, /confirmDiscardManualChanges/)
-    assert.match(workbenchContent, /存在人工修改的结算行/)
     assert.match(workbenchContent, /refreshAfterAlternativeSelection/)
     assert.match(workbenchContent, /alternativeSummary\.value\.reviewRequired/)
-    assert.match(workbenchContent, /isBomConfirmed/)
+    assert.match(workbenchContent, /按当前规则重新生成/)
+    assert.doesNotMatch(workbenchContent, /isBomConfirmed|confirmDiscardManualChanges/)
     assert.match(workbenchContent, /expectedSelectionVersion/)
     assert.match(workbenchContent, /expectedBuildBatchId/)
   })

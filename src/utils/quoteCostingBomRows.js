@@ -6,10 +6,18 @@ function firstText(...values) {
   return ''
 }
 
+function parentChildDisplay(parentValue, childValue) {
+  const parent = firstText(parentValue)
+  const child = firstText(childValue)
+  if (!child) return parent
+  if (!parent) return `【${child}】`
+  return `${parent}\n【${child}】`
+}
+
 /**
  * 上卷父件按命中子件拆成见机表展示行。
  *
- * 每条展示行仍指向同一条父件结算行：料号、图号取父件，品名显示“父件-子件”；
+ * 每条展示行仍指向同一条父件结算行：品名、料号、图号都按“父件\n【子件】”显示；
  * 不额外生成原材料行或废料行，也不改变后台结算行数量。
  */
 export function expandQuoteBomDisplayRows(rows) {
@@ -32,10 +40,15 @@ export function expandQuoteBomDisplayRows(rows) {
       ...sourceRow,
       displayKey: `bom-${sourceKey}-rollup-${firstText(component.childCode, componentIndex)}-${componentIndex}`,
       sourceRow,
-      // 上卷展示仍使用父件料号、父件图号，只把品名按命中子件区分。
-      childCode: sourceRow.childCode,
-      childName: `${firstText(sourceRow.childName, sourceRow.childCode, '父件')}-${firstText(component.childName, component.childCode, '上卷子件')}`,
-      childModel: firstText(component.parentDrawingNo, sourceRow.childModel),
+      childCode: parentChildDisplay(sourceRow.childCode, component.childCode),
+      childName: parentChildDisplay(
+        firstText(sourceRow.childName, sourceRow.childCode, '父件'),
+        firstText(component.childName, component.childCode, '上卷子件'),
+      ),
+      childModel: parentChildDisplay(
+        firstText(component.parentDrawingNo, sourceRow.childModel),
+        component.childDrawingNo,
+      ),
       usageQty: component.usageQty ?? sourceRow.usageQty,
       qtyPerTop: component.qtyPerTop ?? sourceRow.qtyPerTop,
       unit: firstText(component.unit, sourceRow.unit),

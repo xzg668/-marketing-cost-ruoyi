@@ -354,11 +354,9 @@ import {
   updateRangeItem,
   deleteRangeItem,
 } from '../api/priceRangeItems'
-import { applyRangePriceTypes } from '../api/materialPriceTypes'
 import {
   RANGE_IMPORT_TYPE_OPTIONS,
   buildRangeImportPayload,
-  buildRangePriceTypeApplyPayload,
   buildRangeType1ImportRequest,
   collectRangeFormulaCells,
   collectRangeMergedCellValues,
@@ -492,47 +490,6 @@ const cancelFactorSelection = () => {
   finishFactorSelection(null)
 }
 
-const formatPriceTypeConflictLines = (conflicts) =>
-  conflicts
-    .slice(0, 5)
-    .map((item) => {
-      const currentType = item.currentPriceType || '未设置'
-      return `${item.materialCode} ${item.materialName || ''}：当前${currentType}`
-    })
-    .join('\n')
-
-const handlePriceTypeConflicts = async (conflicts) => {
-  if (!Array.isArray(conflicts) || conflicts.length === 0) {
-    return
-  }
-  const lines = formatPriceTypeConflictLines(conflicts)
-  const moreText = conflicts.length > 5 ? `\n另有${conflicts.length - 5}个物料未展示。` : ''
-  try {
-    await ElMessageBox.confirm(
-      `以下物料在价格类型表中不是区间价，但本次出现在区间价 sheet 中，是否改为区间价？\n\n${lines}${moreText}`,
-      '价格类型冲突',
-      {
-        type: 'warning',
-        confirmButtonText: '改为区间价',
-        cancelButtonText: '暂不修改',
-        distinguishCancelAndClose: true,
-      },
-    )
-    const payload = buildRangePriceTypeApplyPayload(conflicts)
-    if (payload.rows.length === 0) {
-      return
-    }
-    await applyRangePriceTypes(payload)
-    ElMessage.success(`已将${payload.rows.length}个物料改为区间价`)
-  } catch (error) {
-    if (error === 'cancel' || error === 'close') {
-      ElMessage.warning('区间价已导入，但这些物料暂未改为区间价；后续核算仍会按原价格类型取价')
-      return
-    }
-    ElMessage.error(error?.message || '区间价已导入，但价格类型更新失败')
-  }
-}
-
 const confirmRangeType1Import = async () => {
   if (!rangePreviewCanSubmit.value) {
     ElMessage.warning('当前预览存在错误，不能提交导入')
@@ -557,7 +514,6 @@ const confirmRangeType1Import = async () => {
     ElMessage.success(
       `导入成功：${materialCount}个物料，${payloadRows.length}条区间价。`
     )
-    await handlePriceTypeConflicts(submitResult.response?.priceTypeConflicts || [])
     rangePreviewVisible.value = false
     if (currentPage.value === 1) {
       fetchList()
@@ -1133,11 +1089,10 @@ const handleFileChange = async (uploadFile) => {
       fileName: rawFile.name,
       sheetName,
     })
-    const importResult = await importRangeItems(payload)
+    await importRangeItems(payload)
     if (payload.rangeBasis === 'FACTOR') {
       const materialCount = new Set(importRows.map((row) => row.materialCode).filter(Boolean)).size
       ElMessage.success(`导入成功：${materialCount}个物料，${importRows.length}条区间价。本次导入已替换这些物料的旧区间价。`)
-      await handlePriceTypeConflicts(importResult?.priceTypeConflicts || [])
     } else {
       ElMessage.success(`已导入${importRows.length}条区间价`)
     }

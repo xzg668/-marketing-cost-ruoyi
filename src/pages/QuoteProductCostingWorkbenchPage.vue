@@ -3,13 +3,34 @@
     <div class="page-head">
       <div>
         <h1>单产品核算工作台</h1>
-        <p>{{ oaNo }} / {{ item.materialNo || '-' }} / 核算月份 {{ workbench.periodMonth || '-' }}</p>
+        <p>{{ oaNo }} / {{ item.materialNo || '-' }} / 核算月份 {{ displayedPeriodMonth }}</p>
       </div>
       <div class="page-actions">
+        <el-button
+          v-if="!historyViewMode"
+          type="primary"
+          :loading="costRunActionLoading"
+          :disabled="costRunRepriceLocked"
+          @click="submitProductCosting('USER_REQUEST')"
+        >
+          {{ productCostingActionLabel }}
+        </el-button>
+        <el-button v-else type="primary" plain @click="openCurrentCosting">
+          进入当前核算
+        </el-button>
         <el-button :icon="ArrowLeft" @click="goBack">返回报价单</el-button>
         <el-button :icon="Refresh" :loading="loading || refreshingTabs" @click="refreshWorkbench">刷新</el-button>
       </div>
     </div>
+
+    <el-alert
+      v-if="historyViewMode"
+      class="inline-alert"
+      type="info"
+      show-icon
+      :closable="false"
+      :title="`正在查看 ${displayedPeriodMonth} ${historyResultLabel}；该结果只读，不代表当前月份核算状态。`"
+    />
 
     <el-alert
       v-if="workflowGuideVisible"
@@ -41,7 +62,7 @@
           </el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="当前阻断步骤">
-          {{ workflowStepLabel(workbench.workflowStatus?.currentBlockedStep) }}
+          {{ historyViewMode ? '-' : workflowStepLabel(workbench.workflowStatus?.currentBlockedStep) }}
         </el-descriptions-item>
         <el-descriptions-item label="备注">{{ header.remark || '-' }}</el-descriptions-item>
       </el-descriptions>
@@ -104,9 +125,9 @@
 
     <section class="workspace-band section-block">
       <div class="workspace-meta">
-        <span>核算月份：{{ workbench.periodMonth || '-' }}</span>
-        <span>BOM 行数：{{ bomRows.length }}</span>
-        <span>整体状态：{{ tabStatusLabel(workbench.workflowStatus?.overallStatus) }}</span>
+        <span><small>核算月份</small><strong>{{ displayedPeriodMonth }}</strong></span>
+        <span><small>{{ historyViewMode ? '历史部品行数' : 'BOM 行数' }}</small><strong>{{ historyViewMode ? costPartRows.length : bomRows.length }}</strong></span>
+        <span><small>整体状态</small><strong>{{ historyViewMode ? '历史结果' : tabStatusLabel(workbench.workflowStatus?.overallStatus) }}</strong></span>
       </div>
 
       <el-tabs v-model="activeTab" class="costing-tabs" :before-leave="beforeWorkbenchTabLeave">
@@ -114,16 +135,18 @@
           <template #label>
             <span class="tab-label">
               <span class="tab-index">{{ index + 1 }}</span>
-              <span>{{ tab.name }}</span>
-              <el-tag size="small" effect="plain" :type="tabBadgeType(tab)">
-                {{ tabBadgeLabel(tab) }}
-              </el-tag>
+              <span class="tab-copy">
+                <span class="tab-name">{{ tab.name }}</span>
+                <el-tag class="tab-state" size="small" effect="plain" :type="tabBadgeType(tab)">
+                  {{ tabBadgeLabel(tab) }}
+                </el-tag>
+              </span>
             </span>
           </template>
 
           <div
             v-if="tab.code === 'PRODUCT_DETAIL'"
-            v-loading="effectiveBomConfirming"
+            v-loading="effectiveBomPreparing"
             element-loading-text="正在生成报价物料明细"
             class="product-detail-tab"
           >
@@ -166,17 +189,6 @@
             </el-alert>
 
             <el-alert
-              v-else-if="effectiveBomReadOnly"
-              type="success"
-              show-icon
-              :closable="false"
-              class="inline-alert"
-              :title="effectiveBom.state === 'REUSED'
-                ? '本月已有相同计价结果，系统已自动沿用。'
-                : '本月计价 BOM 已确定，后续步骤将继续使用当前结果。'"
-            />
-
-            <el-alert
               v-if="presentedEffectiveBom.warnings.length > 0"
               type="warning"
               show-icon
@@ -199,7 +211,7 @@
                   type="warning"
                   plain
                   :loading="alternativeLoading"
-                  :disabled="isBomConfirmed || effectiveBomLoading"
+                  :disabled="effectiveBomLoading"
                   @click="openAlternativeDrawer"
                 >
                   选择计价方案
@@ -282,7 +294,6 @@
               :saving-group-key="alternativeSavingGroupKey"
               :previewing-group-key="alternativePreviewLoadingGroup"
               :summary="alternativeSummary"
-              :confirmed="isBomConfirmed"
               :can-select="canSelectAlternative"
               :histories="alternativeHistories"
               :history-loading-group="alternativeHistoryLoadingGroup"
@@ -348,16 +359,16 @@
           <div v-else-if="isQuoteBomTab(tab.code)" class="quote-bom-tab">
             <div class="status-strip">
               <div class="metric">
-                <span>确认状态</span>
-                <strong>{{ bomConfirmStatusText }}</strong>
+                <span>当前状态</span>
+                <strong>{{ quoteBomWorkspaceStatusText }}</strong>
               </div>
               <div class="metric">
-                <span>确认单号</span>
-                <strong>{{ bomConfirmation.confirmNo || '-' }}</strong>
+                <span>构建编号</span>
+                <strong>{{ workbench.buildBatchId || '-' }}</strong>
               </div>
               <div class="metric">
                 <span>结算行数</span>
-                <strong>{{ bomConfirmation.rowCount ?? bomRows.length }}</strong>
+                <strong>{{ bomRows.length }}</strong>
               </div>
               <div v-if="alternativeFeatureEnabled" class="metric">
                 <span>可替代组</span>
@@ -365,7 +376,7 @@
               </div>
               <div v-if="alternativeFeatureEnabled" class="metric">
                 <span>已选替代</span>
-                <strong>{{ alternativeSummary.manualAlternativeCount ?? bomConfirmation.replaceCount ?? 0 }}</strong>
+                <strong>{{ alternativeSummary.manualAlternativeCount ?? 0 }}</strong>
               </div>
             </div>
 
@@ -382,28 +393,21 @@
               <div>
                 <strong>报价物料明细</strong>
                 <span>
-                  {{ tab.blockedReason || '已按当前产品行过滤 BOM 结算行' }}
+                  {{ tab.blockedReason || '已按当前规则生成 BOM 结算行' }}
                   <template v-if="rollupDisplayRowCount > 0">
                     ；上卷父件已按命中子件生成展示名称，不增加结算行
                   </template>
-                  <template v-if="alternativeFeatureEnabled">；标准/替代选择会切换整棵 BOM 分支</template>
+                  <template v-if="alternativeFeatureEnabled">；标准/替代方案保存后，需重新生成才会更新当前明细</template>
                 </span>
               </div>
               <div class="toolbar-actions">
                 <el-button
                   type="primary"
-                  :loading="bomActionLoading"
-                  :disabled="isBlockedTab(tab) || isBomConfirmed || bomRows.length === 0 || alternativeNeedsReview"
-                  @click="confirmBomRows"
+                  :loading="effectiveBomPreparing"
+                  :disabled="effectiveBomBlocked || alternativeNeedsReview"
+                  @click="regenerateCurrentBom"
                 >
-                  确认报价物料明细
-                </el-button>
-                <el-button
-                  :loading="bomActionLoading"
-                  :disabled="!isBomConfirmed"
-                  @click="cancelBomConfirm"
-                >
-                  撤销确认
+                  按当前规则重新生成
                 </el-button>
               </div>
             </div>
@@ -418,10 +422,14 @@
               class="bom-table"
             >
               <el-table-column label="子件料号" min-width="220" fixed="left" show-overflow-tooltip>
-                <template #default="{ row }">{{ row.childCode || '-' }}</template>
+                <template #default="{ row }"><span class="rollup-identity">{{ row.childCode || '-' }}</span></template>
               </el-table-column>
-              <el-table-column prop="childName" label="品名" min-width="180" fixed="left" show-overflow-tooltip />
-              <el-table-column prop="childModel" label="型号" min-width="170" show-overflow-tooltip />
+              <el-table-column label="品名" min-width="180" fixed="left" show-overflow-tooltip>
+                <template #default="{ row }"><span class="rollup-identity">{{ row.childName || '-' }}</span></template>
+              </el-table-column>
+              <el-table-column label="型号" min-width="170" show-overflow-tooltip>
+                <template #default="{ row }"><span class="rollup-identity">{{ row.childModel || '-' }}</span></template>
+              </el-table-column>
               <el-table-column label="用量" width="140" align="right">
                 <template #default="{ row }">{{ formatSnapshotDecimal(row.usageQty, 8) }}</template>
               </el-table-column>
@@ -485,19 +493,10 @@
                   class="search-control"
                 />
                 <el-button
-                  :loading="priceTypeActionLoading"
                   :disabled="isBlockedTab(tab) || missingPriceTypeRows.length === 0"
                   @click="openMaterialPriceTypePage"
                 >
                   去物料价格类型维护
-                </el-button>
-                <el-button
-                  type="primary"
-                  :loading="priceTypeActionLoading"
-                  :disabled="isBlockedTab(tab) || Number(priceTypeSummary.missingTypeCount || latestPriceType.gapCount || 0) > 0"
-                  @click="confirmPriceTypes"
-                >
-                  确认价格类型
                 </el-button>
               </div>
             </div>
@@ -514,7 +513,9 @@
               class="price-type-table"
             >
               <el-table-column prop="materialCode" label="料号" min-width="220" fixed="left" show-overflow-tooltip />
-              <el-table-column prop="materialName" label="品名" min-width="180" fixed="left" show-overflow-tooltip />
+              <el-table-column prop="materialName" label="品名" min-width="180" fixed="left" show-overflow-tooltip>
+                <template #default="{ row }">{{ row.materialName || '-' }}</template>
+              </el-table-column>
               <el-table-column label="对象类型" width="130">
                 <template #default="{ row }">{{ priceTypeObjectLabel(row.objectType) }}</template>
               </el-table-column>
@@ -529,29 +530,17 @@
               <el-table-column label="类型来源" width="150" show-overflow-tooltip>
                 <template #default="{ row }">{{ priceTypeSourceLabel(row) }}</template>
               </el-table-column>
-              <el-table-column prop="typeStatus" label="状态" width="120" />
+              <el-table-column label="状态" width="120">
+                <template #default="{ row }">{{ priceTypeStatusLabel(row.typeStatus) }}</template>
+              </el-table-column>
               <el-table-column prop="referenceUnitPrice" label="参考单价" width="130" align="right">
                 <template #default="{ row }">{{ formatMoney(row.referenceUnitPrice) }}</template>
               </el-table-column>
               <el-table-column prop="effectiveFrom" label="生效开始" width="120" />
               <el-table-column prop="effectiveTo" label="生效结束" width="120" />
               <el-table-column prop="message" label="原因" min-width="220" show-overflow-tooltip />
-              <el-table-column label="操作" width="120" fixed="right">
-                <template #default="{ row }">
-                  <el-button
-                    v-if="isPriceableTypeRow(row)"
-                    link
-                    type="primary"
-                    :disabled="isBlockedTab(tab)"
-                    @click="openAdjustDrawer(row)"
-                  >
-                    调整类型
-                  </el-button>
-                  <span v-else>-</span>
-                </template>
-              </el-table-column>
               <template #empty>
-                <el-empty description="暂无价格类型确认行" />
+                <el-empty description="暂无价格类型识别结果" />
               </template>
             </el-table>
           </div>
@@ -614,7 +603,7 @@
               type="warning"
               show-icon
               :closable="false"
-              title="请先确认价格类型，确认后系统才能判断需要补充哪类价格源"
+              title="请先补齐缺失的价格类型，系统才能判断需要补充哪类价格源"
               class="inline-alert"
             />
             <el-alert
@@ -645,7 +634,9 @@
               <el-table-column prop="gapMaterialCode" label="料号" min-width="170" fixed="left" show-overflow-tooltip>
                 <template #default="{ row }">{{ row.gapMaterialCode || row.materialCode || '-' }}</template>
               </el-table-column>
-              <el-table-column prop="materialName" label="品名" min-width="180" fixed="left" show-overflow-tooltip />
+              <el-table-column prop="materialName" label="品名" min-width="180" fixed="left" show-overflow-tooltip>
+                <template #default="{ row }">{{ row.materialName || '-' }}</template>
+              </el-table-column>
               <el-table-column label="价格类型" width="130">
                 <template #default="{ row }">{{ priceSourceGapTypeText(row) }}</template>
               </el-table-column>
@@ -748,6 +739,15 @@
               class="inline-alert"
             />
 
+            <el-alert
+              v-if="priceHistoryWarningText"
+              type="warning"
+              show-icon
+              :closable="false"
+              :title="priceHistoryWarningText"
+              class="inline-alert"
+            />
+
             <el-tabs v-model="pricePrepareScenarioTab" class="price-scenario-tabs">
               <el-tab-pane label="财务基准" name="FINANCE">
                 <div class="scenario-meta">
@@ -766,6 +766,16 @@
                     <template #default="{ row }">{{ formatMoney(row.amount) }}</template>
                   </el-table-column>
                   <el-table-column prop="priceSource" label="价格来源" min-width="160" show-overflow-tooltip />
+                  <el-table-column label="价格有效性" min-width="300">
+                    <template #default="{ row }">
+                      <div class="price-validity-cell">
+                        <el-tag v-if="isCarriedForwardPrice(row)" size="small" type="warning" effect="plain">
+                          沿用历史价
+                        </el-tag>
+                        <span>{{ priceValidityText(row) }}</span>
+                      </div>
+                    </template>
+                  </el-table-column>
                   <el-table-column prop="status" label="状态" width="100" />
                   <el-table-column prop="message" label="说明" min-width="220" show-overflow-tooltip />
                   <template #empty>
@@ -791,6 +801,16 @@
                     <template #default="{ row }">{{ formatMoney(row.amount) }}</template>
                   </el-table-column>
                   <el-table-column prop="priceSource" label="价格来源" min-width="160" show-overflow-tooltip />
+                  <el-table-column label="价格有效性" min-width="300">
+                    <template #default="{ row }">
+                      <div class="price-validity-cell">
+                        <el-tag v-if="isCarriedForwardPrice(row)" size="small" type="warning" effect="plain">
+                          沿用历史价
+                        </el-tag>
+                        <span>{{ priceValidityText(row) }}</span>
+                      </div>
+                    </template>
+                  </el-table-column>
                   <el-table-column prop="status" label="状态" width="100" />
                   <el-table-column prop="message" label="说明" min-width="220" show-overflow-tooltip />
                   <template #empty>
@@ -857,21 +877,22 @@
           <div v-else-if="isCostRunTab(tab.code)" class="cost-run-tab" v-loading="costRunLoading">
             <div class="action-panel">
               <div>
-                <h2>前置条件检查</h2>
-                <p>{{ costRunBlockingText }}</p>
+                <h2>{{ historyViewMode ? historyResultLabel : '前置条件检查' }}</h2>
+                <p>{{ historyViewMode ? '按保存时的成本版本展示，不重新读取当前 BOM、价格或费率。' : costRunBlockingText }}</p>
               </div>
               <div class="toolbar-actions">
                 <el-button
+                  v-if="!historyViewMode"
                   type="primary"
                   :loading="costRunActionLoading"
-                  :disabled="isBlockedTab(tab) || !canStartCostRun"
-                  @click="trialCostRun"
+                  :disabled="costRunRepriceLocked"
+                  @click="submitProductCosting('USER_REQUEST')"
                 >
-                  开始核算
+                  {{ productCostingActionLabel }}
                 </el-button>
                 <el-button
                   :disabled="!hasCostRunResult"
-                  @click="openCostRunDetail"
+                  @click="openCostRunDetail()"
                 >
                   查看完整成本表
                 </el-button>
@@ -885,12 +906,12 @@
               </div>
             </div>
 
-            <div class="condition-list">
+            <div v-if="!historyViewMode" class="condition-list">
               <el-tag :type="canStartCostRun ? 'success' : 'warning'" effect="plain">
-                {{ canStartCostRun ? '允许开始试算' : '暂不可试算' }}
+                {{ canStartCostRun ? '可以核算' : '暂不可核算' }}
               </el-tag>
-              <el-tag :type="costRun.canConfirm ? 'success' : 'info'" effect="plain">
-                {{ costRun.canConfirm ? '允许确认核算' : '暂无可确认试算' }}
+              <el-tag type="info" effect="plain">
+                核算成功后自动生成正式版本
               </el-tag>
               <el-tag
                 v-for="reason in costRun.blockingReasons || []"
@@ -903,7 +924,7 @@
             </div>
 
             <el-alert
-              v-if="costRunRepriceLocked"
+              v-if="!historyViewMode && costRunRepriceLocked"
               class="inline-alert"
               type="warning"
               show-icon
@@ -921,12 +942,12 @@
             />
 
             <el-alert
-              v-if="hasPendingTrial"
+              v-if="!historyViewMode && hasRunningCostVersion"
               class="inline-alert"
               type="warning"
               show-icon
               :closable="false"
-              title="存在待确认试算，请确认后生成正式成本版本"
+              title="存在旧的未完成试算，请重新核算生成成功版本"
             />
 
             <el-table
@@ -963,13 +984,13 @@
               </el-table-column>
               <el-table-column prop="partItemCount" label="部品行数" width="100" align="right" />
               <el-table-column prop="costItemCount" label="费用项数" width="100" align="right" />
-              <el-table-column label="试算完成时间" min-width="170">
+              <el-table-column label="核算完成时间" min-width="170">
                 <template #default="{ row }">{{ formatDateTime(row.trialFinishedAt) }}</template>
               </el-table-column>
-              <el-table-column label="确认时间" min-width="170">
+              <el-table-column label="版本完成时间" min-width="170">
                 <template #default="{ row }">{{ formatDateTime(row.confirmedAt) }}</template>
               </el-table-column>
-              <el-table-column prop="confirmedBy" label="确认人" width="110" show-overflow-tooltip>
+              <el-table-column prop="confirmedBy" label="核算人" width="110" show-overflow-tooltip>
                 <template #default="{ row }">{{ row.confirmedBy || '-' }}</template>
               </el-table-column>
               <el-table-column label="操作" width="390" fixed="right">
@@ -983,15 +1004,6 @@
                       @click="selectCostRunVersion(row)"
                     >
                       查看本版本
-                    </el-button>
-                    <el-button
-                      v-if="row.canConfirm"
-                      link
-                      type="primary"
-                      :loading="costRunActionLoading"
-                      @click="confirmCostRun(row)"
-                    >
-                      确认核算
                     </el-button>
                     <el-button
                       link
@@ -1030,46 +1042,6 @@
         </el-tab-pane>
       </el-tabs>
     </section>
-
-    <el-drawer v-model="priceTypeDrawerVisible" :title="priceTypeDrawerTitle" size="620px" destroy-on-close>
-      <el-form label-position="top">
-        <el-form-item label="物料料号">
-          <el-input v-model="priceTypeForm.materialCode" disabled />
-        </el-form-item>
-        <el-form-item label="物料名称">
-          <el-input v-model="priceTypeForm.materialName" disabled />
-        </el-form-item>
-        <el-form-item label="对象类型">
-          <el-input v-model="priceTypeForm.objectType" disabled />
-        </el-form-item>
-        <el-form-item label="价格类型">
-          <el-select v-model="priceTypeForm.priceType" placeholder="请选择价格类型" class="drawer-control">
-            <el-option label="固定价" value="固定价" />
-            <el-option label="结算固定价" value="结算固定价" />
-            <el-option label="联动价" value="联动价" />
-            <el-option label="区间价" value="区间价" />
-            <el-option label="自制件" value="自制件" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="生效月份">
-          <el-date-picker
-            v-model="priceTypeForm.effectiveFrom"
-            type="month"
-            value-format="YYYY-MM"
-            class="drawer-control"
-          />
-        </el-form-item>
-        <el-form-item label="原因">
-          <el-input v-model="priceTypeForm.reason" type="textarea" :rows="4" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <div class="drawer-footer">
-          <el-button @click="priceTypeDrawerVisible = false">取消</el-button>
-          <el-button type="primary" :loading="priceTypeActionLoading" @click="submitPriceTypeDrawer">保存</el-button>
-        </div>
-      </template>
-    </el-drawer>
 
     <el-dialog v-model="noScrapConfirmDialogVisible" title="确认无废料，按0处理" width="560px">
       <el-alert
@@ -1129,13 +1101,7 @@ import { getBomHierarchy } from '../api/bom'
 import { fetchMonthlyRepriceActiveLock } from '../api/monthlyReprice'
 import { useUserStore } from '../store/modules/user'
 import {
-  adjustPriceType,
-  cancelCostingBomConfirm,
   checkQuotePriceSources,
-  confirmCostingBom,
-  confirmPriceType,
-  confirmQuoteEffectiveBom,
-  confirmQuoteCostRun,
   exportQuoteCostRunVersion,
   fetchQuoteBomAlternativeGroups,
   fetchQuoteBomAlternativeFeatureStatus,
@@ -1144,13 +1110,12 @@ import {
   fetchQuoteCostingWorkbench,
   fetchQuoteEffectiveBom,
   fetchQuotePricePrepare,
-  fetchQuotePriceTypeConfirmation,
+  fetchQuotePriceTypeRecognition,
   generateQuotePricePrepare,
-  importMissingPriceType,
   prepareQuoteEffectiveBomCosting,
   previewQuoteEffectiveBomAlternative,
   selectQuoteBomAlternative,
-  trialQuoteCostRun,
+  submitQuoteProductCostRun,
 } from '../api/quoteRequests'
 import { confirmPricePrepareNoScrap } from '../api/pricePrepare'
 import {
@@ -1159,16 +1124,13 @@ import {
   alternativeSelectionDisabled,
   canSelectQuoteBomAlternative,
   formatAlternativeRebuildSummary,
-  hasManualCostingChanges,
 } from '../utils/quoteBomAlternativeUtils'
 import { expandQuoteBomDisplayRows } from '../utils/quoteCostingBomRows'
 import {
   buildQuoteEffectiveBomTree,
   effectiveAlternativeNodeMeta,
-  effectiveBomCanConfirm,
-  effectiveBomMatchesCostingBuild,
+  effectiveBomCanPrepare,
   costingBomMatchesPreparedBuild,
-  effectiveBomIsReadOnly,
   effectiveBomStateMeta,
   effectiveShapeMeta,
   effectiveShapeSourceLabel,
@@ -1176,8 +1138,14 @@ import {
   effectiveSupplierEvidence,
   emptyQuoteEffectiveBom,
   normalizeQuoteEffectiveBom,
+  workbenchCanLoadPriceType,
 } from '../utils/quoteEffectiveBom'
 import { formatDateTime, statusLabel, statusTagType } from '../utils/quoteRequestWorkbench'
+import {
+  countCarriedForwardPrices,
+  isCarriedForwardPrice,
+  priceValidityText,
+} from '../utils/pricePrepareDisplay'
 import {
   isCostRunLockedByMonthlyReprice,
   differenceAmountClass,
@@ -1190,17 +1158,25 @@ const userStore = useUserStore()
 
 const oaNo = computed(() => String(route.params.oaNo || ''))
 const itemId = computed(() => String(route.params.itemId || ''))
+const historyVersionId = computed(() => {
+  const value = Number(route.query.versionId)
+  return Number.isInteger(value) && value > 0 ? value : null
+})
+const historyViewMode = computed(() => route.query.historyResult === 'quote' && Boolean(historyVersionId.value))
+// 历史入口同时承载首次报价和后续重新核算，必须把两类结果明确区分，避免用户误认版本。
+const historyResultLabel = computed(() => (
+  route.query.historyResultKind === 'recalculation' ? '报价重新核算结果' : '原报价结果'
+))
 const loading = ref(false)
 const refreshingTabs = ref(false)
 const activeTab = ref('PRODUCT_DETAIL')
-const bomActionLoading = ref(false)
 const bomTree = ref(null)
 const bomTreeRef = ref(null)
 const bomTreeLoading = ref(false)
 const effectiveBom = ref(emptyQuoteEffectiveBom())
 const effectiveBomPreview = ref(null)
 const effectiveBomLoading = ref(false)
-const effectiveBomConfirming = ref(false)
+const effectiveBomPreparing = ref(false)
 const bomNodeDrawerVisible = ref(false)
 const selectedBomNode = ref(null)
 const alternativeDrawerVisible = ref(false)
@@ -1213,13 +1189,9 @@ const alternativeHistoryLoadingGroup = ref('')
 const alternativeHistories = ref({})
 const alternativeSummary = ref(emptyAlternativeSummary())
 const priceTypeLoading = ref(false)
-const priceTypeActionLoading = ref(false)
 const priceType = ref(emptyPriceTypeResponse())
 const priceTypeFilter = ref('ALL')
 const priceTypeKeyword = ref('')
-const priceTypeDrawerVisible = ref(false)
-const priceTypeDrawerMode = ref('ADJUST')
-const priceTypeForm = ref(emptyPriceTypeForm())
 const pricePrepareLoading = ref(false)
 const pricePrepareActionLoading = ref(false)
 const pricePrepareScenarioTab = ref('FINANCE')
@@ -1259,8 +1231,8 @@ const rollupDisplayRowCount = computed(
   () => displayBomRows.value.filter((row) => row.rollupDisplay).length,
 )
 const currentItemRows = computed(() => item.value?.id ? [item.value] : [])
-const bomConfirmation = computed(() => workbench.value.latestBomConfirmation || {})
-const latestPriceType = computed(() => workbench.value.latestPriceTypeConfirmation || {})
+const costingWorkspace = computed(() => workbench.value.costingWorkspace || {})
+const latestPriceType = computed(() => workbench.value.latestPriceTypeRecognition || {})
 const latestPrepare = computed(() => {
   const generated = pricePrepare.value.generatedResult || {}
   return {
@@ -1268,7 +1240,6 @@ const latestPrepare = computed(() => {
     ...Object.fromEntries(Object.entries(generated).filter(([, value]) => value !== undefined && value !== null && value !== '')),
   }
 })
-const isBomConfirmed = computed(() => bomConfirmation.value.confirmStatus === 'CONFIRMED')
 const canSelectAlternative = computed(() => canSelectQuoteBomAlternative(userStore.permissions))
 const alternativeNeedsReview = computed(() =>
   Boolean(alternativeSummary.value.reviewRequired)
@@ -1280,23 +1251,28 @@ const alternativeReviewMessage = computed(() => alternativeReviewWarning({
   ...alternativeSummary.value,
   reviewRequired: alternativeNeedsReview.value,
 }))
-const bomConfirmStatusText = computed(() => {
-  if (bomConfirmation.value.confirmStatus === 'CONFIRMED') return '已确认'
-  if (bomConfirmation.value.confirmStatus === 'VOIDED') return '已撤销'
-  return '待确认'
+const quoteBomWorkspaceStatusText = computed(() => {
+  const status = String(costingWorkspace.value.workspaceStatus || '').toUpperCase()
+  if (status === 'STALE') return '规则或选择已变化，待重算'
+  if (status === 'WAIT_BOM') return '缺 BOM，待技术补录'
+  if (bomRows.value.length > 0) return '已生成'
+  return '待生成'
 })
 const tabs = computed(() => {
   const serverTabs = Array.isArray(workbench.value.tabs) ? workbench.value.tabs : []
   const normalizedTabs = serverTabs.length > 0 ? serverTabs : [
     { code: 'PRODUCT_DETAIL', name: '产品明细', status: 'READY' },
     { code: 'QUOTE_BOM', name: '报价物料明细', status: 'PENDING' },
-    { code: 'PRICE_TYPE_CONFIRMATION', name: '价格类型确认', status: 'BLOCKED', blockedReason: '请先确认报价物料' },
-    { code: 'PRICE_PREPARE', name: '最终价格生成', status: 'BLOCKED', blockedReason: '请先确认价格类型' },
+    { code: 'PRICE_TYPE_CONFIRMATION', name: '价格类型识别', status: 'BLOCKED', blockedReason: '请先生成报价物料' },
+    { code: 'PRICE_PREPARE', name: '最终价格生成', status: 'BLOCKED', blockedReason: '请先补齐价格类型' },
     { code: 'COST_RUN', name: '成本核算', status: 'BLOCKED', blockedReason: '请先生成最终价格' },
   ]
   const byCode = new Map(normalizedTabs.map((tab) => [normalizeTabCode(tab.code), tab]))
-  const priceTypeTab = buildTab(byCode, 'PRICE_TYPE_CONFIRMATION', '价格类型确认')
+  const priceTypeTab = buildTab(byCode, 'PRICE_TYPE_CONFIRMATION', '价格类型识别')
   const pricePrepareTab = buildTab(byCode, 'PRICE_PREPARE', '最终价格生成')
+  if (historyViewMode.value) {
+    return [{ ...buildTab(byCode, 'COST_RUN', '成本核算'), status: 'DONE', blockedReason: '' }]
+  }
   return [
     buildTab(byCode, 'PRODUCT_DETAIL', '产品明细'),
     buildTab(byCode, 'QUOTE_BOM', '报价物料明细'),
@@ -1343,22 +1319,16 @@ const effectiveBomPreviewActive = computed(() => Boolean(effectiveBomPreview.val
 const effectiveBomTreeData = computed(() => buildQuoteEffectiveBomTree(presentedEffectiveBom.value.nodes))
 const effectiveBomDefaultExpandedKeys = computed(() => effectiveBomTreeData.value.map((node) => node.nodeKey))
 const effectiveBomStateInfo = computed(() => {
-  const state = presentedEffectiveBom.value.state
-  if (!isBomConfirmed.value && effectiveBomIsReadOnly(state)) {
-    return { label: '待确认', type: 'warning' }
+  if (String(costingWorkspace.value.workspaceStatus || '').toUpperCase() === 'STALE') {
+    return { label: '待重算', type: 'warning' }
   }
-  return effectiveBomStateMeta(state)
+  return effectiveBomStateMeta(presentedEffectiveBom.value.state)
 })
-const effectiveBomReadOnly = computed(() => (
-  isBomConfirmed.value && effectiveBomIsReadOnly(effectiveBom.value.state)
-))
 const effectiveBomBlocked = computed(() => (
   presentedEffectiveBom.value.state === 'BLOCKED'
   || presentedEffectiveBom.value.state === 'ERROR'
 ))
-const pricingBomReadyForNextStep = computed(() => (
-  effectiveBomMatchesCostingBuild(effectiveBom.value, workbench.value)
-))
+const pricingBomReadyForNextStep = computed(() => workbenchCanLoadPriceType(workbench.value))
 const effectiveAlternativeGroupKeys = computed(() => new Set(
   presentedEffectiveBom.value.alternativeSelections
     .map((selection) => String(selection?.alternativeGroupKey || '').trim())
@@ -1389,7 +1359,6 @@ const priceTypeSummary = computed(() => priceType.value.summary || {})
 const flatPriceTypeRows = computed(() => flattenRows(priceType.value.rows || []))
 const missingPriceTypeRows = computed(() => flatPriceTypeRows.value.filter((row) => isMissingPriceTypeRow(row)))
 const filteredPriceTypeRows = computed(() => filterTreeRows(priceType.value.rows || []))
-const priceTypeDrawerTitle = computed(() => priceTypeDrawerMode.value === 'IMPORT_MISSING' ? '维护缺失价格类型' : '调整价格类型')
 const pricePrepareItems = computed(() => Array.isArray(pricePrepare.value.items?.records) ? pricePrepare.value.items.records : [])
 const oaPrepareBatch = computed(() => pricePrepare.value.oaScenario?.batch || {})
 const financePrepareBatch = computed(() => pricePrepare.value.financeScenario?.batch || {})
@@ -1400,6 +1369,17 @@ const oaPricePrepareItems = computed(() => {
 const financePricePrepareItems = computed(() => {
   const rows = pricePrepare.value.financeScenario?.items?.records
   return Array.isArray(rows) ? rows : []
+})
+const oaCarriedForwardPriceCount = computed(() => countCarriedForwardPrices(oaPricePrepareItems.value))
+const financeCarriedForwardPriceCount = computed(() => countCarriedForwardPrices(financePricePrepareItems.value))
+const priceHistoryWarningText = computed(() => {
+  const oaCount = oaCarriedForwardPriceCount.value
+  const financeCount = financeCarriedForwardPriceCount.value
+  if (oaCount <= 0 && financeCount <= 0) return ''
+  const scopes = []
+  if (oaCount > 0) scopes.push(`OA 锁价 ${oaCount} 项`)
+  if (financeCount > 0) scopes.push(`财务基准 ${financeCount} 项`)
+  return `${scopes.join('、')}沿用最近一次已审批价格；不阻断核算，请财务后续更新价格审批。`
 })
 const pricePrepareDifferences = computed(() => Array.isArray(pricePrepare.value.differences) ? pricePrepare.value.differences : [])
 const visiblePricePrepareDifferences = computed(() => onlyDifferentPricePrepare.value
@@ -1459,33 +1439,44 @@ const costRunVersions = computed(() => {
   ].filter((row, index, list) => row?.id && list.findIndex((candidate) => candidate?.id === row.id) === index)
   return sourceRows.map(normalizeCostVersionRow)
 })
-const hasPendingTrial = computed(() => costRunVersions.value.some((row) => row?.canConfirm || row?.status === 'TRIAL'))
-const currentConfirmedVersion = computed(() =>
+const hasRunningCostVersion = computed(() => costRunVersions.value.some((row) => ['RUNNING', 'TRIAL'].includes(row?.status)))
+const currentSuccessVersion = computed(() =>
   costRunVersions.value.find((row) => row?.currentConfirmed)
   || costRun.value.latestConfirmed
   || null
 )
+const productCostingActionLabel = computed(() => (
+  currentSuccessVersion.value?.id ? '重新核算本产品' : '核算本产品'
+))
 const hasStaleCostVersion = computed(() => costRunVersions.value.some((row) => row?.stale))
 const costRunWorkbenchStatusText = computed(() => {
+  if (historyViewMode.value && displayedCostVersion.value.id) {
+    return `历史结果 ${displayedPeriodMonth.value}`
+  }
   const confirmedVersionNo =
-    currentConfirmedVersion.value?.displayVersionNo || currentConfirmedVersion.value?.versionNo
-  if (hasPendingTrial.value && confirmedVersionNo) {
-    return '新试算待确认'
+    currentSuccessVersion.value?.displayVersionNo || currentSuccessVersion.value?.versionNo
+  if (hasRunningCostVersion.value && confirmedVersionNo) {
+    return '正在重新核算'
   }
-  if (hasPendingTrial.value) return '试算待确认'
+  if (hasRunningCostVersion.value) return '正在核算'
   if (confirmedVersionNo) {
-    return `已确认 ${confirmedVersionNo}`
+    return `核算成功 ${confirmedVersionNo}`
   }
-  if (hasStaleCostVersion.value) return '历史版本需重新试算'
+  if (hasStaleCostVersion.value) return '历史版本需重新核算'
   return header.value.calcStatus || '未核算'
 })
 const costRunStatusTagType = computed(() => {
-  if (hasPendingTrial.value) return 'warning'
-  if (currentConfirmedVersion.value?.id) return 'success'
+  if (hasRunningCostVersion.value) return 'warning'
+  if (currentSuccessVersion.value?.id) return 'success'
   if (hasStaleCostVersion.value) return 'info'
   return statusTagType('calcStatus', header.value.calcStatus || '未核算')
 })
 const displayedCostVersion = computed(() => costRun.value.currentDisplayVersion || {})
+const displayedPeriodMonth = computed(() => (
+  historyViewMode.value
+    ? displayedCostVersion.value.pricingMonth || displayedCostVersion.value.resultPeriod || '-'
+    : workbench.value.periodMonth || '-'
+))
 const costPartRows = computed(() => (costRun.value.partItems || []).map((row, index) => ({
   key: `PART-${row.bomRowId || row.partCode || index}`,
   partName: row.partName || '-',
@@ -1506,9 +1497,17 @@ const hasCostRunResult = computed(() =>
   || costPartRows.value.length > 0
 )
 const inputGapGuideVisible = computed(() => route.query.guide === 'costing-input-gap')
-const workflowGuideVisible = computed(() => inputGapGuideVisible.value || Boolean(localWorkflowGuideText.value))
+const workflowGuideVisible = computed(() =>
+  !currentSuccessVersion.value?.id
+  && (inputGapGuideVisible.value || Boolean(localWorkflowGuideText.value))
+)
 const workflowGuideText = computed(() => localWorkflowGuideText.value || inputGapGuideText.value)
 const inputGapGuideText = computed(() => {
+  const workspaceStatus = String(costingWorkspace.value.workspaceStatus || '').toUpperCase()
+  const blockedStep = normalizeTabCode(workbench.value.workflowStatus?.currentBlockedStep)
+  if (workspaceStatus === 'WAIT_BOM' || blockedStep === 'QUOTE_BOM') {
+    return '当前产品缺少可核算 BOM，请由产品技术补录后重新核算本产品'
+  }
   const missingTypeCount = currentMissingPriceTypeCount()
   if (missingTypeCount > 0) {
     return `发起核算发现 ${missingTypeCount} 项缺价格类型，请到“物料价格类型”导入或维护后再确认`
@@ -1528,6 +1527,12 @@ async function loadWorkbench(options = {}) {
     clearEffectiveBom()
     clearBomTree()
     workbench.value = await fetchQuoteCostingWorkbench(oaNo.value, itemId.value)
+    if (historyViewMode.value) {
+      activeTab.value = 'COST_RUN'
+      resetCurrentInputTabs()
+      await Promise.allSettled([loadCostRun(false), loadActiveRepriceLock()])
+      return
+    }
     if (resetTab || !activeTab.value) {
       activeTab.value = 'PRODUCT_DETAIL'
     }
@@ -1553,7 +1558,7 @@ async function loadWorkbench(options = {}) {
 async function refreshWorkbench() {
   autoPriceSourceCheckedKey.value = ''
   await loadWorkbench({ resetTab: false, loadChildren: true })
-  await ensurePriceSourceChecked()
+  if (!historyViewMode.value) await ensurePriceSourceChecked()
 }
 
 async function refreshAllTabData() {
@@ -1568,14 +1573,19 @@ async function refreshAllTabData() {
     alternativeFeatureEnabled.value
       ? loadAlternativeGroups(false)
       : Promise.resolve(),
-    // 第 2 步尚未确认时，第 3 步接口按业务规则会拒绝访问。
-    // 初始化和进入第 2 步只加载当前阶段数据，避免把正常门禁弹成错误提示。
-    isBomConfirmed.value ? loadPriceType(false) : Promise.resolve(),
+    pricingBomReadyForNextStep.value ? loadPriceType(false) : Promise.resolve(),
     loadPricePrepare(false),
     loadCostRun(false),
     loadActiveRepriceLock(),
   ])
   refreshingTabs.value = false
+}
+
+function resetCurrentInputTabs() {
+  alternativeFeatureEnabled.value = false
+  alternativeSummary.value = emptyAlternativeSummary()
+  priceType.value = emptyPriceTypeResponse()
+  pricePrepare.value = emptyPricePrepareResponse()
 }
 
 async function loadAlternativeFeatureStatus(showError = true) {
@@ -1632,7 +1642,7 @@ async function openAlternativeDrawer() {
   clearAlternativePreview()
   alternativeDrawerVisible.value = true
   await loadAlternativeGroups()
-  if (isBomConfirmed.value && canSelectAlternative.value) {
+  if (canSelectAlternative.value) {
     await Promise.allSettled(
       (alternativeSummary.value.groups || []).map((group) =>
         loadAlternativeHistory(group, false)),
@@ -1703,24 +1713,15 @@ async function saveAlternativeSelection({ group, selectedMaterialCode }) {
   if (!alternativeFeatureEnabled.value) return
   if (!group?.alternativeGroupKey || !selectedMaterialCode) return
   if (alternativeSelectionDisabled({
-    confirmed: isBomConfirmed.value,
     canSelect: canSelectAlternative.value,
     summary: alternativeSummary.value,
     group,
   })) {
     ElMessage.warning(
       alternativeReviewMessage.value
-      || (isBomConfirmed.value
-        ? '报价物料明细已确认，请先撤销确认'
-        : '当前不能修改标准/替代选择'),
+      || '当前不能修改标准/替代选择',
     )
     return
-  }
-
-  let confirmDiscardManualChanges = false
-  if (hasManualCostingChanges(bomConfirmation.value, bomRows.value)) {
-    confirmDiscardManualChanges = await confirmAlternativeManualChangesDiscard()
-    if (!confirmDiscardManualChanges) return
   }
 
   alternativeSavingGroupKey.value = group.alternativeGroupKey
@@ -1730,34 +1731,14 @@ async function saveAlternativeSelection({ group, selectedMaterialCode }) {
       selectedMaterialCode,
       expectedSelectionVersion: group.selectionVersion,
       expectedBuildBatchId: group.sourceBuildBatchId || workbench.value.buildBatchId,
-      confirmDiscardManualChanges,
       selectionRemark: '产品明细页面选择标准/替代件',
     }
-    let result
-    try {
-      result = await selectQuoteBomAlternative(
-        oaNo.value,
-        itemId.value,
-        group.alternativeGroupKey,
-        selectionBody,
-      )
-    } catch (error) {
-      if (
-        !selectionBody.confirmDiscardManualChanges
-        && String(error?.message || '').includes('MANUAL_ROW_CHANGES_EXIST')
-      ) {
-        selectionBody.confirmDiscardManualChanges = await confirmAlternativeManualChangesDiscard()
-        if (!selectionBody.confirmDiscardManualChanges) return
-        result = await selectQuoteBomAlternative(
-          oaNo.value,
-          itemId.value,
-          group.alternativeGroupKey,
-          selectionBody,
-        )
-      } else {
-        throw error
-      }
-    }
+    const result = await selectQuoteBomAlternative(
+      oaNo.value,
+      itemId.value,
+      group.alternativeGroupKey,
+      selectionBody,
+    )
     clearAlternativePreview()
     await refreshAfterAlternativeSelection()
     await loadAlternativeHistory(
@@ -1767,6 +1748,7 @@ async function saveAlternativeSelection({ group, selectedMaterialCode }) {
       false,
     )
     ElMessage.success(formatAlternativeRebuildSummary(result))
+    await offerImmediateRecalculation()
   } catch (error) {
     const message = alternativeErrorMessage(error)
     ElMessage.error(message)
@@ -1778,26 +1760,26 @@ async function saveAlternativeSelection({ group, selectedMaterialCode }) {
   }
 }
 
-async function confirmAlternativeManualChangesDiscard() {
-  try {
-    await ElMessageBox.confirm(
-      '当前存在人工修改的结算行。切换整棵 BOM 分支会清除这些人工修改，并使后续价格类型、最终价格和成本核算结果失效，确认继续？',
-      '切换标准/替代件',
-      {
-        type: 'warning',
-        confirmButtonText: '确认切换并清除',
-        cancelButtonText: '取消',
-      },
-    )
-    return true
-  } catch {
-    return false
-  }
-}
-
 async function refreshAfterAlternativeSelection() {
   autoPriceSourceCheckedKey.value = ''
   await loadWorkbench({ resetTab: false, loadChildren: true })
+}
+
+async function offerImmediateRecalculation() {
+  try {
+    await ElMessageBox.confirm(
+      '当前产品的核算输入已变化，是否立即重新核算？',
+      '规则保存成功',
+      {
+        confirmButtonText: '立即重新核算',
+        cancelButtonText: '稍后处理',
+        type: 'success',
+      },
+    )
+  } catch {
+    return
+  }
+  await submitProductCosting('RULE_CHANGED')
 }
 
 async function loadActiveRepriceLock() {
@@ -1834,16 +1816,6 @@ async function applyRouteTab() {
   if (!requestedTab) return false
   const exists = tabs.value.some((tab) => normalizeTabCode(tab.code) === requestedTab)
   if (!exists) return false
-  if (
-    effectiveBomFeatureEnabled.value
-    && requestedTab !== 'PRODUCT_DETAIL'
-    && !pricingBomReadyForNextStep.value
-  ) {
-    if (effectiveBomBlocked.value || !await preparePricingBomForNextStep()) {
-      activeTab.value = 'PRODUCT_DETAIL'
-      return false
-    }
-  }
   activeTab.value = requestedTab
   return true
 }
@@ -1861,17 +1833,17 @@ function currentPriceSourceGapCount() {
   return Number(pricePrepare.value.readiness?.gapCount ?? pricePrepareGaps.value.length)
 }
 
-function guidePriceTypeAfterBomConfirm() {
+function guidePriceTypeAfterBomBuild() {
   activeTab.value = 'PRICE_TYPE_CONFIRMATION'
   const missingTypeCount = currentMissingPriceTypeCount()
   if (missingTypeCount > 0) {
     priceTypeFilter.value = 'MISSING'
-    localWorkflowGuideText.value = `报价物料明细已确认，发现 ${missingTypeCount} 项缺价格类型，请到“物料价格类型”导入或维护后再确认`
+    localWorkflowGuideText.value = `报价物料明细已生成，系统发现 ${missingTypeCount} 项缺价格类型，请到“物料价格类型”导入或维护`
     ElMessage.warning(localWorkflowGuideText.value)
     return
   }
   priceTypeFilter.value = 'ALL'
-  localWorkflowGuideText.value = '报价物料明细已确认，价格类型已匹配，请在“价格类型确认”中确认后继续'
+  localWorkflowGuideText.value = '报价物料明细已生成，价格类型已自动识别，可继续检查价格源'
   ElMessage.success(localWorkflowGuideText.value)
 }
 
@@ -1879,12 +1851,12 @@ async function loadPriceType(showError = true) {
   if (!oaNo.value || !itemId.value) return
   priceTypeLoading.value = true
   try {
-    priceType.value = await fetchQuotePriceTypeConfirmation(oaNo.value, itemId.value, {
+    priceType.value = await fetchQuotePriceTypeRecognition(oaNo.value, itemId.value, {
       periodMonth: workbench.value.periodMonth,
     })
   } catch (error) {
     priceType.value = emptyPriceTypeResponse()
-    if (showError) ElMessage.error(error?.message || '获取价格类型确认失败')
+    if (showError) ElMessage.error(error?.message || '获取价格类型识别结果失败')
   } finally {
     priceTypeLoading.value = false
   }
@@ -1910,9 +1882,10 @@ async function loadCostRun(showError = true) {
   costRunLoading.value = true
   costRunError.value = ''
   try {
-    const response = await fetchQuoteCostRun(oaNo.value, itemId.value, {
-      periodMonth: workbench.value.periodMonth,
-    })
+    const params = historyViewMode.value
+      ? { versionId: historyVersionId.value }
+      : { periodMonth: workbench.value.periodMonth }
+    const response = await fetchQuoteCostRun(oaNo.value, itemId.value, params)
     await applyCostRunResponse(response)
   } catch (error) {
     const message = error?.message || '获取成本核算失败'
@@ -1959,6 +1932,13 @@ function goBack() {
   router.push({
     path: `/ingest/quote-requests/${encodeURIComponent(oaNo.value)}`,
     query: { itemId: route.query.returnItemId || itemId.value },
+  })
+}
+
+function openCurrentCosting() {
+  router.replace({
+    path: route.path,
+    query: { tab: 'COST_RUN', returnItemId: route.query.returnItemId || itemId.value },
   })
 }
 
@@ -2058,16 +2038,16 @@ async function loadEffectiveBom(showError = true) {
   }
 }
 
-async function preparePricingBomForNextStep() {
-  if (pricingBomReadyForNextStep.value) return true
-  if (effectiveBomConfirming.value) return false
-  if (!effectiveBomCanConfirm(effectiveBom.value) && !effectiveBomReadOnly.value) {
+async function preparePricingBomForNextStep(force = false) {
+  if (pricingBomReadyForNextStep.value && !force) return true
+  if (effectiveBomPreparing.value) return false
+  if (!effectiveBomCanPrepare(effectiveBom.value)) {
     ElMessage.warning(effectiveBomBlocked.value
       ? '请先处理本次计价 BOM 的数据问题'
       : '本次计价 BOM 尚未准备好')
     return false
   }
-  effectiveBomConfirming.value = true
+  effectiveBomPreparing.value = true
   try {
     const prepared = await prepareQuoteEffectiveBomCosting(oaNo.value, itemId.value)
     await loadWorkbench({ resetTab: false, loadChildren: true })
@@ -2081,7 +2061,13 @@ async function preparePricingBomForNextStep() {
     ElMessage.error(error?.message || '生成报价物料明细失败')
     return false
   } finally {
-    effectiveBomConfirming.value = false
+    effectiveBomPreparing.value = false
+  }
+}
+
+async function regenerateCurrentBom() {
+  if (await preparePricingBomForNextStep(true)) {
+    guidePriceTypeAfterBomBuild()
   }
 }
 
@@ -2099,10 +2085,25 @@ function collapseBomTree() {
 }
 
 function setBomTreeExpanded(expanded) {
-  const store = bomTreeRef.value?.store
-  const allNodes = store?._getAllNodes?.() || Object.values(store?.nodesMap || {})
-  allNodes.forEach((node) => {
-    node.expanded = expanded
+  // 此树位于 v-for 生成的标签页内，Vue 会把同名模板 ref 收集成数组；取当前真实的 ElTree 实例。
+  const tree = Array.isArray(bomTreeRef.value)
+    ? bomTreeRef.value.find((candidate) => candidate?.getNode)
+    : bomTreeRef.value
+  if (!tree?.getNode) return
+  const roots = effectiveBomFeatureEnabled.value
+    ? effectiveBomTreeData.value
+    : bomTreeData.value
+  const visitNode = (node) => {
+    if (!node) return
+    if (expanded) node.expand()
+    // 折叠节点的子节点可能尚未渲染，不能再按 key 逐个 getNode；从公开 Node.childNodes 递归才完整。
+    const childNodes = Array.isArray(node.childNodes) ? node.childNodes : []
+    childNodes.forEach(visitNode)
+    if (!expanded) node.collapse()
+  }
+  roots.forEach((data) => {
+    const key = effectiveBomFeatureEnabled.value ? data?.nodeKey : data?.path
+    visitNode(key ? tree.getNode(key) : null)
   })
 }
 
@@ -2166,75 +2167,6 @@ function bomNodeShapeTagType(node) {
   return ''
 }
 
-async function confirmBomRows() {
-  if (alternativeNeedsReview.value) {
-    alternativeDrawerVisible.value = true
-    ElMessage.error(
-      alternativeReviewMessage.value
-      || '标准/替代选择需要重新确认，完成前不能确认报价物料明细',
-    )
-    return
-  }
-  bomActionLoading.value = true
-  try {
-    const request = {
-      periodMonth: workbench.value.periodMonth,
-      confirmRemark: '前端确认报价物料明细',
-    }
-    if (effectiveBomFeatureEnabled.value) {
-      await confirmQuoteEffectiveBom(oaNo.value, itemId.value, request)
-    } else {
-      await confirmCostingBom(oaNo.value, itemId.value, request)
-    }
-    await loadWorkbench({ resetTab: false, loadChildren: true })
-    guidePriceTypeAfterBomConfirm()
-  } catch (error) {
-    ElMessage.error(error?.message || '确认报价物料明细失败')
-  } finally {
-    bomActionLoading.value = false
-  }
-}
-
-async function cancelBomConfirm() {
-  try {
-    await ElMessageBox.confirm('撤销后将阻断后续价格类型、最终价格生成和成本核算，确认撤销？', '撤销确认', {
-      type: 'warning',
-    })
-  } catch {
-    return
-  }
-  bomActionLoading.value = true
-  try {
-    await cancelCostingBomConfirm(oaNo.value, itemId.value, {
-      periodMonth: workbench.value.periodMonth,
-      reason: '前端撤销报价物料明细确认',
-    })
-    await refreshAfterAction('报价物料明细确认已撤销')
-  } catch (error) {
-    ElMessage.error(error?.message || '撤销报价物料明细确认失败')
-  } finally {
-    bomActionLoading.value = false
-  }
-}
-
-function openAdjustDrawer(row) {
-  if (!isPriceableTypeRow(row)) {
-    ElMessage.warning('父项不直接维护价格类型，请调整下方子项')
-    return
-  }
-  const defaultEffectiveFrom = row.effectiveFrom || workbench.value.periodMonth || ''
-  priceTypeDrawerMode.value = isMissingPriceTypeRow(row) ? 'IMPORT_MISSING' : 'ADJUST'
-  priceTypeForm.value = {
-    materialCode: row.materialCode || '',
-    materialName: row.materialName || '',
-    objectType: row.objectType || '',
-    priceType: row.priceType || '',
-    effectiveFrom: normalizeEffectiveMonth(defaultEffectiveFrom),
-    reason: row.message || '',
-  }
-  priceTypeDrawerVisible.value = true
-}
-
 function openMaterialPriceTypePage() {
   const first = missingPriceTypeRows.value[0] || {}
   router.push({
@@ -2252,63 +2184,11 @@ function openMaterialPriceTypePage() {
   })
 }
 
-async function submitPriceTypeDrawer() {
-  if (!priceTypeForm.value.materialCode) {
-    ElMessage.error('缺少物料料号')
-    return
-  }
-  if (!priceTypeForm.value.priceType) {
-    ElMessage.error('请选择价格类型')
-    return
-  }
-  priceTypeActionLoading.value = true
-  try {
-    const payload = {
-      materialCode: priceTypeForm.value.materialCode,
-      materialName: priceTypeForm.value.materialName,
-      objectType: priceTypeForm.value.objectType,
-      priceType: priceTypeForm.value.priceType,
-      effectiveFrom: priceTypeForm.value.effectiveFrom,
-      reason: priceTypeForm.value.reason,
-    }
-    if (priceTypeDrawerMode.value === 'IMPORT_MISSING') {
-      await importMissingPriceType(oaNo.value, itemId.value, {
-        periodMonth: workbench.value.periodMonth,
-        items: [payload],
-      })
-    } else {
-      await adjustPriceType(oaNo.value, itemId.value, payload)
-    }
-    priceTypeDrawerVisible.value = false
-    await refreshAfterAction('价格类型已保存')
-  } catch (error) {
-    ElMessage.error(error?.message || '保存价格类型失败')
-  } finally {
-    priceTypeActionLoading.value = false
-  }
-}
-
-async function confirmPriceTypes() {
-  priceTypeActionLoading.value = true
-  try {
-    await confirmPriceType(oaNo.value, itemId.value, {
-      periodMonth: workbench.value.periodMonth,
-      message: '前端确认价格类型',
-    })
-    await refreshAfterAction('价格类型已确认')
-  } catch (error) {
-    ElMessage.error(error?.message || '确认价格类型失败')
-  } finally {
-    priceTypeActionLoading.value = false
-  }
-}
-
 async function generatePricePrepare(successText = '最终价格已生成') {
   pricePrepareActionLoading.value = true
   try {
     await generateQuotePricePrepare(oaNo.value, itemId.value, {
       periodMonth: workbench.value.periodMonth,
-      priceTypeConfirmNo: latestPriceType.value.confirmNo,
     })
     await refreshAfterAction(successText)
     return true
@@ -2321,14 +2201,13 @@ async function generatePricePrepare(successText = '最终价格已生成') {
 }
 
 async function runPriceSourceCheck(successText = '价格源已自动检查') {
-  if (!latestPriceType.value.confirmNo || pricePrepareActionLoading.value || autoPriceSourceChecking.value) {
+  if (pricePrepareActionLoading.value || autoPriceSourceChecking.value) {
     return false
   }
   autoPriceSourceChecking.value = true
   try {
     pricePrepare.value = await checkQuotePriceSources(oaNo.value, itemId.value, {
       periodMonth: workbench.value.periodMonth,
-      priceTypeConfirmNo: latestPriceType.value.confirmNo,
     })
     if (successText) ElMessage.success(successText)
     return true
@@ -2349,7 +2228,6 @@ function priceSourceAutoCheckKey() {
     oaNo.value,
     itemId.value,
     workbench.value.periodMonth || '',
-    latestPriceType.value.confirmNo || '',
   ].join('|')
 }
 
@@ -2375,7 +2253,6 @@ function priceSourceReturnTo() {
 
 async function refreshPriceSourceFromReturn() {
   if (route.query.refreshPriceSource !== '1' || returnPriceSourceRefreshing.value) return
-  if (!latestPriceType.value.confirmNo) return
   const tab = currentPriceSourceTab()
   if (isBlockedTab(tab)) return
   returnPriceSourceRefreshing.value = true
@@ -2510,7 +2387,7 @@ async function submitNoScrapConfirm() {
 
 function priceSourceSupplementText(tab) {
   if (isBlockedTab(tab)) {
-    return tab.blockedReason || '请先确认价格类型，确认后系统才能判断需要补充哪类价格源'
+    return tab.blockedReason || '请先补齐缺失的价格类型，系统才能判断需要补充哪类价格源'
   }
   if (priceSourceGapSummary.value.total > 0) {
     return '请根据缺口行的价格类型维护对应价格源'
@@ -2663,7 +2540,7 @@ function canConfirmNoScrap(row) {
     && !isNoScrapConfirmed(row)
 }
 
-async function trialCostRun() {
+async function submitProductCosting(reason = 'USER_REQUEST') {
   if (costRunRepriceLocked.value) {
     ElMessage.warning(activeRepriceLock.value.message || '当前业务单元正在月度调价，暂不能发起成本核算')
     return
@@ -2671,18 +2548,30 @@ async function trialCostRun() {
   costRunActionLoading.value = true
   costRunError.value = ''
   try {
-    const response = await trialQuoteCostRun(oaNo.value, itemId.value, {
+    const result = await submitQuoteProductCostRun(oaNo.value, itemId.value, {
       periodMonth: workbench.value.periodMonth,
-      pricePrepareNo: oaPrepareBatch.value.prepareNo || pricePrepare.value.readiness?.prepareNo,
+      reason,
     })
-    if (response) {
-      await applyCostRunResponse(response)
-    } else {
-      await loadCostRun(false)
+    await loadWorkbench({ resetTab: false, loadChildren: true })
+    if (result?.pipelineStatus === 'SUCCESS') {
+      localWorkflowGuideText.value = ''
+      activeTab.value = 'COST_RUN'
+      if (route.query.guide) {
+        const nextQuery = { ...route.query }
+        delete nextQuery.guide
+        await router.replace({ query: nextQuery })
+      }
+      ElMessage.success(result.reusedSuccess ? '当前结果已是最新，无需重复核算' : '本产品核算完成并生成成功版本')
+      return
     }
-    ElMessage.success('成本核算试算已完成')
-    const trialRow = costRunVersions.value.find((row) => row?.status === 'TRIAL') || costRunVersions.value[0]
-    if (trialRow?.canViewSheet) openCostRunDetail(trialRow)
+    localWorkflowGuideText.value = result?.message || '核算资料存在缺口，请按当前步骤处理'
+    activeTab.value = productCostingResultTab(result?.currentStep)
+    if (result?.pipelineStatus === 'BLOCKED') {
+      ElMessage.warning(localWorkflowGuideText.value)
+      return
+    }
+    costRunError.value = localWorkflowGuideText.value
+    ElMessage.error(costRunError.value)
   } catch (error) {
     costRunError.value = error?.message || '开始核算失败'
     ElMessage.error(costRunError.value)
@@ -2691,22 +2580,12 @@ async function trialCostRun() {
   }
 }
 
-async function confirmCostRun(row = null) {
-  const costRunNo = row?.costRunNo || costRun.value.latestTrial?.costRunNo
-  if (!costRunNo) return
-  costRunActionLoading.value = true
-  costRunError.value = ''
-  try {
-    await confirmQuoteCostRun(oaNo.value, itemId.value, costRunNo, {
-      confirmMessage: '前端确认成本核算',
-    })
-    await refreshAfterAction('成本核算已确认')
-  } catch (error) {
-    costRunError.value = error?.message || '确认成本核算失败'
-    ElMessage.error(costRunError.value)
-  } finally {
-    costRunActionLoading.value = false
-  }
+function productCostingResultTab(step) {
+  const normalized = normalizeTabCode(step)
+  if (normalized === 'PRICE_PREPARE') return 'PRICE_SOURCE_SUPPLEMENT'
+  if (normalized === 'PRICE_TYPE_CONFIRMATION') return 'PRICE_TYPE_CONFIRMATION'
+  if (normalized === 'COST_RUN') return 'COST_RUN'
+  return 'PRODUCT_DETAIL'
 }
 
 async function exportCostRun(row = null) {
@@ -2816,7 +2695,7 @@ function buildPriceSourceSupplementTab(priceTypeTab, prepareTab) {
       code: 'PRICE_SOURCE_SUPPLEMENT',
       name: '价格源维护',
       status: 'BLOCKED',
-      blockedReason: '请先确认价格类型',
+      blockedReason: '请先补齐价格类型',
     }
   }
   if (gapCount > 0) {
@@ -2833,14 +2712,14 @@ function buildPriceSourceSupplementTab(priceTypeTab, prepareTab) {
       code: 'PRICE_SOURCE_SUPPLEMENT',
       name: '价格源维护',
       status: 'PENDING',
-      blockedReason: '价格类型已确认，系统将自动检查价格源',
+      blockedReason: '价格类型已识别，系统将自动检查价格源',
     }
   }
   return {
     code: 'PRICE_SOURCE_SUPPLEMENT',
     name: '价格源维护',
     status: hasGeneratedPrice ? 'DONE' : 'READY',
-    blockedReason: hasGeneratedPrice ? '' : '价格类型已确认，可自动检查价格源并生成最终价格',
+    blockedReason: hasGeneratedPrice ? '' : '价格类型已识别，可自动检查价格源并生成最终价格',
   }
 }
 
@@ -2868,17 +2747,9 @@ function isBlockedTab(tab) {
   return tab?.status === 'BLOCKED'
 }
 
-async function beforeWorkbenchTabLeave(nextName, previousName) {
-  const nextCode = normalizeTabCode(nextName)
-  const previousCode = normalizeTabCode(previousName)
-  if (previousCode !== 'PRODUCT_DETAIL' || nextCode === 'PRODUCT_DETAIL') return true
-  if (!effectiveBomFeatureEnabled.value) return true
-  if (pricingBomReadyForNextStep.value) return true
-  if (effectiveBomBlocked.value) {
-    ElMessage.error('本次计价 BOM 存在数据问题，暂时不能进入下一步')
-    return false
-  }
-  return preparePricingBomForNextStep()
+function beforeWorkbenchTabLeave() {
+  // 切换页签只负责浏览；生成/重算必须由用户点击明确按钮触发。
+  return true
 }
 
 function tabBadgeLabel(tab) {
@@ -2886,11 +2757,17 @@ function tabBadgeLabel(tab) {
   if (code === 'PRODUCT_DETAIL') {
     return effectiveBomFeatureEnabled.value ? effectiveBomStateInfo.value.label : '旧版原始 BOM'
   }
-  if (code === 'QUOTE_BOM') return isBomConfirmed.value ? '已确认' : '待确认'
+  if (code === 'QUOTE_BOM') {
+    const workspaceStatus = String(costingWorkspace.value.workspaceStatus || '').toUpperCase()
+    if (workspaceStatus === 'STALE') return '待重算'
+    if (workspaceStatus === 'WAIT_BOM') return '缺 BOM'
+    if (bomRows.value.length > 0) return '已生成'
+    return '待生成'
+  }
   if (code === 'PRICE_TYPE_CONFIRMATION') {
     const missingTypeCount = currentMissingPriceTypeCount()
     if (missingTypeCount > 0) return `缺 ${missingTypeCount} 项`
-    return tab?.status === 'DONE' ? '已确认' : '待确认'
+    return tab?.status === 'DONE' ? '已识别' : '待识别'
   }
   if (code === 'PRICE_SOURCE_SUPPLEMENT') {
     const gapCount = currentPriceSourceGapCount()
@@ -2907,12 +2784,14 @@ function tabBadgeLabel(tab) {
     return isBlockedTab(tab) ? '未就绪' : '待生成'
   }
   if (code === 'COST_RUN') {
-    const versionNo = currentConfirmedVersion.value?.displayVersionNo || currentConfirmedVersion.value?.versionNo
-    if (hasPendingTrial.value && versionNo) return '新试算待确认'
-    if (hasPendingTrial.value) return '有试算'
-    if (tab?.status === 'DONE' && versionNo) return `已确认 ${versionNo}`
+    if (historyViewMode.value && displayedCostVersion.value.id) return '历史结果'
+    const versionNo = currentSuccessVersion.value?.displayVersionNo || currentSuccessVersion.value?.versionNo
+    if (hasRunningCostVersion.value && versionNo) return '正在重新核算'
+    if (hasRunningCostVersion.value) return '正在核算'
+    // 成本版本是最终事实来源。旧工作流步骤可能仍为 PENDING，不能把已有当前成功版本误标成待核算。
+    if (currentSuccessVersion.value?.id && versionNo) return `核算成功 ${versionNo}`
     if (isBlockedTab(tab)) return '未就绪'
-    return '待试算'
+    return '待核算'
   }
   return tabStatusLabel(tab?.status)
 }
@@ -2922,7 +2801,12 @@ function tabBadgeType(tab) {
   if (code === 'PRODUCT_DETAIL') {
     return effectiveBomFeatureEnabled.value ? effectiveBomStateInfo.value.type : 'info'
   }
-  if (code === 'QUOTE_BOM') return isBomConfirmed.value ? 'success' : 'warning'
+  if (code === 'QUOTE_BOM') {
+    const workspaceStatus = String(costingWorkspace.value.workspaceStatus || '').toUpperCase()
+    if (workspaceStatus === 'WAIT_BOM') return 'danger'
+    if (workspaceStatus === 'STALE') return 'warning'
+    return bomRows.value.length > 0 ? 'success' : 'info'
+  }
   if (code === 'PRICE_TYPE_CONFIRMATION') return currentMissingPriceTypeCount() > 0 ? 'danger' : (tab?.status === 'DONE' ? 'success' : 'warning')
   if (code === 'PRICE_SOURCE_SUPPLEMENT') {
     if (isBlockedTab(tab)) return 'info'
@@ -2935,8 +2819,9 @@ function tabBadgeType(tab) {
     return tab?.status === 'DONE' && pricePrepareReady.value ? 'success' : 'warning'
   }
   if (code === 'COST_RUN') {
-    if (hasPendingTrial.value) return 'warning'
-    if (tab?.status === 'DONE' && currentConfirmedVersion.value?.id) return 'success'
+    if (historyViewMode.value && displayedCostVersion.value.id) return 'info'
+    if (hasRunningCostVersion.value) return 'warning'
+    if (currentSuccessVersion.value?.id) return 'success'
     return isBlockedTab(tab) ? 'info' : 'warning'
   }
   return tabStatusType(tab?.status)
@@ -2968,20 +2853,21 @@ function tabStatusType(status) {
 
 function normalizeCostVersionRow(row) {
   if (!row) return {}
-  const status = row?.status || ''
+  const status = String(row?.status || '').toUpperCase()
   const currentConfirmed = Boolean(row?.currentConfirmed)
-  const canConfirm = row?.canConfirm ?? status === 'TRIAL'
+  const inProgress = ['RUNNING', 'TRIAL'].includes(status)
   const canViewSheet = row?.canViewSheet ?? Boolean(row?.id && row?.costRunNo)
-  const canViewTrace = row?.canViewTrace ?? (status !== 'TRIAL' && Boolean(row?.costRunNo))
+  const canViewTrace = row?.canViewTrace ?? (!inProgress && Boolean(row?.costRunNo))
   return {
     ...row,
+    status,
     displayVersionNo: row?.displayVersionNo || row?.versionNo || row?.costRunNo || '-',
     displayStatus: row?.displayStatus || costVersionStatusText({ ...row, currentConfirmed }),
-    canConfirm,
+    canConfirm: false,
     canViewSheet,
     canViewTrace,
     currentConfirmed,
-    stale: row?.stale ?? (status !== 'TRIAL' && !currentConfirmed),
+    stale: row?.stale ?? (!inProgress && !currentConfirmed),
   }
 }
 
@@ -2990,24 +2876,28 @@ function costVersionRowClass({ row }) {
 }
 
 function costVersionStatusText(row) {
-  if (row?.status === 'TRIAL') return '待确认'
-  if (row?.currentConfirmed) return '当前已确认'
-  if (row?.status === 'VOIDED' || row?.stale) return '历史版本'
-  if (row?.status === 'CONFIRMED') return '已确认'
-  return row?.status || '-'
+  const status = String(row?.status || '').toUpperCase()
+  if (status === 'RUNNING') return '核算中'
+  if (status === 'TRIAL') return '旧试算未完成'
+  if (row?.currentConfirmed) return '当前成功'
+  if (['HISTORY', 'VOIDED', 'STALE'].includes(status) || row?.stale) return '历史版本'
+  if (['SUCCESS', 'CONFIRMED'].includes(status)) return '核算成功'
+  return status || '-'
 }
 
 function costVersionStatusTagType(row) {
-  if (row?.status === 'TRIAL') return 'warning'
+  const status = String(row?.status || '').toUpperCase()
+  if (['RUNNING', 'TRIAL'].includes(status)) return 'warning'
   if (row?.currentConfirmed) return 'success'
-  if (row?.stale || row?.status === 'VOIDED') return 'info'
+  if (['SUCCESS', 'CONFIRMED'].includes(status)) return 'success'
+  if (row?.stale || ['HISTORY', 'VOIDED', 'STALE'].includes(status)) return 'info'
   return 'info'
 }
 
 function workflowStepLabel(step) {
   const labels = {
     QUOTE_BOM: '报价物料明细',
-    PRICE_TYPE_CONFIRMATION: '价格类型确认',
+    PRICE_TYPE_CONFIRMATION: '价格类型识别',
     PRICE_SOURCE_SUPPLEMENT: '价格源维护',
     PRICE_PREPARE: '最终价格生成',
     COST_RUN: '成本核算',
@@ -3064,17 +2954,6 @@ function emptyCostRunResponse() {
   }
 }
 
-function emptyPriceTypeForm() {
-  return {
-    materialCode: '',
-    materialName: '',
-    objectType: '',
-    priceType: '',
-    effectiveFrom: '',
-    reason: '',
-  }
-}
-
 function flattenRows(rows, out = []) {
   rows.forEach((row) => {
     out.push(row)
@@ -3114,10 +2993,13 @@ function isMissingPriceTypeRow(row) {
   return isPriceableTypeRow(row) && (!row.priceType || row.typeStatus === 'MISSING_TYPE')
 }
 
-function normalizeEffectiveMonth(value) {
-  const text = String(value || '').trim()
-  if (/^\d{4}-\d{2}/.test(text)) return text.slice(0, 7)
-  return workbench.value.periodMonth || ''
+function priceTypeStatusLabel(status) {
+  const labels = {
+    RECOGNIZED: '已识别',
+    MISSING_TYPE: '缺价格类型',
+    CHILD_MISSING_TYPE: '子项缺类型',
+  }
+  return labels[status] || status || '-'
 }
 
 function priceTypeObjectLabel(objectType) {
@@ -3140,7 +3022,7 @@ function priceTypeSourceLabel(row) {
   const source = row?.priceTypeSource || row?.sourceText
   const labels = {
     MATERIAL_PRICE_TYPE: '价格类型维护',
-    quote_price_type_confirmation: '报价确认维护',
+    quote_price_type_confirmation: '历史报价确认',
     manual: '人工维护',
     MAKE_PARENT: '自制件生成',
     MAKE_RAW: '自制件生成',
@@ -3169,15 +3051,25 @@ function priceTypeTagType(row) {
 async function initializeWorkbench() {
   await loadWorkbench({ resetTab: true, loadChildren: true })
   await applyRouteTab()
+  if (historyViewMode.value) return
   await refreshPriceSourceFromReturn()
   await ensurePriceSourceChecked()
 }
 
-watch([oaNo, itemId], () => {
+watch([oaNo, itemId, historyVersionId], () => {
   initializeWorkbench()
 })
 
-watch(activeTab, () => {
+watch(activeTab, async (tabCode) => {
+  if (
+    isPriceTypeTab(tabCode)
+    && pricingBomReadyForNextStep.value
+    && !priceTypeLoading.value
+  ) {
+    // 第三步是当前 BOM 的实时只读投影。每次重新进入都取最新结果，
+    // 避免页面仍展示 worker 重建 BOM 前留在内存中的旧批次或空品名。
+    await loadPriceType(false)
+  }
   ensurePriceSourceChecked()
 })
 
@@ -3197,7 +3089,7 @@ onMounted(() => initializeWorkbench())
 .costing-page {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   min-width: 1180px;
   color: #2f343d;
 }
@@ -3207,17 +3099,22 @@ onMounted(() => initializeWorkbench())
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  padding: 18px 20px;
+  border: 1px solid #e4e9f1;
+  border-radius: 10px;
+  background: #ffffff;
 }
 
 .page-head h1 {
   margin: 0;
-  font-size: 22px;
-  font-weight: 650;
-  color: #1f2a37;
+  font-size: 21px;
+  font-weight: 700;
+  color: #182230;
+  letter-spacing: 0.01em;
 }
 
 .page-head p {
-  margin: 4px 0 0;
+  margin: 6px 0 0;
   color: #697386;
   font-size: 13px;
 }
@@ -3233,12 +3130,33 @@ onMounted(() => initializeWorkbench())
 
 .inline-alert {
   margin: 0;
+  border-radius: 8px;
+}
+
+.costing-page :deep(.el-table) {
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+.costing-page :deep(.el-table th.el-table__cell) {
+  height: 44px;
+  color: #475467;
+  font-weight: 650;
+  background: #f8fafc;
+}
+
+.costing-page :deep(.el-table td.el-table__cell) {
+  padding: 10px 0;
+}
+
+.costing-page :deep(.el-alert__title) {
+  font-weight: 600;
 }
 
 .section-block {
   overflow: hidden;
-  border: 1px solid #e5eaf3;
-  border-radius: 4px;
+  border: 1px solid #e4e9f1;
+  border-radius: 10px;
   background: #ffffff;
 }
 
@@ -3247,10 +3165,10 @@ onMounted(() => initializeWorkbench())
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 42px;
-  padding: 0 16px;
-  border-bottom: 1px solid #e5eaf3;
-  background: #f7f9fc;
+  min-height: 44px;
+  padding: 0 18px;
+  border-bottom: 1px solid #e8ecf2;
+  background: #fbfcfe;
 }
 
 .section-head span {
@@ -3294,14 +3212,112 @@ onMounted(() => initializeWorkbench())
 .workspace-meta {
   display: flex;
   align-items: center;
-  gap: 18px;
-  min-height: 38px;
-  padding: 0 16px;
+  gap: 0;
+  min-height: 58px;
+  padding: 0 18px;
   flex-wrap: wrap;
-  color: #4b5563;
-  font-size: 13px;
-  border-bottom: 1px solid #e5eaf3;
-  background: #fafbfe;
+  border-bottom: 1px solid #e8ecf2;
+  background: #fbfcfe;
+}
+
+.workspace-meta > span {
+  display: inline-grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 0 18px;
+  border-right: 1px solid #e1e6ee;
+}
+
+.workspace-meta > span:first-child {
+  padding-left: 0;
+}
+
+.workspace-meta > span:last-child {
+  border-right: 0;
+}
+
+.workspace-meta small {
+  color: #8490a1;
+  font-size: 12px;
+}
+
+.workspace-meta strong {
+  color: #344054;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.costing-tabs {
+  padding: 0 18px 18px;
+  background: #ffffff;
+}
+
+.costing-tabs :deep(.el-tabs__header) {
+  margin: 0 -18px 18px;
+  padding: 0 18px;
+  border-bottom: 1px solid #e4e9f1;
+  background: #ffffff;
+}
+
+.costing-tabs :deep(.el-tabs__nav-prev),
+.costing-tabs :deep(.el-tabs__nav-next) {
+  display: none;
+}
+
+.costing-tabs :deep(.el-tabs__nav-scroll) {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.costing-tabs :deep(.el-tabs__nav-wrap::after) {
+  display: none;
+}
+
+.costing-tabs :deep(.el-tabs__nav) {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(170px, 1fr));
+  width: 100%;
+  min-width: 1020px;
+  border: 1px solid #e4e9f1;
+  border-radius: 9px;
+  background: #f8fafc;
+  overflow: hidden;
+}
+
+.costing-tabs :deep(.el-tabs__active-bar) {
+  display: none;
+}
+
+.costing-tabs :deep(.el-tabs__item) {
+  height: 64px;
+  padding: 0 14px;
+  border-right: 1px solid #e4e9f1;
+  color: #475467;
+  transition: background-color 0.16s ease, color 0.16s ease;
+}
+
+.costing-tabs :deep(.el-tabs__item:last-child) {
+  border-right: 0;
+}
+
+.costing-tabs :deep(.el-tabs__item:hover) {
+  color: #2563a8;
+  background: #f3f7fc;
+}
+
+.costing-tabs :deep(.el-tabs__item.is-active) {
+  color: #1f66b1;
+  background: #eef6ff;
+}
+
+.tab-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
 }
 
 .tab-index {
@@ -3309,37 +3325,40 @@ onMounted(() => initializeWorkbench())
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border: 1px solid #d5dce6;
   border-radius: 50%;
-  background: #edf2f7;
-  color: #4b5563;
-  font-weight: 650;
-}
-
-.costing-tabs {
-  padding: 0 16px 16px;
   background: #ffffff;
+  color: #667085;
+  font-size: 12px;
+  font-weight: 700;
 }
 
-.costing-tabs :deep(.el-tabs__header) {
-  margin-bottom: 16px;
+.costing-tabs :deep(.el-tabs__item.is-active) .tab-index {
+  border-color: #2f7dcc;
+  color: #ffffff;
+  background: #2f7dcc;
 }
 
-.costing-tabs :deep(.el-tabs__nav-wrap::after) {
-  height: 1px;
-  background: #e5eaf3;
-}
-
-.tab-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
+.tab-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
   min-width: 0;
 }
 
-.tab-index {
-  width: 18px;
-  height: 18px;
-  font-size: 11px;
+.tab-name {
+  color: inherit;
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.tab-state {
+  max-width: 120px;
 }
 
 .tab-toolbar,
@@ -3348,10 +3367,11 @@ onMounted(() => initializeWorkbench())
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  margin-bottom: 12px;
-  padding: 10px 12px;
-  border: 1px solid #e5eaf3;
-  background: #fafbfe;
+  margin-bottom: 14px;
+  padding: 13px 14px;
+  border: 1px solid #e4e9f1;
+  border-radius: 8px;
+  background: #fbfcfe;
 }
 
 .tab-toolbar strong,
@@ -3375,8 +3395,8 @@ onMounted(() => initializeWorkbench())
 .status-strip {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 10px;
-  margin-bottom: 14px;
+  gap: 12px;
+  margin-bottom: 16px;
 }
 
 .source-gap-cards {
@@ -3389,8 +3409,9 @@ onMounted(() => initializeWorkbench())
 .source-gap-card {
   min-height: 68px;
   padding: 10px 12px;
-  border: 1px solid #e5eaf3;
-  background: #fafbfe;
+  border: 1px solid #e4e9f1;
+  border-radius: 8px;
+  background: #fbfcfe;
 }
 
 .source-gap-card span {
@@ -3410,8 +3431,9 @@ onMounted(() => initializeWorkbench())
 .metric {
   min-height: 68px;
   padding: 10px 12px;
-  border: 1px solid #e5eaf3;
-  background: #fafbfe;
+  border: 1px solid #e4e9f1;
+  border-radius: 8px;
+  background: #fbfcfe;
 }
 
 .metric span {
@@ -3423,7 +3445,7 @@ onMounted(() => initializeWorkbench())
   display: block;
   margin-top: 4px;
   color: #2f343d;
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 650;
   line-height: 1.2;
   word-break: break-all;
@@ -3431,6 +3453,14 @@ onMounted(() => initializeWorkbench())
 
 .price-compare-summary {
   grid-template-columns: repeat(4, minmax(180px, 1fr));
+}
+
+.price-validity-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #697386;
+  line-height: 1.4;
 }
 
 .price-compare-summary .metric strong.difference-positive {
@@ -3450,7 +3480,42 @@ onMounted(() => initializeWorkbench())
 }
 
 .price-scenario-tabs :deep(.el-tabs__header) {
-  margin-bottom: 10px;
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.price-scenario-tabs :deep(.el-tabs__nav-wrap) {
+  padding: 0;
+}
+
+.price-scenario-tabs :deep(.el-tabs__nav) {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(160px, 1fr));
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #e4e9f1;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.price-scenario-tabs :deep(.el-tabs__item) {
+  justify-content: center;
+  height: 46px;
+  padding: 0 18px;
+  border-right: 1px solid #e4e9f1;
+  color: #667085;
+  font-weight: 600;
+}
+
+.price-scenario-tabs :deep(.el-tabs__item:last-child) {
+  border-right: 0;
+}
+
+.price-scenario-tabs :deep(.el-tabs__item.is-active) {
+  color: #1f66b1;
+  background: #eef6ff;
 }
 
 .scenario-meta {
@@ -3488,6 +3553,11 @@ onMounted(() => initializeWorkbench())
   width: 100%;
 }
 
+.rollup-identity {
+  white-space: pre-line;
+  line-height: 1.45;
+}
+
 .product-detail-tab {
   display: flex;
   flex-direction: column;
@@ -3500,9 +3570,9 @@ onMounted(() => initializeWorkbench())
   justify-content: space-between;
   gap: 16px;
   padding: 12px 14px;
-  border: 1px solid #dbe7f5;
-  border-radius: 6px;
-  background: #f7faff;
+  border: 1px solid #d8e5f3;
+  border-radius: 8px;
+  background: #f6faff;
 }
 
 .pricing-bom-summary > div,
@@ -3549,7 +3619,8 @@ onMounted(() => initializeWorkbench())
   max-height: calc(100vh - 360px);
   overflow: auto;
   padding: 12px;
-  border: 1px solid #e5eaf3;
+  border: 1px solid #e4e9f1;
+  border-radius: 8px;
   background: #ffffff;
 }
 

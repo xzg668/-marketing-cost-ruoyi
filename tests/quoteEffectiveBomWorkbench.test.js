@@ -39,22 +39,24 @@ describe('QEB-14 核算工作台最终有效 BOM 接入', () => {
     assert.match(pageContent, /@restore-preview="clearAlternativePreview"/)
   })
 
-  it('第 2 步未确认时第 1 步仍可反复选择，只有真正确认后才锁定', () => {
-    assert.match(pageContent, /:disabled="isBomConfirmed \|\| effectiveBomLoading"/)
-    assert.match(pageContent, /:confirmed="isBomConfirmed"/)
-    assert.match(pageContent, /isBomConfirmed\.value && effectiveBomIsReadOnly/)
-    assert.match(pageContent, /label: '待确认'/)
-    assert.doesNotMatch(pageContent, /:disabled="effectiveBomReadOnly \|\| effectiveBomLoading"/)
-    assert.doesNotMatch(pageContent, /const reopeningProvisionalBom =/)
-    assert.doesNotMatch(pageContent, /if \(reopeningProvisionalBom\) \{\s+await loadEffectiveBom\(false\)/)
+  it('标准替代可反复调整，保存后仅标记待重算，不再由确认状态锁定', () => {
+    assert.match(pageContent, /按当前规则重新生成/)
+    assert.match(pageContent, /workspaceStatus \|\| ''\)\.toUpperCase\(\) === 'STALE'/)
+    assert.doesNotMatch(pageContent, /isBomConfirmed|effectiveBomIsReadOnly|:confirmed=/)
     assert.match(pageContent, /await refreshAfterAlternativeSelection\(\)/)
   })
 
-  it('第 2 步未确认时不预加载第 3 步，避免弹出请先确认报价物料', () => {
+  it('当前 BOM 就绪后加载价格类型，并在每次重新进入第三步时刷新只读投影', () => {
     assert.match(
       pageContent,
-      /isBomConfirmed\.value \? loadPriceType\(false\) : Promise\.resolve\(\)/,
+      /pricingBomReadyForNextStep\.value \? loadPriceType\(false\) : Promise\.resolve\(\)/,
     )
+    assert.match(pageContent, /workbenchCanLoadPriceType\(workbench\.value\)/)
+    const activeTabWatcher = pageContent.match(
+      /watch\(activeTab, async \(tabCode\) => \{[\s\S]*?\n\}\)/,
+    )?.[0] || ''
+    assert.match(activeTabWatcher, /isPriceTypeTab\(tabCode\)[\s\S]*await loadPriceType\(false\)/)
+    assert.doesNotMatch(activeTabWatcher, /priceType\.value\.rows/)
   })
 
   it('工作台没有新增价格组织或事业部选择控件', () => {
@@ -68,7 +70,7 @@ describe('QEB-14 核算工作台最终有效 BOM 接入', () => {
     assert.match(pageContent, /getBomHierarchy/)
     assert.match(pageContent, /最终有效 BOM 当前未启用/)
     assert.match(pageContent, /旧版原始 BOM/)
-    assert.match(pageContent, /if \(!effectiveBomFeatureEnabled\.value\) return true/)
+    assert.match(pageContent, /function beforeWorkbenchTabLeave\(\)[\s\S]*return true/)
     assert.match(pageContent, /if \(effectiveBomFeatureEnabled\.value\) \{\s+await loadEffectiveBom\(\)/)
   })
 })

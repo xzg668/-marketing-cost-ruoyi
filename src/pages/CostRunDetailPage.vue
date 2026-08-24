@@ -93,9 +93,9 @@
             :key="`${item.partCode}-${index}`"
             :class="{ 'row-miss': item.priceSource === 'NO_ROUTE' || item.priceSource === 'ERROR' }"
           >
-            <td>{{ item.partName }}</td>
-            <td class="part-code">{{ item.partCode }}</td>
-            <td>{{ item.drawingNo }}</td>
+            <td class="part-identity">{{ item.displayPartName }}</td>
+            <td class="part-code part-identity">{{ item.displayPartCode }}</td>
+            <td class="part-identity">{{ item.displayDrawingNo }}</td>
             <td>{{ item.unitPrice }}</td>
             <td>{{ item.qty }}</td>
             <td>
@@ -432,7 +432,6 @@ const meta = computed(() => ({
   productCode: String(route.query.productCode || route.query.materialCode || ''),
   costRunNo: String(route.query.costRunNo || ''),
   versionNo: String(route.query.versionNo || ''),
-  legacyResult: String(route.query.legacyResult || '') === '1',
   series: String(route.query.series || ''),
   customerDrawing: String(route.query.customerDrawing || ''),
   // 见机表 r2 col 4 是空给业务方手填；OA 表当前没 owner 字段，留空
@@ -552,7 +551,6 @@ const loadDetail = async () => {
   try {
     const data = await fetchCostRunDetail(meta.value.oaNo, meta.value.productCode, {
       costRunNo: meta.value.costRunNo || undefined,
-      legacyResult: meta.value.legacyResult || undefined,
     })
     const parts = Array.isArray(data?.partItems) ? data.partItems : []
     const costs = Array.isArray(data?.costItems) ? data.costItems : []
@@ -568,6 +566,9 @@ const loadDetail = async () => {
       partName: toText(item.partName),
       partCode: toText(item.partCode),
       drawingNo: toText(item.partDrawingNo),
+      displayPartName: toText(item.displayPartName || item.partName),
+      displayPartCode: toText(item.displayPartCode || item.partCode),
+      displayDrawingNo: toText(item.displayPartDrawingNo || item.partDrawingNo),
       unitPrice: toText(item.unitPrice),
       qty: toText(item.partQty),
       amount: toText(item.amount),
@@ -869,9 +870,17 @@ const exportSheet = () => {
     const partStartRow = rowIndexFinal(PART_START)
     partRows.value.forEach((item, index) => {
       const row = partStartRow + index
-      setCellValue(row, 1, item.partName)
-      setCellValue(row, 2, item.partCode)
-      setCellValue(row, 3, item.drawingNo)
+      setCellValue(row, 1, item.displayPartName)
+      setCellValue(row, 2, item.displayPartCode)
+      setCellValue(row, 3, item.displayDrawingNo)
+      for (let column = 1; column <= 3; column += 1) {
+        const identityCell = sheet.getCell(row, column)
+        identityCell.alignment = {
+          ...(identityCell.alignment || {}),
+          vertical: 'middle',
+          wrapText: true,
+        }
+      }
       setCellValue(row, 4, toNumber(item.unitPrice) ?? item.unitPrice)
       setCellValue(row, 5, toNumber(item.qty) ?? item.qty)
       setCellValue(row, 6, toNumber(item.amount) ?? item.amount)
@@ -1039,8 +1048,12 @@ onMounted(() => {
   font-weight: 600;
 }
 
+.part-identity {
+  white-space: pre-line;
+  line-height: 1.45;
+}
+
 .part-code {
-  white-space: nowrap;
   font-size: 11px;
 }
 

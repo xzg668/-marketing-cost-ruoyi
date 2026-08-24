@@ -1712,16 +1712,3 @@ export const submitRangeType1ImportRequest = async (requestResult, importItems) 
     reason: '',
   }
 }
-
-export const buildRangePriceTypeApplyPayload = (conflicts, options = {}) => ({
-  rows: (Array.isArray(conflicts) ? conflicts : [])
-    .filter((item) => item?.materialCode)
-    .map((item) => ({
-      materialCode: item.materialCode,
-      materialName: item.materialName || '',
-      businessUnitType: item.businessUnitType || '',
-      period: item.period || '',
-      effectiveFrom: item.effectiveFrom || '',
-      source: options.source || 'range-price-import',
-    })),
-})

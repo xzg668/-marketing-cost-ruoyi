@@ -7,7 +7,6 @@ import {
   buildRangeImportBatchNo,
   buildRangeImportPayload,
   buildRangeType1ImportRequest,
-  buildRangePriceTypeApplyPayload,
   collectRangeFormulaCells,
   detectRangeFactorBySheetName,
   detectRangeWorkbookRoute,
@@ -127,39 +126,11 @@ describe('MFRP-03 区间价列表展示', () => {
   })
 })
 
-describe('MFRP-04 价格类型冲突确认', () => {
-  it('构造改为区间价 payload 时只提交物料和生效信息', () => {
-    const payload = buildRangePriceTypeApplyPayload([
-      {
-        materialCode: '201850160',
-        materialName: '铜管',
-        businessUnitType: 'COMMERCIAL',
-        period: '2026-07',
-        effectiveFrom: '2026-07-01',
-        currentPriceType: '固定价',
-      },
-    ])
-
-    assert.deepEqual(payload, {
-      rows: [
-        {
-          materialCode: '201850160',
-          materialName: '铜管',
-          businessUnitType: 'COMMERCIAL',
-          period: '2026-07',
-          effectiveFrom: '2026-07-01',
-          source: 'range-price-import',
-        },
-      ],
-    })
-  })
-
-  it('页面导入后提示价格类型冲突并可调用确认改价接口', () => {
-    assert.match(pageContent, /价格类型冲突/)
-    assert.match(pageContent, /改为区间价/)
-    assert.match(pageContent, /暂不修改/)
-    assert.match(pageContent, /applyRangePriceTypes/)
-    assert.match(pageContent, /priceTypeConflicts/)
+describe('MFRP-04 价格类型自动维护', () => {
+  it('页面导入成功后不再要求人工确认价格类型', () => {
+    assert.doesNotMatch(pageContent, /价格类型冲突/)
+    assert.doesNotMatch(pageContent, /applyRangePriceTypes/)
+    assert.doesNotMatch(pageContent, /priceTypeConflicts/)
   })
 })
 

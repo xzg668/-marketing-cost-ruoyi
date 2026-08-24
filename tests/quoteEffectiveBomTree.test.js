@@ -87,8 +87,15 @@ describe('QEB-14 最终有效 BOM 树', () => {
     }])
   })
 
-  it('展开全部递归处理 Element Plus 实际节点树', () => {
-    assert.match(pageContent, /store\?\._getAllNodes\?\.\(\)/)
+  it('展开和收起递归调用 Element Plus 公开节点 API', () => {
+    assert.match(pageContent, /Array\.isArray\(bomTreeRef\.value\)/)
+    assert.match(pageContent, /find\(\(candidate\) => candidate\?\.getNode\)/)
+    assert.match(pageContent, /tree\.getNode\(key\)/)
+    assert.match(pageContent, /if \(expanded\) node\.expand\(\)/)
+    assert.match(pageContent, /if \(!expanded\) node\.collapse\(\)/)
+    assert.match(pageContent, /Array\.isArray\(node\.childNodes\)/)
+    assert.match(pageContent, /childNodes\.forEach\(visitNode\)/)
+    assert.doesNotMatch(pageContent, /store\?\._getAllNodes/)
     assert.match(pageContent, /effectiveBomDefaultExpandedKeys/)
   })
 })

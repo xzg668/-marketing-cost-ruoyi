@@ -19,7 +19,7 @@ describe('QEB-14 OA 多产品隔离', () => {
   it('接口不接受产品数组，不会因 OA 有 100 个产品批量重建或确认', () => {
     const effectiveApiBlock = apiContent.slice(
       apiContent.indexOf('export const fetchQuoteEffectiveBom'),
-      apiContent.indexOf('export const launchQuoteCostingWorkbench'),
+      apiContent.indexOf('export const fetchQuoteBomAlternativeGroups'),
     )
     assert.doesNotMatch(effectiveApiBlock, /itemIds|productCodes|Promise\.all|forEach/)
     assert.match(effectiveApiBlock, /items\/\$\{encodePath\(itemId\)\}/)

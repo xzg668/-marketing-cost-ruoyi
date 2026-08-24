@@ -1,7 +1,5 @@
 const STATE_META = Object.freeze({
   DRAFT: { label: '已就绪', type: 'success' },
-  FROZEN: { label: '本月已确定', type: 'success' },
-  REUSED: { label: '本月已沿用', type: 'success' },
   BLOCKED: { label: '需处理', type: 'danger' },
   ERROR: { label: '加载失败', type: 'danger' },
 })
@@ -99,27 +97,46 @@ export function effectiveBomStateMeta(state) {
   return STATE_META[normalizeCode(state)] || { label: '待加载', type: 'info' }
 }
 
-export function effectiveBomIsReadOnly(state) {
-  return ['FROZEN', 'REUSED'].includes(normalizeCode(state))
-}
-
-export function effectiveBomStepCompleted(state) {
-  return effectiveBomIsReadOnly(state)
-}
-
-export function effectiveBomCanConfirm(response) {
+export function effectiveBomCanPrepare(response) {
   const value = normalizeQuoteEffectiveBom(response)
   return value.state === 'DRAFT' && value.nodes.length > 0 && value.blockIssues.length === 0
 }
 
-/** 只有后端校验为当前规则版本的构建与工作台明细一致，才可直接进入第 2 步。 */
-export function effectiveBomMatchesCostingBuild(effectiveBom, workbench) {
-  const effectiveBuildBatchId = String(effectiveBom?.buildBatchId || '').trim()
-  const workbenchBuildBatchId = String(workbench?.buildBatchId || '').trim()
+/** 后端当前工作区指针与本次返回的 BOM 明细构建一致，才可直接进入第 2 步。 */
+export function workbenchHasCurrentCostingBom(workbench) {
+  const workspaceBuildBatchId = String(
+    workbench?.costingWorkspace?.currentBomBuildBatchId || '',
+  ).trim()
+  const loadedBuildBatchId = String(workbench?.buildBatchId || '').trim()
   const rows = Array.isArray(workbench?.bomRows) ? workbench.bomRows : []
   return Boolean(
-    effectiveBuildBatchId
-    && workbenchBuildBatchId === effectiveBuildBatchId
+    workspaceBuildBatchId
+    && loadedBuildBatchId === workspaceBuildBatchId
+    && rows.length > 0
+  )
+}
+
+/**
+ * 第三步是当前 BOM 的只读价格类型投影，不依赖已删除的报价级确认表。
+ *
+ * 正常情况下以工作区 BOM 指针为准；旧 worker 已生成当前 BOM 行但没有回填指针时，
+ * 允许以后端本次实时识别返回的 BOM 构建编号作为同批次证据，避免标签显示“已识别”而明细为空。
+ */
+export function workbenchCanLoadPriceType(workbench) {
+  const workspaceStatus = normalizeCode(workbench?.costingWorkspace?.workspaceStatus)
+  if (['STALE', 'WAIT_BOM'].includes(workspaceStatus)) return false
+  if (workbenchHasCurrentCostingBom(workbench)) return true
+
+  const quoteBomStatus = normalizeCode(workbench?.workflowStatus?.quoteBomStatus)
+  const loadedBuildBatchId = String(workbench?.buildBatchId || '').trim()
+  const recognizedBuildBatchId = String(
+    workbench?.latestPriceTypeRecognition?.bomBuildBatchId || '',
+  ).trim()
+  const rows = Array.isArray(workbench?.bomRows) ? workbench.bomRows : []
+  return Boolean(
+    quoteBomStatus === 'DONE'
+    && loadedBuildBatchId
+    && recognizedBuildBatchId === loadedBuildBatchId
     && rows.length > 0
   )
 }
@@ -127,13 +144,21 @@ export function effectiveBomMatchesCostingBuild(effectiveBom, workbench) {
 /** 进入第2步后，以本次暂存接口返回的构建编号核对工作台，不能拿 DRAFT 预览的空编号误判。 */
 export function costingBomMatchesPreparedBuild(prepared, workbench) {
   const preparedBuildBatchId = String(prepared?.buildBatchId || '').trim()
-  const workbenchBuildBatchId = String(workbench?.buildBatchId || '').trim()
+  const workbenchBuildBatchId = currentWorkspaceBuildBatchId(workbench)
   const rows = Array.isArray(workbench?.bomRows) ? workbench.bomRows : []
   return Boolean(
     preparedBuildBatchId
     && workbenchBuildBatchId === preparedBuildBatchId
     && rows.length > 0
   )
+}
+
+function currentWorkspaceBuildBatchId(workbench) {
+  return String(
+    workbench?.costingWorkspace?.currentBomBuildBatchId
+      || workbench?.buildBatchId
+      || '',
+  ).trim()
 }
 
 export function effectiveShapeMeta(shape) {

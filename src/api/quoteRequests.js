@@ -9,8 +9,10 @@ export const fetchQuoteRequests = (params) =>
 export const fetchQuoteRequestDetail = (oaNo) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}`)
 
-export const fetchQuoteCollaborationSummary = (oaNo) =>
-  request(`/api/v1/quote-requests/${encodePath(oaNo)}/collaboration-summary`)
+export const refreshQuoteCollaborationSummary = (oaNo) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/collaboration-summary/refresh`, {
+    method: 'POST',
+  })
 
 export const scanQuoteItemCollaboration = (oaNo, itemId) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/collaboration/scan`, {
@@ -52,19 +54,8 @@ export const previewQuoteEffectiveBomAlternative = (oaNo, itemId, body) =>
     body,
   })
 
-export const confirmQuoteEffectiveBom = (oaNo, itemId, body = {}) =>
-  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/effective-bom/confirm`, {
-    method: 'POST',
-    body,
-  })
-
 export const prepareQuoteEffectiveBomCosting = (oaNo, itemId) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/effective-bom/prepare-costing`, {
-    method: 'POST',
-  })
-
-export const launchQuoteCostingWorkbench = (oaNo, itemId) =>
-  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/costing-workbench/launch`, {
     method: 'POST',
   })
 
@@ -87,38 +78,9 @@ export const fetchQuoteBomAlternativeHistory = (oaNo, itemId, groupKey, params) 
     params,
   })
 
-export const confirmCostingBom = (oaNo, itemId, body = {}) =>
-  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/costing-bom/confirm`, {
-    method: 'POST',
-    body,
-  })
-
-export const cancelCostingBomConfirm = (oaNo, itemId, body = {}) =>
-  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/costing-bom/cancel-confirm`, {
-    method: 'POST',
-    body,
-  })
-
-export const fetchQuotePriceTypeConfirmation = (oaNo, itemId, params) =>
-  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/price-type-confirmation`, { params })
-
-export const importMissingPriceType = (oaNo, itemId, body) =>
-  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/price-type-confirmation/import-missing`, {
-    method: 'POST',
-    body,
-  })
-
-export const adjustPriceType = (oaNo, itemId, body) =>
-  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/price-type-confirmation/adjust`, {
-    method: 'POST',
-    body,
-  })
-
-export const confirmPriceType = (oaNo, itemId, body = {}) =>
-  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/price-type-confirmation/confirm`, {
-    method: 'POST',
-    body,
-  })
+// 当前接口只读自动识别正式价格类型，不生成 OA 级确认副本。
+export const fetchQuotePriceTypeRecognition = (oaNo, itemId, params) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/price-type-recognition`, { params })
 
 export const fetchQuotePricePrepare = (oaNo, itemId, params) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/price-prepare`, { params })
@@ -138,17 +100,29 @@ export const generateQuotePricePrepare = (oaNo, itemId, body = {}) =>
 export const fetchQuoteCostRun = (oaNo, itemId, params) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/cost-run`, { params })
 
-export const trialQuoteCostRun = (oaNo, itemId, body = {}) =>
-  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/cost-run/trial`, {
+export const fetchQuoteCostResultHistory = (oaNo, itemId) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/cost-result-history`)
+
+export const fetchQuoteMonthlyCostResultDetail = (oaNo, itemId, resultId) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/cost-result-history/monthly/${encodePath(resultId)}`)
+
+export const submitQuoteProductCostRun = (oaNo, itemId, body = {}) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/cost-runs`, {
     method: 'POST',
     body,
   })
 
-export const confirmQuoteCostRun = (oaNo, itemId, costRunNo, body = {}) =>
-  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/cost-run/${encodePath(costRunNo)}/confirm`, {
+export const submitQuoteBatchCostRun = (oaNo, body = {}) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/cost-runs`, {
     method: 'POST',
     body,
   })
+
+export const fetchCurrentQuoteBatchCostRun = (oaNo, params = {}) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/cost-runs/current`, { params })
+
+export const fetchCurrentQuoteProductCostRunTask = (oaNo, itemId, params = {}) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/cost-runs/current`, { params })
 
 export const costRunVersionExportUrl = (oaNo, itemId, versionId) =>
   `/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/cost-run/versions/${encodePath(versionId)}/export`

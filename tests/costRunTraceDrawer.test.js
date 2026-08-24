@@ -25,6 +25,15 @@ describe('T10 成本一览表核算底稿抽屉', () => {
     assert.match(detailPageContent, /productCode \|\| route\.query\.materialCode/)
   })
 
+  it('上卷行显示父件和子件，底稿仍使用原始父件料号', () => {
+    assert.match(detailPageContent, /displayPartName: toText\(item\.displayPartName \|\| item\.partName\)/)
+    assert.match(detailPageContent, /displayPartCode: toText\(item\.displayPartCode \|\| item\.partCode\)/)
+    assert.match(detailPageContent, /displayDrawingNo: toText\(item\.displayPartDrawingNo \|\| item\.partDrawingNo\)/)
+    assert.match(detailPageContent, /class="part-identity">\{\{ item\.displayPartName \}\}/)
+    assert.match(detailPageContent, /partCode: item\?\.partCode/)
+    assert.match(detailPageContent, /wrapText: true/)
+  })
+
   it('完整成本表不展示也不导出运费', () => {
     assert.doesNotMatch(detailPageContent, /OTHER_EXP_FREIGHT/)
     assert.doesNotMatch(detailPageContent, />运费</)
