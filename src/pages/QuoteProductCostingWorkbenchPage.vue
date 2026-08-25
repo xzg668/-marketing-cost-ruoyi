@@ -427,6 +427,9 @@
               <el-table-column label="品名" min-width="180" fixed="left" show-overflow-tooltip>
                 <template #default="{ row }"><span class="rollup-identity">{{ row.childName || '-' }}</span></template>
               </el-table-column>
+              <el-table-column label="规格" min-width="170" show-overflow-tooltip>
+                <template #default="{ row }"><span class="rollup-identity">{{ row.childSpec || '-' }}</span></template>
+              </el-table-column>
               <el-table-column label="型号" min-width="170" show-overflow-tooltip>
                 <template #default="{ row }"><span class="rollup-identity">{{ row.childModel || '-' }}</span></template>
               </el-table-column>
@@ -436,9 +439,15 @@
               <el-table-column label="顶层用量" width="120" align="right">
                 <template #default="{ row }">{{ formatSnapshotDecimal(row.qtyPerTop, 8) }}</template>
               </el-table-column>
-              <el-table-column prop="unit" label="单位" width="100" />
-              <el-table-column prop="materialAttribute" label="材料属性" width="150" show-overflow-tooltip />
-              <el-table-column prop="shapeAttribute" label="形态属性" width="150" show-overflow-tooltip />
+              <el-table-column label="单位" width="100">
+                <template #default="{ row }"><span class="rollup-identity">{{ row.unit || '-' }}</span></template>
+              </el-table-column>
+              <el-table-column label="材料属性" width="150" show-overflow-tooltip>
+                <template #default="{ row }"><span class="rollup-identity">{{ row.materialAttribute || '-' }}</span></template>
+              </el-table-column>
+              <el-table-column label="形态属性" width="150" show-overflow-tooltip>
+                <template #default="{ row }"><span class="rollup-identity">{{ row.shapeAttribute || '-' }}</span></template>
+              </el-table-column>
               <template #empty>
                 <el-empty description="暂无 BOM 行" />
               </template>

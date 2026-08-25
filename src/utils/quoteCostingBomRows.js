@@ -17,7 +17,7 @@ function parentChildDisplay(parentValue, childValue) {
 /**
  * 上卷父件按命中子件拆成见机表展示行。
  *
- * 每条展示行仍指向同一条父件结算行：品名、料号、图号都按“父件\n【子件】”显示；
+ * 每条展示行仍指向同一条父件结算行：物料字段按“父件\n【子件】”显示；
  * 不额外生成原材料行或废料行，也不改变后台结算行数量。
  */
 export function expandQuoteBomDisplayRows(rows) {
@@ -45,15 +45,28 @@ export function expandQuoteBomDisplayRows(rows) {
         firstText(sourceRow.childName, sourceRow.childCode, '父件'),
         firstText(component.childName, component.childCode, '上卷子件'),
       ),
+      childSpec: parentChildDisplay(
+        firstText(component.parentSpec, sourceRow.childSpec),
+        component.childSpec,
+      ),
       childModel: parentChildDisplay(
-        firstText(component.parentDrawingNo, sourceRow.childModel),
-        component.childDrawingNo,
+        firstText(component.parentModel, sourceRow.childModel),
+        component.childModel,
       ),
       usageQty: component.usageQty ?? sourceRow.usageQty,
       qtyPerTop: component.qtyPerTop ?? sourceRow.qtyPerTop,
-      unit: firstText(component.unit, sourceRow.unit),
-      materialAttribute: sourceRow.materialAttribute || '',
-      shapeAttribute: sourceRow.shapeAttribute || '',
+      unit: parentChildDisplay(
+        firstText(component.parentUnit, sourceRow.unit),
+        component.childUnit,
+      ),
+      materialAttribute: parentChildDisplay(
+        firstText(component.parentMaterialAttribute, sourceRow.materialAttribute),
+        component.childMaterialAttribute,
+      ),
+      shapeAttribute: parentChildDisplay(
+        firstText(component.parentShapeAttribute, sourceRow.shapeAttribute),
+        component.childShapeAttribute,
+      ),
       rollupDisplay: true,
       rollupDisplayIndex: componentIndex,
       rollupDisplayCount: components.length,

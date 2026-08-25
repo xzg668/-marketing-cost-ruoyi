@@ -213,23 +213,33 @@ describe('T11 报价单接入工作台工具', () => {
 })
 
 describe('报价物料上卷展示', () => {
-  it('品名、料号、图号都按父件换行【子件】展示，不增加结算行', () => {
+  it('物料字段都按父件换行【子件】展示，不增加结算行', () => {
     const parent = {
       id: 4057,
       childCode: '201190083',
       childName: '接管',
-      childModel: 'T-JG-0029',
+      childSpec: 'PARENT-SPEC',
+      childModel: 'PARENT-MODEL',
       usageQty: 1,
       qtyPerTop: 1,
+      unit: '个',
+      materialAttribute: '黄铜',
       shapeAttribute: '制造件',
       rollupComponents: [{
         childCode: '301050120',
         childName: '拉制铜管',
-        childDrawingNo: 'CHILD-DRAWING',
-        parentDrawingNo: 'T-JG-0029',
+        childSpec: 'CHILD-SPEC',
+        childModel: 'CHILD-MODEL',
+        childUnit: '千克',
+        childMaterialAttribute: '紫铜',
+        childShapeAttribute: '采购件',
+        parentSpec: 'PARENT-SPEC',
+        parentModel: 'PARENT-MODEL',
+        parentUnit: '个',
+        parentMaterialAttribute: '黄铜',
+        parentShapeAttribute: '制造件',
         usageQty: 0.00381546,
         qtyPerTop: 0.00381546,
-        unit: '千克',
       }],
     }
 
@@ -238,9 +248,12 @@ describe('报价物料上卷展示', () => {
     assert.equal(rows.length, 1)
     assert.equal(rows[0].childCode, '201190083\n【301050120】')
     assert.equal(rows[0].childName, '接管\n【拉制铜管】')
-    assert.equal(rows[0].childModel, 'T-JG-0029\n【CHILD-DRAWING】')
+    assert.equal(rows[0].childSpec, 'PARENT-SPEC\n【CHILD-SPEC】')
+    assert.equal(rows[0].childModel, 'PARENT-MODEL\n【CHILD-MODEL】')
+    assert.equal(rows[0].unit, '个\n【千克】')
+    assert.equal(rows[0].materialAttribute, '黄铜\n【紫铜】')
+    assert.equal(rows[0].shapeAttribute, '制造件\n【采购件】')
     assert.equal(rows[0].usageQty, 0.00381546)
-    assert.equal(rows[0].shapeAttribute, '制造件')
     assert.equal(rows[0].sourceRow, parent)
     assert.equal('children' in rows[0], false)
   })
@@ -252,8 +265,8 @@ describe('报价物料上卷展示', () => {
       childName: 'A板片组件',
       childModel: 'A-DRAWING',
       rollupComponents: [
-        { childCode: 'RAW-CU', childName: '铜箔', childDrawingNo: 'CU-DRAWING' },
-        { childCode: 'RAW-SUS', childName: '不锈钢卷', childDrawingNo: 'SUS-DRAWING' },
+        { childCode: 'RAW-CU', childName: '铜箔', childModel: 'CU-DRAWING' },
+        { childCode: 'RAW-SUS', childName: '不锈钢卷', childModel: 'SUS-DRAWING' },
       ],
     }
 
