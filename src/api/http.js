@@ -5,6 +5,10 @@ import {
   saveTraceId,
   getTraceId,
 } from '../utils/errorHandler'
+import {
+  getCollaborationPortalToken,
+  isCollaborationPortalPath,
+} from '../utils/collaborationPortal'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 
@@ -16,9 +20,14 @@ const instance = axios.create({
 
 // 请求拦截器：注入 token + 回传 traceId（来自上一次响应），便于全链路追踪
 instance.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
+  if (isCollaborationPortalPath()) {
+    const collaborationToken = getCollaborationPortalToken()
+    if (collaborationToken) {
+      config.headers['X-Collaboration-Token'] = collaborationToken
+    }
+  } else {
+    const token = localStorage.getItem('token')
+    if (token) config.headers.Authorization = `Bearer ${token}`
   }
   // T35：把会话 traceId 透传给后端，后端 TraceIdFilter 会优先复用该值
   const traceId = getTraceId()

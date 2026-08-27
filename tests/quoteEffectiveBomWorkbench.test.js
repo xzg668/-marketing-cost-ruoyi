@@ -65,12 +65,10 @@ describe('QEB-14 核算工作台最终有效 BOM 接入', () => {
     assert.doesNotMatch(pageContent, /v-model="[^\"]*priceOrg/)
   })
 
-  it('QEB-16 支持关闭主链后恢复旧原始 BOM 树且取消第 1 步门禁', () => {
-    assert.match(pageContent, /effectiveBomEnabled !== false/)
-    assert.match(pageContent, /getBomHierarchy/)
-    assert.match(pageContent, /最终有效 BOM 当前未启用/)
-    assert.match(pageContent, /旧版原始 BOM/)
+  it('核算工作台只保留最终有效 BOM 主链', () => {
+    assert.doesNotMatch(pageContent, /effectiveBomEnabled|effectiveBomFeatureEnabled/)
+    assert.doesNotMatch(pageContent, /getBomHierarchy|旧版原始 BOM|最终有效 BOM 当前未启用/)
     assert.match(pageContent, /function beforeWorkbenchTabLeave\(\)[\s\S]*return true/)
-    assert.match(pageContent, /if \(effectiveBomFeatureEnabled\.value\) \{\s+await loadEffectiveBom\(\)/)
+    assert.match(pageContent, /await loadEffectiveBom\(\)/)
   })
 })

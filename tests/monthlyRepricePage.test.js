@@ -7,7 +7,7 @@ const ROOT = path.resolve(import.meta.dirname, '..')
 const API_FILE = path.join(ROOT, 'src/api/monthlyReprice.js')
 const PAGE_FILE = path.join(ROOT, 'src/pages/MonthlyRepricePage.vue')
 const VIEW_FILE = path.join(ROOT, 'src/views/settlement/monthly-adjustment/index.vue')
-const COST_RUN_PAGE_FILE = path.join(ROOT, 'src/pages/CostRunPage.vue')
+const COST_RUN_PAGE_FILE = path.join(ROOT, 'src/pages/QuoteProductCostingWorkbenchPage.vue')
 const MENU_FILE = path.resolve(
   ROOT,
   '../marketing-cost-api/marketing-cost-biz/src/main/resources/db/V128__monthly_reprice_menu_seed.sql'
@@ -98,10 +98,10 @@ describe('T11 月度调价页面契约', () => {
     assert.match(pageContent, /Number\(row\?\.failedCount \|\| 0\) === 0/)
   })
 
-  it('普通成本核算页接入月度调价锁定提示并置灰试算按钮', () => {
+  it('唯一核算工作台接入月度调价锁定提示并置灰核算按钮', () => {
     assert.match(costRunContent, /fetchMonthlyRepriceActiveLock/)
-    assert.match(costRunContent, /activeRepriceLock\.locked/)
-    assert.match(costRunContent, /:disabled="isCostRunLocked\(row\)"/)
+    assert.match(costRunContent, /costRunRepriceLocked/)
+    assert.match(costRunContent, /:disabled="costRunRepriceLocked"/)
     assert.match(costRunContent, /当前业务单元正在月度调价/)
   })
 

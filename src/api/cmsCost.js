@@ -40,11 +40,6 @@ export function normalizeCmsCostImportResult(response) {
     workshopRowCount: Number(result.workshopRowCount || 0),
     subjectRowCount: Number(result.subjectRowCount || 0),
     subjectSettingRowCount: Number(result.subjectSettingRowCount || 0),
-    salaryInsertCount: Number(result.salaryInsertCount || 0),
-    salarySkipCount: Number(result.salarySkipCount || 0),
-    salaryBlockedCount: Number(result.salaryBlockedCount || 0),
-    auxInsertCount: Number(result.auxInsertCount || 0),
-    auxSkipCount: Number(result.auxSkipCount || 0),
     errorCount: Number(result.errorCount || 0),
     errorMessage: result.errorMessage || '',
   }

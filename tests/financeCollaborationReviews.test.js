@@ -19,7 +19,7 @@ test('QCBP-19 finance review uses only current-user scoped real APIs', () => {
 
 test('finance page renders one explicit access state instead of duplicate error toasts or a false empty state', () => {
   assert.match(page, /当前账号没有补录审核权限/)
-  assert.match(page, /管理员账号不能代替财务审核人/)
+  assert.match(page, /请使用发起本次核算的报价账号，或被指定的财务审核账号登录/)
   assert.match(page, /isDomainError\(error, 'TASK_ASSIGNEE_MISMATCH'\)/)
   assert.match(page, /showErrorOnce\(error, '审核清单加载失败'\)/)
   assert.doesNotMatch(page, /ElMessage\.error\(error\.message/)

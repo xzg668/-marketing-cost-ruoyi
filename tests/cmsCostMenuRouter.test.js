@@ -23,6 +23,10 @@ const MATERIAL_SCRAP_REF_MENU_REPAIR_FILE = path.resolve(
   ROOT,
   '../marketing-cost-api/marketing-cost-biz/src/main/resources/db/V71__cms_material_scrap_ref_menu_repair.sql'
 )
+const LEGACY_SOURCE_CLEANUP_FILE = path.resolve(
+  ROOT,
+  '../marketing-cost-api/marketing-cost-biz/src/main/resources/db/V238__remove_legacy_salary_aux_and_cu_diff_storage.sql'
+)
 
 const migrationContent = [
   fs.readFileSync(MENU_MIGRATION_FILE, 'utf-8'),
@@ -34,6 +38,7 @@ const pageShellContent = fs.readFileSync(path.join(COMPONENTS_DIR, 'CmsCostPageS
 const subjectSettingPageContent = fs.readFileSync(path.join(PAGES_DIR, 'CmsSubjectSettingPage.vue'), 'utf-8')
 const effectiveSourcePageContent = fs.readFileSync(path.join(PAGES_DIR, 'CmsCostEffectiveSourcePage.vue'), 'utf-8')
 const sidebarContent = fs.readFileSync(path.join(LAYOUT_DIR, 'Sidebar.vue'), 'utf-8')
+const cleanupContent = fs.readFileSync(LEGACY_SOURCE_CLEANUP_FILE, 'utf-8')
 
 const cmsPages = [
   'CmsCostImportPage.vue',
@@ -108,9 +113,14 @@ describe('T12 CMS 成本数据菜单和路由', () => {
     assert.match(migrationContent, /SELECT DISTINCT role_id,\s*40238[\s\S]*WHERE menu_id IN \(40230,\s*40237\)/)
   })
 
-  it('不移动既有工资表和辅料管理入口', () => {
+  it('历史 CMS 菜单迁移不接管旧入口，最新迁移完整删除旧工资和辅料菜单', () => {
     assert.doesNotMatch(migrationContent, /工资表'\s*,\s*40230/)
     assert.doesNotMatch(migrationContent, /辅料管理'\s*,\s*40230/)
+    assert.match(cleanupContent, /base\/auxiliary\/subject\/index/)
+    assert.match(cleanupContent, /base\/auxiliary\/item\/index/)
+    assert.match(cleanupContent, /base\/salary\/index/)
+    assert.match(cleanupContent, /base:salary:%/)
+    assert.match(cleanupContent, /base:aux-%/)
   })
 
   it('侧边栏展示 CMS 原始明细叶子菜单，追溯页仍支持 tab 切换', () => {

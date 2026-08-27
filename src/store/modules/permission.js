@@ -22,25 +22,19 @@ const pageModules = import.meta.glob('../../pages/**/*.vue')
  *   - 无前缀           → 先找 views/，找不到再找 pages/
  */
 const componentAliasMap = {
-  // 成本试算
-  'cost-trial/oa-form/index':       'pages:OaFormListPage',
   'cost/price-prepare/index':       'views:cost/price-prepare/index',
-  'cost-trial/trial-run/index':     'pages:CostRunPage',
-  'cost-trial/trial-result/index':  'pages:CostRunResultPage',
   'cost-trial/cost-detail/index':   'pages:CostRunDetailPage',
   // 基础数据
   'base-data/material/index':        'views:base/materweight/index',
   'base-data/material-price/index':  'views:base/map/index',
   'base-data/product-property/index':'views:base/productProperty/index',
   'base-data/bom/index':             'pages:BomManagePage',
-  'base-data/salary-cost/index':     'views:base/salary/index',
   // 费率管理
   'rate/manufacture-rate/index':     'views:base/manufactureRate/index',
   'rate/three-expense-rate/index':   'views:base/threeExpenseRate/index',
   'rate/quality-loss-rate/index':    'views:base/quantityLoss/index',
   'rate/department-fund-rate/index': 'views:base/fixed/index',
   'rate/other-expense-rate/index':   'views:base/other/index',
-  'rate/aux-rate/index':             'views:base/auxiliary/subject/index',
   'rate/finance-base-price/index':   'pages:PriceLinkedFinanceBasePage',
   // 价格管理
   'price/price-variable/index':      'pages:PriceVariableAdminPage',

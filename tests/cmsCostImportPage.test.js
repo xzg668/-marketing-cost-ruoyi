@@ -43,12 +43,9 @@ describe('T13 CMS 成本导入 API', () => {
     assert.match(apiContent, /workshopRowCount/)
     assert.match(apiContent, /subjectRowCount/)
     assert.match(apiContent, /subjectSettingRowCount/)
-    assert.match(apiContent, /salaryInsertCount/)
-    assert.match(apiContent, /salarySkipCount/)
-    assert.match(apiContent, /salaryBlockedCount/)
-    assert.match(apiContent, /auxInsertCount/)
-    assert.match(apiContent, /auxSkipCount/)
     assert.match(apiContent, /errorCount/)
+    assert.doesNotMatch(apiContent, /salaryInsertCount|salarySkipCount|salaryBlockedCount/)
+    assert.doesNotMatch(apiContent, /auxInsertCount|auxSkipCount/)
   })
 })
 
@@ -73,12 +70,8 @@ describe('T13 CMS 成本导入页面', () => {
 
   it('上传成功后展示统计，不再跳转独立导入批次页', () => {
     assert.match(pageContent, /科目设置行数/)
-    assert.match(pageContent, /工资新增/)
-    assert.match(pageContent, /工资跳过/)
-    assert.match(pageContent, /工资阻断/)
-    assert.match(pageContent, /辅料新增/)
-    assert.match(pageContent, /辅料跳过/)
     assert.match(pageContent, /异常数量/)
+    assert.doesNotMatch(pageContent, /工资新增|工资跳过|工资阻断|辅料新增|辅料跳过/)
     assert.doesNotMatch(pageContent, /goBatch/)
     assert.doesNotMatch(pageContent, /goDeriveLogs/)
     assert.doesNotMatch(pageContent, /\/base\/cms-cost\/batches/)

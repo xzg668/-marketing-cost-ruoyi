@@ -6,13 +6,23 @@
       </el-steps>
     </el-card>
 
+    <ElectronicDrawingExcelImportPanel
+      ref="electronicImportPanel"
+      v-if="workspace"
+      :task-id="props.taskId"
+      :task-version="workspace.taskVersion"
+      :active-source="workspace.draft?.sourceMode || ''"
+      :confirmed="Boolean(workspace.electronicBomFingerprint)"
+      @updated="handleElectronicImportUpdated"
+    />
+
     <template v-if="workspace?.currentStep === 1">
       <el-card shadow="never" class="workspace-card">
         <template #header>
           <div class="card-heading">
             <div>
               <strong>1. 找参考BOM</strong>
-              <p>按当前产品的规格、型号，在本任务有权限的 U9 报价组织中查找。</p>
+              <p>可查找 U9 相似 BOM，也可直接上传电子图库接口下载的正式 Excel。</p>
             </div>
             <el-button @click="openNewDialog()">没有合适参考，全新建立</el-button>
           </div>
@@ -58,8 +68,8 @@
         <template #header>
           <div class="card-heading">
             <div>
-              <strong>2. 编辑并导出完整BOM</strong>
-              <p>{{ draftSourceText }}；页面与后续导出使用同一份完整父子数据。</p>
+              <strong>{{ isElectronicExcelDraft ? '2. 核对电子图库BOM与料号' : '2. 编辑并导出完整BOM' }}</strong>
+              <p>{{ draftSourceText }}；页面、提交审核与后续核算使用同一份完整父子数据。</p>
             </div>
             <div class="header-actions">
               <el-button v-if="workspace?.currentStep === 3" @click="editingDraft = false">返回第3步</el-button>
@@ -86,6 +96,7 @@
               <div class="material-cell">
                 <strong>{{ data.materialName || '待填写名称' }}</strong>
                 <span>{{ data.materialCode || '新品暂无料号' }} · {{ [data.materialSpec, data.materialModel].filter(Boolean).join(' / ') || '待填写规格型号' }}</span>
+                <span v-if="data.drawingNo">图号：{{ data.drawingNo }}</span>
               </div>
               <el-tag effect="plain" :type="natureTag(data.materialNature)">{{ natureLabel(data.materialNature) }}</el-tag>
               <span class="qty-cell">{{ data.quantity }} {{ data.unit || '-' }}</span>
@@ -116,7 +127,7 @@
 
         <div class="primary-bar">
           <span>保存会同时检查正式料号、父子关系、用量和物料性质。</span>
-          <el-button type="primary" @click="saveDraft">保存并检查完整BOM</el-button>
+          <el-button type="primary" @click="saveDraft">{{ isElectronicExcelDraft ? '保存并检查电子图库BOM' : '保存并检查完整BOM' }}</el-button>
         </div>
       </el-card>
     </template>
@@ -127,12 +138,21 @@
           <div class="card-heading">
             <div>
               <strong>3. 在电子图库录入并回取校验</strong>
-              <p>报价系统只在电子图库真实返回完整有效BOM后，才认定补录完成。</p>
+              <p>系统按产品图号 {{ workspace.target?.productDrawingNo || '（缺少正式图号）' }} 查询电子图库；真实返回完整有效BOM后才认定补录完成。</p>
             </div>
             <el-tag v-if="workspace.electronicBomFingerprint" type="success" effect="plain">已回取校验</el-tag>
             <el-tag v-else type="warning" effect="plain">待回取校验</el-tag>
           </div>
         </template>
+
+        <el-alert
+          v-if="!workspace.target?.productDrawingNo"
+          title="当前产品缺少正式图号，不能查询电子图库BOM；请先维护产品图号。"
+          type="warning"
+          :closable="false"
+          show-icon
+          class="draft-issues"
+        />
 
         <el-alert
           v-if="workspace.verificationIssues?.length"
@@ -157,7 +177,7 @@
           <el-button @click="editingDraft = true">返回修改BOM</el-button>
           <div class="primary-actions">
             <el-button @click="downloadTemplate">下载电子图库BOM模板</el-button>
-            <el-button type="primary" @click="verifyElectronicBom">我已录入，回取并校验</el-button>
+            <el-button type="primary" :disabled="!workspace.target?.productDrawingNo" @click="verifyElectronicBom">按图号回取并校验</el-button>
           </div>
         </div>
       </el-card>
@@ -229,12 +249,14 @@ import {
 } from '../api/technicalCollaborationTasks'
 import { downloadBlob } from '../utils/quoteImport'
 import { showErrorOnce } from '../utils/errorHandler'
+import ElectronicDrawingExcelImportPanel from './ElectronicDrawingExcelImportPanel.vue'
 
 const props = defineProps({ taskId: { type: [String, Number], required: true } })
 const emit = defineEmits(['updated'])
 const loading = ref(false)
 const acting = ref(false)
 const workspace = ref(null)
+const electronicImportPanel = ref(null)
 const candidates = ref([])
 const selectedKey = ref('')
 const filters = reactive({ keyword: '', spec: '', model: '' })
@@ -266,7 +288,11 @@ const newRoot = reactive({
 const selectedCandidate = computed(() => candidates.value.find(row => candidateKey(row) === selectedKey.value))
 const rootFieldsRequired = computed(() => !workspace.value?.target?.productCode)
 const draftSourceText = computed(() => workspace.value?.draft?.sourceMode === 'U9_COPY'
-  ? `参考料号：${workspace.value.draft.referenceProductCode || '-'}` : '全新建立的目标BOM')
+  ? `参考料号：${workspace.value.draft.referenceProductCode || '-'}`
+  : workspace.value?.draft?.sourceMode === 'ELECTRONIC_DRAWING_EXCEL'
+    ? '电子图库正式 Excel 已解析并保存为本任务草稿'
+    : '全新建立的目标BOM')
+const isElectronicExcelDraft = computed(() => workspace.value?.draft?.sourceMode === 'ELECTRONIC_DRAWING_EXCEL')
 const visibleTree = computed(() => {
   const tree = workspace.value?.draft?.tree || []
   return changedOnly.value ? filterChangedTree(tree) : tree
@@ -369,7 +395,8 @@ async function confirmRootDraft() {
 }
 
 function applyDraft(draft, advanceWhenReady) {
-  const advance = Boolean(advanceWhenReady && draft.exportReady)
+  const electronicExcel = draft.sourceMode === 'ELECTRONIC_DRAWING_EXCEL'
+  const advance = Boolean(!electronicExcel && advanceWhenReady && draft.exportReady)
   workspace.value = {
     ...workspace.value, taskVersion: draft.taskVersion,
     currentStep: advance ? 3 : 2,
@@ -379,6 +406,26 @@ function applyDraft(draft, advanceWhenReady) {
   }
   editingDraft.value = false
   emit('updated', draft.taskVersion)
+}
+
+async function handleElectronicImportUpdated(result) {
+  if (result?.confirmed) {
+    await load()
+    emit('updated', result.taskVersion)
+    return
+  }
+  if (result?.parsed && result?.draft) {
+    workspace.value = {
+      ...workspace.value,
+      taskVersion: result.taskVersion,
+      currentStep: 2,
+      primaryAction: 'SAVE_DRAFT',
+      primaryActionLabel: '核对料号和完整BOM',
+      draft: result.draft,
+    }
+    editingDraft.value = false
+  }
+  emit('updated', result?.taskVersion || workspace.value?.taskVersion)
 }
 
 function emptyNode() {
@@ -480,6 +527,8 @@ async function saveDraft() {
       nodes: workspace.value.draft.flatNodes.map(({ children, level, quantityToTop, temporaryMaterial, ...row }) => row),
     })
     applyDraft(draft, true)
+    // 正式 Excel 草稿检查后立即重读服务端解析状态，避免上方面板仍停留在“待处理”。
+    if (isElectronicExcelDraft.value) await electronicImportPanel.value?.refresh()
     draft.exportReady
       ? ElMessage.success('完整BOM已保存并通过草稿检查')
       : ElMessage.warning(`草稿已保存，还有${draft.issues.length}项需要补齐`)

@@ -178,11 +178,6 @@ const stats = computed(() => {
     { label: '车间料工费行数', value: row.workshopRowCount || 0 },
     { label: '科目成本行数', value: row.subjectRowCount || 0 },
     { label: '科目设置行数', value: row.subjectSettingRowCount || 0 },
-    { label: '工资新增', value: row.salaryInsertCount || 0 },
-    { label: '工资跳过', value: row.salarySkipCount || 0 },
-    { label: '工资阻断', value: row.salaryBlockedCount || 0 },
-    { label: '辅料新增', value: row.auxInsertCount || 0 },
-    { label: '辅料跳过', value: row.auxSkipCount || 0 },
     { label: '异常数量', value: row.errorCount || 0 },
   ]
 })

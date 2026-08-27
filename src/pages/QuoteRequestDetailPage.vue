@@ -24,6 +24,7 @@
       </div>
       <el-progress :percentage="batchRun.progress || 0" :show-text="false" :stroke-width="8" />
       <div class="batch-progress__counts">
+        业务结果：{{ batchBusinessOutcomeLabel(batchRun.businessOutcome) }}；
         共 {{ batchRun.totalCount || 0 }} 项，成功 {{ batchRun.successCount || 0 }}，
         协作 {{ batchRun.collaborationCount || 0 }}，运行 {{ batchRun.runningCount || 0 }}，
         排队 {{ batchRun.queuedCount || 0 }}，跳过 {{ batchRun.skippedCurrentCount || 0 }}，
@@ -69,7 +70,7 @@
         <div class="table-toolbar">
           <div class="table-toolbar__meta">已选择 {{ selectedItems.length }} 项</div>
           <el-button type="warning" :disabled="selectedItems.length === 0" :loading="tasking" @click="handleBatchSupplement">
-            批量指定/发起补录
+            批量发起协作
           </el-button>
         </div>
         <el-table
@@ -95,6 +96,9 @@
           </el-table-column>
           <el-table-column label="三花型号" min-width="180">
             <template #default="{ row }">{{ row.sunlModel || row.spec || '未填写' }}</template>
+          </el-table-column>
+          <el-table-column label="客户图号" min-width="160">
+            <template #default="{ row }">{{ row.customerDrawing || '未填写' }}</template>
           </el-table-column>
           <el-table-column label="业务类型" prop="businessType" min-width="110">
             <template #default="{ row }">{{ row.businessType || '未填写' }}</template>
@@ -188,7 +192,15 @@
         </el-timeline-item>
       </el-timeline>
       <el-empty v-else description="暂无变更记录" />
-      <template #footer><el-button @click="historyDialog.visible = false">关闭</el-button></template>
+      <template #footer>
+        <el-button
+          v-if="historyDialog.data.productTaskId"
+          type="primary"
+          :loading="historyDialog.creatingLink"
+          @click="createPortalLink"
+        >复制技术协作链接</el-button>
+        <el-button @click="historyDialog.visible = false">关闭</el-button>
+      </template>
     </el-dialog>
 
     <el-dialog
@@ -374,18 +386,21 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import {
   batchStartQuoteCollaboration,
   confirmQuoteRequestClassification,
+  createCollaborationPortalAccessLink,
   fetchQuoteItemCollaborationHistory,
+  fetchQuoteCollaborationSummary,
   fetchQuoteCostResultHistory,
   fetchQuoteMonthlyCostResultDetail,
   fetchCurrentQuoteBatchCostRun,
   fetchQuoteRequestDetail,
   fetchQuoteTechnicianCandidates,
   refreshQuoteCollaborationSummary,
+  scanQuoteItemCollaboration,
   startQuoteItemCollaboration,
   submitQuoteProductCostRun,
   submitQuoteBatchCostRun,
@@ -396,6 +411,7 @@ import {
   buildStoredCollaborationSummary,
   canBatchStartCollaboration,
   collaborationTagType,
+  mergeCollaborationItems,
   mergeCollaborationSummary,
   STARTABLE_COLLABORATION_ACTIONS,
 } from '../utils/quoteCollaboration'
@@ -421,7 +437,7 @@ const activeTab = ref('items')
 const detail = ref({})
 const selectedItems = ref([])
 const itemsTableRef = ref()
-const historyDialog = reactive({ visible: false, data: {} })
+const historyDialog = reactive({ visible: false, creatingLink: false, data: {} })
 const costResultDialog = reactive({
   visible: false,
   loading: false,
@@ -453,9 +469,16 @@ async function loadDetail() {
     const base = await fetchQuoteRequestDetail(requestedOaNo)
     if (requestedOaNo !== oaNo.value) return
     detail.value = mergeCollaborationSummary(base, buildStoredCollaborationSummary(base))
+    loading.value = false
     selectedItems.value = []
     await locateReturnRow()
-    await loadBatchProgress()
+    const [summaryResult] = await Promise.allSettled([
+      fetchQuoteCollaborationSummary(requestedOaNo),
+      loadBatchProgress(),
+    ])
+    if (requestedOaNo === oaNo.value && summaryResult.status === 'fulfilled') {
+      detail.value = mergeCollaborationSummary(detail.value, summaryResult.value)
+    }
   } catch (error) {
     detail.value = {}
     ElMessage.error(error?.message || '获取报价单详情失败')
@@ -502,14 +525,23 @@ async function pollBatchProgress() {
     const finished = batchRun.value?.active && !next?.active
     batchRun.value = next
     if (finished) {
-      if (next?.status === 'FAILED') {
+      if (next?.businessOutcome === 'WAITING_INPUT') {
+        ElMessage.warning('整单处理结束，但产品仍在等待业务资料补齐')
+      } else if (next?.businessOutcome === 'PARTIAL_SUCCESS') {
+        ElMessage.warning('整单仅部分产品核算成功，请处理协作或失败项')
+      } else if (next?.status === 'FAILED') {
         ElMessage.error(next.message || '整单核算执行失败，请处理后重新发起')
       } else if (next?.status === 'PARTIAL_FAILED') {
         ElMessage.warning(next.message || '整单核算已完成，但存在失败项')
       }
+      const summaryPromise = fetchQuoteCollaborationSummary(requestedOaNo)
       const base = await fetchQuoteRequestDetail(requestedOaNo)
       if (requestedOaNo === oaNo.value) {
         detail.value = mergeCollaborationSummary(base, buildStoredCollaborationSummary(base))
+      }
+      const summary = await summaryPromise
+      if (requestedOaNo === oaNo.value) {
+        detail.value = mergeCollaborationSummary(detail.value, summary)
       }
     }
   } catch {
@@ -524,6 +556,18 @@ function stopBatchPoll() {
     window.clearTimeout(batchPollTimer)
     batchPollTimer = null
   }
+}
+
+function batchBusinessOutcomeLabel(outcome) {
+  return ({
+    NOT_STARTED: '未开始',
+    IN_PROGRESS: '处理中',
+    SUCCESS: '全部成功',
+    WAITING_INPUT: '等待资料',
+    PARTIAL_SUCCESS: '部分成功',
+    FAILED: '失败',
+    CANCELED: '已取消',
+  })[outcome] || outcome || '待确认'
 }
 
 function batchStatusLabel(status) {
@@ -570,6 +614,17 @@ async function submitClassification() {
 }
 
 async function handleRowAction(row) {
+  if (needsAuthoritativeProjection(row)) {
+    actionLoadingId.value = rowActionKey(row)
+    try {
+      row.collaboration = await scanQuoteItemCollaboration(oaNo.value, row.id)
+    } catch (error) {
+      ElMessage.error(error?.message || '刷新产品状态失败')
+      return
+    } finally {
+      actionLoadingId.value = ''
+    }
+  }
   const action = row?.collaboration?.nextAction
   if (action === ASSIGN_TECHNICIAN_ACTION) return openTechnicianAssignment([row])
   if (STARTABLE_COLLABORATION_ACTIONS.has(action)) return startCollaboration(row)
@@ -587,18 +642,40 @@ async function startCollaboration(row) {
     const response = await startQuoteItemCollaboration(oaNo.value, row.id, {
       expectedProjectionVersion: row.collaboration?.projectionVersion,
     })
-    await refreshCollaboration(false)
+    applyCollaborationProjections([response?.item])
     ElMessage.success(response?.message || '协作状态已更新')
   } catch (error) { ElMessage.error(error?.message || '发起补录失败') }
   finally { actionLoadingId.value = '' }
 }
 async function handleBatchSupplement() {
-  const rows = selectedItems.value.filter(canBatchStartCollaboration)
-  if (!rows.length) return ElMessage.warning('请选择可发起补录的产品')
+  let rows = selectedItems.value.filter(canBatchStartCollaboration)
+  if (!rows.length) return ElMessage.warning('请选择可发起协作的产品')
+  const staleRows = rows.filter(needsAuthoritativeProjection)
+  if (staleRows.length) {
+    tasking.value = true
+    try {
+      const projections = await Promise.all(staleRows.map(row =>
+        scanQuoteItemCollaboration(oaNo.value, row.id)))
+      staleRows.forEach((row, index) => { row.collaboration = projections[index] })
+      rows = selectedItems.value.filter(canBatchStartCollaboration)
+    } catch (error) {
+      ElMessage.error(error?.message || '刷新所选产品状态失败')
+      return
+    } finally {
+      tasking.value = false
+    }
+  }
+  if (!rows.length) return ElMessage.info('所选产品状态已更新，无需重复发起协作')
   if (rows.some(row => row.collaboration?.nextAction === ASSIGN_TECHNICIAN_ACTION)) {
     return openTechnicianAssignment(rows)
   }
   return executeBatchStart(rows)
+}
+
+function needsAuthoritativeProjection(row) {
+  const action = row?.collaboration?.nextAction
+  return !row?.collaboration?.projectionVersion
+    && (action === ASSIGN_TECHNICIAN_ACTION || STARTABLE_COLLABORATION_ACTIONS.has(action))
 }
 async function executeBatchStart(rows, technicianUserId = null) {
   tasking.value = true
@@ -606,7 +683,9 @@ async function executeBatchStart(rows, technicianUserId = null) {
     const response = await batchStartQuoteCollaboration(oaNo.value, {
       items: buildCollaborationBatchStartItems(rows, technicianUserId),
     })
-    await refreshCollaboration(false)
+    applyCollaborationProjections(
+      (response.results || []).filter((result) => result.success).map((result) => result.item),
+    )
     if (response.failureCount) {
       const failureSummary = (response.results || [])
         .filter(result => !result.success)
@@ -656,7 +735,7 @@ async function submitTechnicianAssignment() {
         technicianUserId: assignmentDialog.selectedUserId,
         expectedProjectionVersion: row.collaboration?.projectionVersion,
       })
-      await refreshCollaboration(false)
+      applyCollaborationProjections([response?.item])
       assignmentDialog.visible = false
       ElMessage.success(response?.message || '已指定负责人并发起补录')
       return
@@ -676,6 +755,30 @@ async function openHistory(row) {
     historyDialog.visible = true
   } catch (error) { ElMessage.error(error?.message || '获取补录内容失败') }
   finally { actionLoadingId.value = '' }
+}
+
+async function createPortalLink() {
+  const taskId = historyDialog.data?.productTaskId
+  if (!taskId) return ElMessage.warning('当前没有可生成链接的协作任务')
+  historyDialog.creatingLink = true
+  try {
+    const result = await createCollaborationPortalAccessLink(taskId)
+    const url = result?.accessUrl || ''
+    if (!url) throw new Error('服务端没有返回协作链接')
+    try {
+      await navigator.clipboard.writeText(url)
+      ElMessage.success('技术协作链接已复制，可放入 OA 待办')
+    } catch {
+      await ElMessageBox.alert(url, '技术协作链接', {
+        confirmButtonText: '关闭',
+        customClass: 'collaboration-link-dialog',
+      })
+    }
+  } catch (error) {
+    ElMessage.error(error?.message || '生成技术协作链接失败')
+  } finally {
+    historyDialog.creatingLink = false
+  }
 }
 
 function hasHistoricalCostResult(row) {
@@ -768,7 +871,6 @@ async function submitSingleProductCosting(row, reason) {
     const result = await submitQuoteProductCostRun(oaNo.value, row.id, {
       reason,
     })
-    await loadDetail()
     if (result?.pipelineStatus === 'SUCCESS') {
       ElMessage.success(result.reusedSuccess ? '当前结果已是最新，无需重复核算' : '本产品核算完成')
       openCostingWorkbench(row, { tab: 'COST_RUN' })
@@ -789,6 +891,12 @@ async function submitSingleProductCosting(row, reason) {
     })
   } catch (error) { ElMessage.error(error?.message || '本产品核算失败') }
   finally { actionLoadingId.value = '' }
+}
+
+function applyCollaborationProjections(projections) {
+  detail.value = mergeCollaborationItems(detail.value, projections)
+  selectedItems.value = []
+  itemsTableRef.value?.clearSelection()
 }
 function openCostingGap(row) {
   openCostingWorkbench(row, {

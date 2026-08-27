@@ -1,22 +1,20 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import MainLayout from '../layout/index.vue'
-import CostRunResultPage from '../pages/CostRunResultPage.vue'
 import CostRunDetailPage from '../pages/CostRunDetailPage.vue'
-import OaFormDetailPage from '../pages/OaFormDetailPage.vue'
 import LoginPage from '../pages/LoginPage.vue'
 import NotFoundPage from '../pages/NotFoundPage.vue'
 import { useUserStore } from '../store/modules/user'
 import { usePermissionStore } from '../store/modules/permission'
+import { hasCollaborationPortalSession } from '../utils/collaborationPortal'
 
 /**
  * 静态路由只保留三类：
  *   1. 公共页：/login、/404、/collaborate（协作者独立 token）
  *   2. 业务详情页（带路由参数，业务代码硬编码跳转依赖）：
- *      - /cost/run/:oaNo、/cost/run/:oaNo/detail
- *      - /ingest/oa-form/:id
+ *      - /ingest/quote-requests/:oaNo/items/:itemId/costing/result
  *   3. 后台工具页：/system/dict/data
  *
- * 所有业务列表页（/cost/run、/ingest/oa-form、/base/* 等）改由
+ * 所有业务列表页（/ingest/quote-requests、/base/* 等）改由
  * permissionStore.generateRoutes() 根据后端 sys_menu 返回的 /auth/routers 动态 addRoute 注册。
  */
 const staticRoutes = [
@@ -30,23 +28,23 @@ const staticRoutes = [
     component: NotFoundPage,
     meta: { title: '页面不存在', public: true },
   },
-  // OA 协作者受限路由（无侧边栏，独立 Token 认证）
+  // 技术协作者受限路由（无侧边栏，使用系统内协作令牌）
   {
     path: '/collaborate',
     component: () => import('../layout/CollaborateLayout.vue'),
     meta: { public: true },
     children: [
       {
-        path: 'bom-supplement',
-        name: 'collaborate-bom',
-        component: () => import('../views/collaborate/BomSupplement.vue'),
-        meta: { title: 'BOM 补充数据', public: true },
+        path: 'tasks',
+        name: 'collaborate-tasks',
+        component: () => import('../views/collaboration/technical/index.vue'),
+        meta: { title: '技术协作任务', public: true, collaborationPortal: true },
       },
       {
-        path: 'price-supplement',
-        name: 'collaborate-price',
-        component: () => import('../views/collaborate/PriceSupplement.vue'),
-        meta: { title: '价格补充数据', public: true },
+        path: 'product-tasks/:taskId',
+        name: 'collaborate-product-task',
+        component: () => import('../pages/TechnicalCollaborationTaskPage.vue'),
+        meta: { title: '技术协作任务', public: true, collaborationPortal: true },
       },
     ],
   },
@@ -55,22 +53,10 @@ const staticRoutes = [
     component: MainLayout,
     children: [
       {
-        path: '/cost/run/:oaNo',
-        name: 'cost-run-result',
-        component: CostRunResultPage,
-        meta: { title: '成本试算结果', activeMenu: '/cost/run' },
-      },
-      {
-        path: '/cost/run/:oaNo/detail',
+        path: '/ingest/quote-requests/:oaNo/items/:itemId/costing/result',
         name: 'cost-run-detail',
         component: CostRunDetailPage,
-        meta: { title: '产品成本计算一览表', activeMenu: '/cost/run' },
-      },
-      {
-        path: '/ingest/oa-form/:id',
-        name: 'ingest-oa-detail',
-        component: OaFormDetailPage,
-        meta: { title: 'OA表单详情', activeMenu: '/ingest/oa-form' },
+        meta: { title: '产品成本计算一览表', activeMenu: '/ingest/quote-requests' },
       },
       {
         path: '/ingest/quote-requests/import',
@@ -127,7 +113,7 @@ const TECHNICAL_TASK_LIST_PATH = '/collaboration/tasks'
 
 function isTechnicalOnlyUser(userStore) {
   return userStore.roles.some(
-    (role) => String(role).toUpperCase() === 'OA_COLLABORATOR'
+    (role) => String(role).toUpperCase() === 'TECHNICAL_COLLABORATOR'
   ) && !userStore.permissions.includes('ingest:quote:list')
 }
 
@@ -180,6 +166,12 @@ router.beforeEach(async (to, from, next) => {
   const permissionStore = usePermissionStore()
   const token = userStore.token || localStorage.getItem('token')
   const isPublic = to.meta?.public
+
+  // 外部协作链接一旦在当前标签页建立受限会话，该标签页就只能访问协作门户。
+  // 即便浏览器里残留普通用户 JWT，也不能借此跳进报价、成本或系统管理页面。
+  if (hasCollaborationPortalSession() && !to.meta?.collaborationPortal) {
+    return next({ path: '/collaborate/tasks', replace: true })
+  }
 
   if (isPublic) {
     if (to.path === '/login' && token) return next('/')

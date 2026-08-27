@@ -46,36 +46,12 @@ const appStore = useAppStore()
 const permissionStore = usePermissionStore()
 const isNarrowViewport = ref(false)
 
-// T9/V61：200 是新的“报价需求”顶级菜单；旧 BOM 入口已收敛到“BOM 数据管理”。
-// 旧 OA 报价单入口由“报价单接入”替代，按常见旧 ID 和路径双重兜底隐藏。
-const LEGACY_MENU_IDS = new Set([
-  201,
-  300,
-  400,
-  500,
-  40166,
-  // demo 残留入口：辅料管理 / 工资表。后续成本口径不再从这些维护页取数。
-  305,
-  3051,
-  3052,
-  307,
-  40164,
-  40176,
-  40182,
-  40183,
-])
-const LEGACY_OA_PATHS = new Set(['/ingest/oa-form', 'ingest/oa-form', 'oa-form'])
 const TEMPORARILY_HIDDEN_MENU_IDS = new Set([
   // 其他费用率对照表：暂时不展示侧边栏入口，后端 V176 同步隐藏菜单数据。
   312,
 ])
 const TEMPORARILY_HIDDEN_MENU_TITLES = new Set(['其他费用率对照表'])
 const TEMPORARILY_HIDDEN_MENU_PATHS = new Set(['other', '/base/other', 'base/other'])
-
-function isLegacyOaMenu(route) {
-  const title = String(route?.meta?.title || '').replace(/\s/g, '')
-  return LEGACY_OA_PATHS.has(route?.path) || title === 'OA报价单'
-}
 
 function isTemporarilyHiddenMenu(route) {
   const title = String(route?.meta?.title || '').replace(/\s/g, '')
@@ -86,23 +62,18 @@ function isTemporarilyHiddenMenu(route) {
   )
 }
 
-function pruneLegacyMenus(route) {
-  if (
-    !route ||
-    LEGACY_MENU_IDS.has(route.meta?.menuId) ||
-    isLegacyOaMenu(route) ||
-    isTemporarilyHiddenMenu(route)
-  ) {
+function pruneHiddenMenus(route) {
+  if (!route || isTemporarilyHiddenMenu(route)) {
     return null
   }
   const children = Array.isArray(route.children)
-    ? route.children.map(pruneLegacyMenus).filter(Boolean)
+    ? route.children.map(pruneHiddenMenus).filter(Boolean)
     : undefined
   return children ? { ...route, children } : route
 }
 
 const displayRoutes = computed(() =>
-  permissionStore.routes.map(pruneLegacyMenus).filter(Boolean)
+  permissionStore.routes.map(pruneHiddenMenus).filter(Boolean)
 )
 
 const activeMenu = computed(() => route.meta?.activeMenu || route.path)

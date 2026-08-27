@@ -9,6 +9,9 @@ export const fetchQuoteRequests = (params) =>
 export const fetchQuoteRequestDetail = (oaNo) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}`)
 
+export const fetchQuoteCollaborationSummary = (oaNo) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/collaboration-summary`)
+
 export const refreshQuoteCollaborationSummary = (oaNo) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}/collaboration-summary/refresh`, {
     method: 'POST',
@@ -36,6 +39,11 @@ export const batchStartQuoteCollaboration = (oaNo, body) =>
 
 export const fetchQuoteItemCollaborationHistory = (oaNo, itemId) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/collaboration/history`)
+
+export const createCollaborationPortalAccessLink = (taskId) =>
+  request(`/api/v1/collaboration/product-tasks/${encodePath(taskId)}/access-link`, {
+    method: 'POST',
+  })
 
 export const fetchQuoteCostingWorkbench = (oaNo, itemId) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/costing-workbench`)

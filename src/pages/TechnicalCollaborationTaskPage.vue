@@ -2,7 +2,7 @@
   <div class="technical-task-page" v-loading="loading">
     <div class="page-heading">
       <div>
-        <el-button link @click="router.push('/collaboration/tasks')">← 返回本人任务</el-button>
+        <el-button link @click="router.push(taskListPath)">← 返回本人任务</el-button>
         <h2>{{ task?.productName || '技术协作任务' }}</h2>
         <p v-if="task">{{ task.productCode || '新品暂无料号' }} · {{ task.productModel || task.productSpec || '-' }}</p>
       </div>
@@ -16,7 +16,7 @@
       sub-title="协助者只能查看分配给自己的产品，请返回本人任务清单。"
     >
       <template #extra>
-        <el-button type="primary" @click="router.push('/collaboration/tasks')">返回本人任务</el-button>
+        <el-button type="primary" @click="router.push(taskListPath)">返回本人任务</el-button>
       </template>
     </el-result>
 
@@ -63,18 +63,21 @@
 
       <TechnicalBomDraftWorkspace
         v-if="needsBom && task.editable && !canStart"
+        :key="`bom-${task.taskId}-${workspaceRefreshKey}`"
         :task-id="task.taskId"
         @updated="handleBomUpdated"
       />
 
       <TechnicalPackageDraftWorkspace
         v-if="needsPackage && task.editable && !canStart"
+        :key="`package-${task.taskId}-${workspaceRefreshKey}`"
         :task-id="task.taskId"
         @updated="handlePackageUpdated"
       />
 
       <TechnicalPriceDraftWorkspace
         v-if="needsPrice && task.editable && !canStart"
+        :key="`price-${task.taskId}-${workspaceRefreshKey}`"
         :task-id="task.taskId"
         :next-action="task.nextAction"
         @updated="handlePriceUpdated"
@@ -114,7 +117,7 @@
       <div class="footer-actions">
         <span class="muted">数据从服务端保存，返回重进或刷新不会丢失。</span>
         <div>
-          <el-button @click="load">刷新</el-button>
+          <el-button @click="refreshPage">刷新</el-button>
           <el-button
             v-if="canStart"
             type="primary"
@@ -178,6 +181,9 @@ const accessDenied = ref(false)
 const validationIssues = ref([])
 const logVisible = ref(false)
 const changeLog = ref([])
+const workspaceRefreshKey = ref(0)
+const taskListPath = computed(() => route.meta?.collaborationPortal
+  ? '/collaborate/tasks' : '/collaboration/tasks')
 
 const canStart = computed(() => task.value?.editable && ['WAIT_TECH', 'TECH_VALIDATION_FAILED'].includes(task.value.status))
 const canSubmit = computed(() => task.value?.editable && task.value.validationStatus === 'PASSED')
@@ -194,11 +200,18 @@ async function load() {
     task.value = await fetchTechnicalTask(route.params.taskId)
   } catch (error) {
     task.value = null
-    if (isDomainError(error, 'TASK_ASSIGNEE_MISMATCH')) accessDenied.value = true
+    if ([401, 403, 404].includes(Number(error?.resultCode))
+      || isDomainError(error, 'TASK_ASSIGNEE_MISMATCH')
+      || isDomainError(error, 'TASK_NOT_FOUND')) accessDenied.value = true
     else showErrorOnce(error, '任务加载失败')
   } finally {
     loading.value = false
   }
+}
+
+async function refreshPage() {
+  await load()
+  if (task.value) workspaceRefreshKey.value += 1
 }
 
 async function startTask() {

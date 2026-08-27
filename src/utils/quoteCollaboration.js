@@ -34,14 +34,22 @@ const BOM_STATUS_LABELS = {
 }
 
 export function mergeCollaborationSummary(detail, summary) {
-  const projections = new Map((summary?.items || []).map((item) => [String(item.itemId), item]))
+  return mergeCollaborationItems(detail, summary?.items, summary?.summaryVersion || '')
+}
+
+export function mergeCollaborationItems(detail, projectionItems, summaryVersion) {
+  const projections = new Map(
+    (projectionItems || [])
+      .filter((item) => item?.itemId != null)
+      .map((item) => [String(item.itemId), item]),
+  )
   return {
     ...(detail || {}),
-    collaborationSummaryVersion: summary?.summaryVersion || '',
-    items: (detail?.items || []).map((item) => ({
-      ...item,
-      collaboration: projections.get(String(item.id)) || null,
-    })),
+    ...(summaryVersion === undefined ? {} : { collaborationSummaryVersion: summaryVersion }),
+    items: (detail?.items || []).map((item) => {
+      const projection = projections.get(String(item.id))
+      return projection ? { ...item, collaboration: projection } : item
+    }),
   }
 }
 
@@ -124,6 +132,7 @@ function storedProjection(item) {
     READY: ['READY_FOR_COSTING', '可核算', 'START_COSTING', '核算本产品'],
   }[workspaceStatus]
   if (workspaceGap) {
+    const technicalGap = requiresTechnicalCollaboration(workspaceStatus, workspace)
     const assigneeName = workspaceGapAssignee(workspaceStatus, workspace, item)
     return {
       itemId,
@@ -134,10 +143,10 @@ function storedProjection(item) {
       currentStatus: workspaceGap[0],
       currentStatusLabel: workspaceGap[1],
       assigneeName,
-      nextAction: workspaceGap[2],
-      nextActionLabel: workspaceGap[3],
+      nextAction: technicalGap ? ASSIGN_TECHNICIAN_ACTION : workspaceGap[2],
+      nextActionLabel: technicalGap ? '指定技术负责人' : workspaceGap[3],
       actionEnabled: true,
-      batchSelectable: false,
+      batchSelectable: technicalGap,
       message: workspace?.lastErrorMessage
         || (workspace?.gapCount ? `当前有 ${workspace.gapCount} 个待处理缺口` : workspaceGap[1]),
     }
@@ -170,12 +179,20 @@ function storedProjection(item) {
     priceStatusLabel: missingBom ? '待BOM补齐后检查' : '尚未核算',
     currentStatus: bomInProgress ? 'BOM_IN_PROGRESS' : missingBom ? 'MISSING_BOM' : 'NOT_STARTED',
     currentStatusLabel: bomInProgress ? 'BOM处理中' : missingBom ? '待补BOM' : '未开始',
-    nextAction: missingBom || bomInProgress ? 'VIEW_COSTING_GAP' : 'START_COSTING',
-    nextActionLabel: missingBom || bomInProgress ? '查看缺口' : '核算本产品',
+    nextAction: missingBom ? ASSIGN_TECHNICIAN_ACTION
+      : bomInProgress ? 'VIEW_COSTING_GAP' : 'START_COSTING',
+    nextActionLabel: missingBom ? '指定技术负责人'
+      : bomInProgress ? '查看缺口' : '核算本产品',
     actionEnabled: true,
-    batchSelectable: false,
+    batchSelectable: missingBom,
     message: '显示最近一次任务保存的状态',
   }
+}
+
+function requiresTechnicalCollaboration(workspaceStatus, workspace) {
+  if (workspaceStatus === 'WAIT_BOM') return true
+  return workspaceStatus === 'WAIT_PRICE'
+    && String(workspace?.lastErrorCode || '').toUpperCase() !== 'FINANCE_BASE_PRICE_MISSING'
 }
 
 function workspaceGapAssignee(workspaceStatus, workspace, item) {

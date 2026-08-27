@@ -30,7 +30,7 @@ test('technical task list renders one explicit access state without leaking or d
 })
 
 test('technical task pages use server state and expose only meaningful task actions', () => {
-  assert.match(listPage, /这里只显示你负责过的产品/)
+  assert.match(listPage, /这里只显示分配给你的产品/)
   assert.match(listPage, /已提交任务仅供查看/)
   assert.match(listPage, /进入处理/)
   assert.match(detailPage, /开始处理/)
@@ -38,6 +38,8 @@ test('technical task pages use server state and expose only meaningful task acti
   assert.match(detailPage, /完成并提交财务审核/)
   assert.match(detailPage, /查看处理记录/)
   assert.match(detailPage, /数据从服务端保存/)
+  assert.match(detailPage, /@click="refreshPage"/)
+  assert.match(detailPage, /workspaceRefreshKey\.value \+= 1/)
   assert.match(detailPage, /item\.required && !item\.completed/)
   assert.doesNotMatch(listPage, /localStorage/)
   assert.doesNotMatch(detailPage, /localStorage/)
@@ -57,18 +59,22 @@ test('finance rejection is displayed as an actionable field-level reason to the 
   assert.match(detailPage, /issue\.reason/)
 })
 
-test('QCBP-23 two technical menu entries filter one shared product-task model', () => {
-  assert.match(listPage, /priceEntry/)
-  assert.match(listPage, /route\.path\.endsWith\('\/prices'\)/)
+test('technical collaboration uses one task list with simple BOM and price filters', () => {
+  assert.match(listPage, /我的协作任务/)
+  assert.match(listPage, /taskFilter/)
+  assert.match(listPage, /全部任务/)
+  assert.match(listPage, /BOM\/包装/)
+  assert.match(listPage, /补价格/)
   assert.match(listPage, /item\.primaryScope !== 'PRICE_ONLY'/)
   assert.match(listPage, /item\.openGapCount/)
-  assert.match(listPage, /BOM、包装和价格共用一个任务/)
+  assert.match(listPage, /BOM、包装和补价合并在同一个任务/)
+  assert.doesNotMatch(listPage, /priceEntry|endsWith\('\/prices'\)/)
 })
 
 test('authenticated detail route and collaborator landing share the same task pages', () => {
   assert.match(router, /path: '\/collaboration\/product-tasks\/:taskId'/)
   assert.match(router, /activeMenu: '\/collaboration\/tasks'/)
-  assert.match(router, /OA_COLLABORATOR/)
+  assert.match(router, /TECHNICAL_COLLABORATOR/)
   assert.match(router, /TECHNICAL_TASK_LIST_PATH = '\/collaboration\/tasks'/)
   assert.match(router, /path: TECHNICAL_TASK_LIST_PATH/)
 })
@@ -129,7 +135,10 @@ test('QCBP-11 third step explains the only three human actions and exposes one c
   assert.match(bomWorkspace, /下载电子图库BOM模板/)
   assert.match(bomWorkspace, /到电子图库录入/)
   assert.match(bomWorkspace, /回到这里校验/)
-  assert.match(bomWorkspace, /我已录入，回取并校验/)
+  assert.match(bomWorkspace, /按图号回取并校验/)
+  assert.match(bomWorkspace, /系统按产品图号/)
+  assert.match(bomWorkspace, /缺少正式图号，不能查询电子图库BOM/)
+  assert.match(bomWorkspace, /:disabled="!workspace\.target\?\.productDrawingNo"/)
   assert.match(bomWorkspace, /系统自行查询电子图库，前端不能手工标记完成/)
   assert.match(bomWorkspace, /workspace\.verificationIssues/)
   assert.match(bomWorkspace, /verifyTechnicalElectronicBom/)

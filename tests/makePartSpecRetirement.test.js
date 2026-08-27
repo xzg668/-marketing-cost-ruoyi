@@ -12,9 +12,17 @@ const MENU_FILE = path.resolve(
   ROOT,
   '../marketing-cost-api/marketing-cost-biz/src/main/resources/db/V101__remove_make_part_spec_menu.sql'
 )
-const CONTROLLER_FILE = path.resolve(
+const OLD_BACKEND_FILES = [
+  '../marketing-cost-api/marketing-cost-biz/src/main/java/com/sanhua/marketingcost/controller/MakePartSpecController.java',
+  '../marketing-cost-api/marketing-cost-biz/src/main/java/com/sanhua/marketingcost/service/MakePartSpecService.java',
+  '../marketing-cost-api/marketing-cost-biz/src/main/java/com/sanhua/marketingcost/service/impl/MakePartSpecServiceImpl.java',
+  '../marketing-cost-api/marketing-cost-core/src/main/java/com/sanhua/marketingcost/service/pricing/MakePartResolver.java',
+  '../marketing-cost-api/marketing-cost-core/src/main/java/com/sanhua/marketingcost/service/pricing/MakeSpecPriceResolver.java',
+  '../marketing-cost-api/marketing-cost-core/src/main/java/com/sanhua/marketingcost/service/PriceScrapService.java',
+].map((file) => path.resolve(ROOT, file))
+const CLEANUP_MIGRATION_FILE = path.resolve(
   ROOT,
-  '../marketing-cost-api/marketing-cost-biz/src/main/java/com/sanhua/marketingcost/controller/MakePartSpecController.java'
+  '../marketing-cost-api/marketing-cost-biz/src/main/resources/db/V237__drop_obsolete_runtime_schema_artifacts.sql'
 )
 const MAKE_PRICE_PREPARE_STRATEGY_FILE = path.resolve(
   ROOT,
@@ -26,7 +34,7 @@ const MAKE_PRICE_PREPARE_CONTRACT_FILE = path.resolve(
 )
 
 const menuContent = fs.readFileSync(MENU_FILE, 'utf-8')
-const controllerContent = fs.readFileSync(CONTROLLER_FILE, 'utf-8')
+const cleanupMigrationContent = fs.readFileSync(CLEANUP_MIGRATION_FILE, 'utf-8')
 const makePricePrepareStrategyContent = fs.readFileSync(MAKE_PRICE_PREPARE_STRATEGY_FILE, 'utf-8')
 const makePricePrepareContractContent = fs.readFileSync(MAKE_PRICE_PREPARE_CONTRACT_FILE, 'utf-8')
 
@@ -47,14 +55,10 @@ describe('MPPG-10 旧自制件管理入口收口', () => {
     assert.doesNotMatch(menuContent, /TRUNCATE TABLE/)
   })
 
-  it('后端旧接口只保留查询兼容，写入类接口被阻断且有中文说明', () => {
-    assert.match(controllerContent, /旧自制件规格只作历史兼容/)
-    assert.match(controllerContent, /实时成本新口径不读取/)
-    assert.match(controllerContent, /LEGACY_DISABLED_MESSAGE/)
-    assert.match(controllerContent, /@GetMapping/)
-    assert.match(controllerContent, /@PostMapping/)
-    assert.match(controllerContent, /@PatchMapping/)
-    assert.match(controllerContent, /@DeleteMapping/)
+  it('后端不再保留旧规格、旧废料价接口和兼容解析器', () => {
+    for (const file of OLD_BACKEND_FILES) assert.equal(fs.existsSync(file), false)
+    assert.match(cleanupMigrationContent, /DROP TABLE IF EXISTS `lp_make_part_spec`/)
+    assert.match(cleanupMigrationContent, /DROP TABLE IF EXISTS `lp_price_scrap`/)
   })
 
   it('实时成本制造件取价使用生成表准备策略，旧 pricing Resolver 已下线', () => {

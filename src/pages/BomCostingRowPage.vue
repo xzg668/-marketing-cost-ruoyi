@@ -74,7 +74,6 @@
                 <el-table :data="row.sourceRefs || []" size="small" border>
                   <el-table-column prop="sourcePartType" label="来源类型" width="180" />
                   <el-table-column prop="sourceRawHierarchyId" label="原始 BOM 行" width="130" />
-                  <el-table-column prop="sourceTaskId" label="任务 ID" width="110" />
                   <el-table-column prop="supplementVersionId" label="补录版本" width="120" />
                   <el-table-column prop="supplementDetailId" label="补录明细" width="120" />
                   <el-table-column prop="packageReferenceId" label="包装参考" width="120" />

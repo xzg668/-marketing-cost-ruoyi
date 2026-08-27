@@ -3,7 +3,7 @@
     <div class="page-heading">
       <div>
         <h2>补录审核</h2>
-        <p>审核技术本次补录的 BOM、包装和底层价格；全部逐项确认后统一提交。</p>
+        <p>审核由你发起核算的报价补录；BOM、包装和底层价格逐项确认后统一生效。</p>
       </div>
       <div>
         <el-switch v-model="showCompleted" active-text="已审" inactive-text="待审" @change="loadReviews()" />
@@ -15,7 +15,7 @@
       v-if="accessDenied && !loading"
       icon="warning"
       title="当前账号没有补录审核权限"
-      sub-title="请使用被指定为本次财务审核人的账号登录；管理员账号不能代替财务审核人。"
+      sub-title="请使用发起本次核算的报价账号，或被指定的财务审核账号登录。"
     />
 
     <el-empty v-else-if="!reviews.length && !loading" description="当前没有分配给你的审核任务" />

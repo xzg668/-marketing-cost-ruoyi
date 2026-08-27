@@ -1,4 +1,5 @@
 import { request } from './http'
+import { collaborationRequestHeaders } from '../utils/collaborationPortal'
 
 const id = (value) => encodeURIComponent(String(value))
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
@@ -66,9 +67,11 @@ export const saveTechnicalBomDraft = (taskId, body) =>
   })
 
 export const downloadTechnicalElectronicBomTemplate = async (taskId) => {
-  const headers = {}
-  const token = localStorage.getItem('token')
-  if (token) headers.Authorization = `Bearer ${token}`
+  const headers = collaborationRequestHeaders()
+  if (!headers['X-Collaboration-Token']) {
+    const token = localStorage.getItem('token')
+    if (token) headers.Authorization = `Bearer ${token}`
+  }
   const response = await fetch(
     `${API_BASE_URL}/api/v1/collaboration/product-tasks/${id(taskId)}/bom-draft/export-electronic-template`,
     { headers },
@@ -93,6 +96,34 @@ export const downloadTechnicalElectronicBomTemplate = async (taskId) => {
 export const verifyTechnicalElectronicBom = (taskId, expectedVersion, bomPurpose = '主制造') =>
   request(`/api/v1/collaboration/product-tasks/${id(taskId)}/electronic-bom/verify`, {
     method: 'POST', body: { expectedVersion, bomPurpose }, timeout: 70000,
+  })
+
+export const uploadTechnicalElectronicBomExcel = (taskId, expectedVersion, file) => {
+  const form = new FormData()
+  form.append('file', file)
+  return request(`/api/v1/collaboration/product-tasks/${id(taskId)}/electronic-bom/import`, {
+    method: 'POST', params: { expectedVersion }, body: form, timeout: 70000,
+  })
+}
+
+export const fetchTechnicalElectronicBomImportResult = (taskId) =>
+  request(`/api/v1/collaboration/product-tasks/${id(taskId)}/electronic-bom/import-result`, {
+    suppressErrorToast: true,
+  })
+
+export const confirmTechnicalElectronicBomImport = (taskId, expectedVersion) =>
+  request(`/api/v1/collaboration/product-tasks/${id(taskId)}/electronic-bom/import/confirm`, {
+    method: 'POST', body: { expectedVersion }, timeout: 70000,
+  })
+
+export const searchTechnicalElectronicBomMaterialOptions = (taskId, keyword, limit = 30) =>
+  request(`/api/v1/collaboration/product-tasks/${id(taskId)}/electronic-bom/material-options`, {
+    params: { keyword: String(keyword || '').trim(), limit },
+  })
+
+export const applyTechnicalElectronicBomMappings = (taskId, expectedVersion, selections) =>
+  request(`/api/v1/collaboration/product-tasks/${id(taskId)}/electronic-bom/mappings`, {
+    method: 'PUT', body: { expectedVersion, selections },
   })
 
 export const fetchTechnicalPackageWorkspace = (taskId) =>

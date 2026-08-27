@@ -39,38 +39,6 @@ export const BOM_STATUS_OPTIONS = [
   { value: 'CHECK_FAILED', label: '检查异常', type: 'danger' },
 ]
 
-export const PRODUCT_TYPE_OPTIONS = [
-  { value: 'NON_BARE', label: '非裸品', type: 'success' },
-  { value: 'BARE', label: '裸品', type: 'warning' },
-  { value: 'UNKNOWN', label: '未识别', type: 'info' },
-]
-
-export const REVIEW_STATUS_OPTIONS = [
-  { value: 'NOT_SUBMITTED', label: '未提交', type: 'info' },
-  { value: 'PENDING', label: '待审核', type: 'warning' },
-  { value: 'APPROVED', label: '已通过', type: 'success' },
-  { value: 'RETURNED', label: '已退回', type: 'danger' },
-  { value: 'REJECTED', label: '已驳回', type: 'danger' },
-]
-
-export const PREPARATION_STATUS_OPTIONS = [
-  { value: 'INIT', label: '待准备', type: 'info' },
-  { value: 'READY', label: '已准备', type: 'success' },
-  { value: 'NEED_TECH', label: '需技术处理', type: 'warning' },
-  { value: 'TECH_SUBMITTED', label: '技术已提交', type: 'warning' },
-  { value: 'CONFIRMED', label: '已确认', type: 'success' },
-  { value: 'REJECTED', label: '已退回', type: 'danger' },
-]
-
-export const OA_TODO_PUSH_STATUS_OPTIONS = [
-  { value: 'NOT_CREATED', label: '未创建', type: 'info' },
-  { value: 'NOT_PUSHED', label: '未推送', type: 'info' },
-  { value: 'PUSHED', label: '已推送', type: 'success' },
-  { value: 'FAILED', label: '推送失败', type: 'danger' },
-  { value: 'CLOSED', label: '已关闭', type: 'info' },
-  { value: 'DONE', label: '已完成', type: 'success' },
-]
-
 export const INGEST_STATUS_OPTIONS = [
   { value: 'RECEIVED', label: '已收到', type: 'info' },
   { value: 'VALIDATING', label: '校验中', type: 'warning' },
@@ -106,10 +74,6 @@ const optionGroups = {
   sourceType: SOURCE_TYPE_OPTIONS,
   classificationStatus: CLASSIFICATION_STATUS_OPTIONS,
   bomStatus: BOM_STATUS_OPTIONS,
-  productType: PRODUCT_TYPE_OPTIONS,
-  reviewStatus: REVIEW_STATUS_OPTIONS,
-  preparationStatus: PREPARATION_STATUS_OPTIONS,
-  oaTodoPushStatus: OA_TODO_PUSH_STATUS_OPTIONS,
   ingestStatus: INGEST_STATUS_OPTIONS,
   calcStatus: CALC_STATUS_OPTIONS,
 }

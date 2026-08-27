@@ -2,10 +2,17 @@
   <div class="technical-task-list">
     <div class="page-heading">
       <div>
-        <h2>{{ priceEntry ? '补价协作' : 'BOM技术协作' }}</h2>
-        <p>这里只显示你负责过的产品。BOM、包装和价格共用一个任务，按页面提示顺序处理；已提交任务仅供查看。</p>
+        <h2>我的协作任务</h2>
+        <p>这里只显示分配给你的产品；BOM、包装和补价合并在同一个任务中，处理完成后统一提交报价员审核；已提交任务仅供查看。</p>
       </div>
-      <el-button :loading="loading" @click="load">刷新</el-button>
+      <div class="page-actions">
+        <el-select v-model="taskFilter" aria-label="任务类型" style="width: 130px">
+          <el-option label="全部任务" value="ALL" />
+          <el-option label="BOM/包装" value="BOM" />
+          <el-option label="补价格" value="PRICE" />
+        </el-select>
+        <el-button :loading="loading" @click="load">刷新</el-button>
+      </div>
     </div>
 
     <el-card shadow="never">
@@ -57,10 +64,15 @@ const route = useRoute()
 const loading = ref(false)
 const items = ref([])
 const accessDenied = ref(false)
-const priceEntry = computed(() => route.path.endsWith('/prices'))
-const visibleItems = computed(() => items.value.filter((item) => priceEntry.value
-  ? Number(item.openGapCount || 0) > 0
-  : item.primaryScope !== 'PRICE_ONLY'))
+const taskFilter = ref('ALL')
+const portalEntry = computed(() => Boolean(route.meta?.collaborationPortal))
+const visibleItems = computed(() => items.value.filter((item) => {
+  if (taskFilter.value === 'BOM') return item.primaryScope !== 'PRICE_ONLY'
+  if (taskFilter.value === 'PRICE') {
+    return item.primaryScope === 'PRICE_ONLY' || Number(item.openGapCount || 0) > 0
+  }
+  return true
+}))
 
 async function load() {
   loading.value = true
@@ -70,7 +82,8 @@ async function load() {
     items.value = data?.items || []
   } catch (error) {
     items.value = []
-    if (isDomainError(error, 'TASK_ASSIGNEE_MISMATCH')) accessDenied.value = true
+    if ([401, 403].includes(Number(error?.resultCode))
+      || isDomainError(error, 'TASK_ASSIGNEE_MISMATCH')) accessDenied.value = true
     else showErrorOnce(error, '本人任务加载失败')
   } finally {
     loading.value = false
@@ -78,7 +91,9 @@ async function load() {
 }
 
 function openTask(taskId) {
-  router.push(`/collaboration/product-tasks/${taskId}`)
+  router.push(portalEntry.value
+    ? `/collaborate/product-tasks/${taskId}`
+    : `/collaboration/product-tasks/${taskId}`)
 }
 
 function statusType(status) {
@@ -96,6 +111,7 @@ onMounted(load)
 .page-heading { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 16px; }
 .page-heading h2 { margin: 0 0 8px; font-size: 24px; color: #303133; }
 .page-heading p { margin: 0; color: #909399; }
+.page-actions { display: flex; gap: 10px; }
 .product-code { font-weight: 600; color: #303133; }
 .muted { margin-top: 5px; font-size: 13px; color: #909399; }
 </style>

@@ -3,7 +3,7 @@
     <div class="page-head">
       <div>
         <h1>单产品核算工作台</h1>
-        <p>{{ oaNo }} / {{ item.materialNo || '-' }} / 核算月份 {{ displayedPeriodMonth }}</p>
+        <p>{{ oaNo }} / {{ productIdentityLabel }} / 核算月份 {{ displayedPeriodMonth }}</p>
       </div>
       <div class="page-actions">
         <el-button
@@ -102,6 +102,7 @@
         <el-table-column prop="materialNo" label="产品料号" min-width="160" fixed="left" show-overflow-tooltip />
         <el-table-column prop="productName" label="产品名称" min-width="160" show-overflow-tooltip />
         <el-table-column prop="sunlModel" label="三花型号" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="customerDrawing" label="客户图号" min-width="150" show-overflow-tooltip />
         <el-table-column prop="businessType" label="业务类型" width="120" />
         <el-table-column prop="packageType" label="包装类型" width="120" />
         <el-table-column prop="packageMethod" label="包装方式" width="130" />
@@ -150,12 +151,11 @@
             element-loading-text="正在生成报价物料明细"
             class="product-detail-tab"
           >
-            <template v-if="effectiveBomFeatureEnabled">
             <div class="pricing-bom-summary">
               <div>
                 <strong>本次计价 BOM</strong>
                 <span>
-                  产品 {{ presentedEffectiveBom.topProductCode || item.materialNo || '-' }}
+                  产品 {{ presentedEffectiveBom.topProductCode || productIdentityLabel }}
                   · {{ presentedEffectiveBom.costPeriodMonth || workbench.periodMonth || '-' }}
                   · {{ presentedEffectiveBom.nodes.length }} 个计价节点
                 </span>
@@ -221,7 +221,7 @@
               </div>
             </div>
             <div class="bom-tree-panel" v-loading="effectiveBomLoading">
-              <div v-if="!item.materialNo" class="empty-tip">当前产品行无产品料号</div>
+              <div v-if="!hasProductIdentity" class="empty-tip">当前产品行无料号、型号和图号</div>
               <div v-else-if="effectiveBomTreeData.length === 0 && !effectiveBomLoading" class="empty-tip">
                 {{ effectiveBomBlocked ? '当前存在数据问题，暂时无法生成计价 BOM' : '暂无本次计价 BOM' }}
               </div>
@@ -303,57 +303,6 @@
               @cancel-preview="clearAlternativePreview"
               @load-history="loadAlternativeHistory"
             />
-            </template>
-
-            <template v-else>
-              <el-alert
-                class="inline-alert"
-                type="info"
-                show-icon
-                :closable="false"
-                title="最终有效 BOM 当前未启用，本页使用原始 BOM 层级树；原报价流程和历史结果不受影响。"
-              />
-              <div class="tab-toolbar">
-                <div>
-                  <strong>BOM 层级树</strong>
-                  <span>顶层料号：{{ item.materialNo || '-' }}</span>
-                </div>
-                <div class="toolbar-actions">
-                  <el-button size="small" :disabled="!bomTree" @click="expandBomTree">展开全部</el-button>
-                  <el-button size="small" :disabled="!bomTree" @click="collapseBomTree">收起全部</el-button>
-                </div>
-              </div>
-              <div class="bom-tree-panel" v-loading="bomTreeLoading">
-                <div v-if="!item.materialNo" class="empty-tip">当前产品行无产品料号</div>
-                <div v-else-if="!bomTree && !bomTreeLoading" class="empty-tip">暂无 BOM 层级树</div>
-                <div v-else-if="bomTreeEmpty" class="empty-tip">该产品料号未查询到 BOM 层级树</div>
-                <el-tree
-                  v-else
-                  ref="bomTreeRef"
-                  :data="bomTreeData"
-                  :props="bomTreeProps"
-                  node-key="path"
-                  :expand-on-click-node="false"
-                  @node-click="openBomNodeDetail"
-                >
-                  <template #default="{ data }">
-                    <span class="tree-node">
-                      <span class="node-code">{{ data.materialCode }}</span>
-                      <span class="node-name">{{ data.materialName || '' }}</span>
-                      <span v-if="data.qtyPerParent" class="node-qty">x {{ data.qtyPerParent }}</span>
-                      <el-tag
-                        v-if="bomNodeShapeAttr(data)"
-                        size="small"
-                        :type="bomNodeShapeTagType(data)"
-                        effect="plain"
-                      >{{ bomNodeShapeAttr(data) }}</el-tag>
-                      <el-tag v-if="isTakeoverNode(data)" size="small" type="warning">接管</el-tag>
-                      <el-tag v-if="data.isLeaf === 1" size="small" type="success" effect="plain">叶子</el-tag>
-                    </span>
-                  </template>
-                </el-tree>
-              </div>
-            </template>
           </div>
 
           <div v-else-if="isQuoteBomTab(tab.code)" class="quote-bom-tab">
@@ -923,6 +872,13 @@
                 核算成功后自动生成正式版本
               </el-tag>
               <el-tag
+                v-if="displayedCostVersion.dataQualityStatus"
+                :type="displayedCostVersion.dataQualityStatus === 'COMPLETE' ? 'success' : 'warning'"
+                effect="plain"
+              >
+                数据质量：{{ displayedCostVersion.dataQualityStatus === 'COMPLETE' ? '完整' : '有警告' }}
+              </el-tag>
+              <el-tag
                 v-for="reason in costRun.blockingReasons || []"
                 :key="reason"
                 type="danger"
@@ -948,6 +904,15 @@
               show-icon
               :closable="false"
               :title="costRunError"
+            />
+
+            <el-alert
+              v-if="displayedCostVersion.dataQualityStatus === 'WARNING'"
+              class="inline-alert"
+              type="warning"
+              show-icon
+              :closable="false"
+              :title="displayedCostVersion.dataQualitySummary || `成本结果存在 ${displayedCostVersion.dataQualityWarningCount || 0} 项数据质量警告`"
             />
 
             <el-alert
@@ -1106,7 +1071,6 @@ import BomNodeDetailDrawer from '../components/BomNodeDetailDrawer.vue'
 import BasePagination from '../components/BasePagination.vue'
 import CostRunTraceDrawer from '../components/CostRunTraceDrawer.vue'
 import QuoteBomAlternativeDrawer from '../components/QuoteBomAlternativeDrawer.vue'
-import { getBomHierarchy } from '../api/bom'
 import { fetchMonthlyRepriceActiveLock } from '../api/monthlyReprice'
 import { useUserStore } from '../store/modules/user'
 import {
@@ -1179,9 +1143,7 @@ const historyResultLabel = computed(() => (
 const loading = ref(false)
 const refreshingTabs = ref(false)
 const activeTab = ref('PRODUCT_DETAIL')
-const bomTree = ref(null)
 const bomTreeRef = ref(null)
-const bomTreeLoading = ref(false)
 const effectiveBom = ref(emptyQuoteEffectiveBom())
 const effectiveBomPreview = ref(null)
 const effectiveBomLoading = ref(false)
@@ -1223,6 +1185,7 @@ const selectedCostRunVersionId = ref(null)
 const traceDrawerVisible = ref(false)
 const traceVersion = ref(null)
 const localWorkflowGuideText = ref('')
+let initializingWorkbench = false
 const workbench = ref({
   header: {},
   item: {},
@@ -1233,7 +1196,6 @@ const workbench = ref({
 
 const header = computed(() => workbench.value.header || {})
 const item = computed(() => workbench.value.item || {})
-const effectiveBomFeatureEnabled = computed(() => workbench.value.effectiveBomEnabled !== false)
 const bomRows = computed(() => Array.isArray(workbench.value.bomRows) ? workbench.value.bomRows : [])
 const displayBomRows = computed(() => expandQuoteBomDisplayRows(bomRows.value))
 const rollupDisplayRowCount = computed(
@@ -1241,6 +1203,15 @@ const rollupDisplayRowCount = computed(
 )
 const currentItemRows = computed(() => item.value?.id ? [item.value] : [])
 const costingWorkspace = computed(() => workbench.value.costingWorkspace || {})
+const costingProductCode = computed(() => (
+  costingWorkspace.value.productCode || item.value.materialNo || ''
+))
+const hasProductIdentity = computed(() => Boolean(
+  item.value.materialNo || item.value.sunlModel || item.value.customerDrawing,
+))
+const productIdentityLabel = computed(() => (
+  item.value.materialNo || item.value.sunlModel || item.value.customerDrawing || '-'
+))
 const latestPriceType = computed(() => workbench.value.latestPriceTypeRecognition || {})
 const latestPrepare = computed(() => {
   const generated = pricePrepare.value.generatedResult || {}
@@ -1321,8 +1292,6 @@ const bomTreeProps = {
   label: 'materialCode',
   children: 'children',
 }
-const bomTreeData = computed(() => (bomTree.value ? [bomTree.value] : []))
-const bomTreeEmpty = computed(() => bomTree.value && !bomTree.value.materialCode)
 const presentedEffectiveBom = computed(() => effectiveBomPreview.value || effectiveBom.value)
 const effectiveBomPreviewActive = computed(() => Boolean(effectiveBomPreview.value))
 const effectiveBomTreeData = computed(() => buildQuoteEffectiveBomTree(presentedEffectiveBom.value.nodes))
@@ -1534,7 +1503,6 @@ async function loadWorkbench(options = {}) {
   loading.value = true
   try {
     clearEffectiveBom()
-    clearBomTree()
     workbench.value = await fetchQuoteCostingWorkbench(oaNo.value, itemId.value)
     if (historyViewMode.value) {
       activeTab.value = 'COST_RUN'
@@ -1545,11 +1513,15 @@ async function loadWorkbench(options = {}) {
     if (resetTab || !activeTab.value) {
       activeTab.value = 'PRODUCT_DETAIL'
     }
-    if (effectiveBomFeatureEnabled.value) {
-      await loadEffectiveBom()
-    } else {
-      await loadBomTree()
+    if (isWaitingForBom()) {
+      applyStoredBomGap()
+      resetCurrentInputTabs()
+      resetCostRunResult()
+      activeRepriceLock.value = { locked: false }
+      applyInputGapGuide()
+      return
     }
+    await loadEffectiveBom()
     if (loadChildren) {
       await refreshAllTabData()
     }
@@ -1557,11 +1529,28 @@ async function loadWorkbench(options = {}) {
   } catch (error) {
     workbench.value = { header: {}, item: {}, bomRows: [], tabs: [], workflowStatus: {} }
     clearEffectiveBom('ERROR')
-    clearBomTree()
     ElMessage.error(error?.message || '获取核算工作台失败')
   } finally {
     loading.value = false
   }
+}
+
+function isWaitingForBom() {
+  return String(costingWorkspace.value.workspaceStatus || '').toUpperCase() === 'WAIT_BOM'
+    && !pricingBomReadyForNextStep.value
+}
+
+function applyStoredBomGap() {
+  const message = costingWorkspace.value.lastErrorMessage || '当前产品缺少可核算 BOM'
+  effectiveBom.value = normalizeQuoteEffectiveBom({
+    state: 'BLOCKED',
+    productCode: costingProductCode.value,
+    costPeriodMonth: workbench.value.periodMonth || '',
+    blockIssues: [{
+      issueCode: costingWorkspace.value.lastErrorCode || 'BOM_MISSING',
+      message,
+    }],
+  })
 }
 
 async function refreshWorkbench() {
@@ -1572,12 +1561,7 @@ async function refreshWorkbench() {
 
 async function refreshAllTabData() {
   refreshingTabs.value = true
-  if (effectiveBomFeatureEnabled.value) {
-    await loadAlternativeFeatureStatus(false)
-  } else {
-    alternativeFeatureEnabled.value = false
-    alternativeSummary.value = emptyAlternativeSummary()
-  }
+  await loadAlternativeFeatureStatus(false)
   await Promise.allSettled([
     alternativeFeatureEnabled.value
       ? loadAlternativeGroups(false)
@@ -1801,7 +1785,7 @@ async function loadActiveRepriceLock() {
 
 function applyInputGapGuide() {
   if (route.query.guide !== 'costing-input-gap') return
-  if (effectiveBomFeatureEnabled.value && !pricingBomReadyForNextStep.value) {
+  if (!pricingBomReadyForNextStep.value) {
     activeTab.value = 'PRODUCT_DETAIL'
     return
   }
@@ -1958,73 +1942,6 @@ function clearEffectiveBom(state = '') {
   bomNodeDrawerVisible.value = false
 }
 
-function clearBomTree() {
-  bomTree.value = null
-  selectedBomNode.value = null
-  bomNodeDrawerVisible.value = false
-}
-
-async function loadBomTree() {
-  const topProductCode = String(item.value?.materialNo || '').trim()
-  if (!topProductCode) {
-    clearBomTree()
-    return
-  }
-  bomTreeLoading.value = true
-  try {
-    bomTree.value = await getBomHierarchy(topProductCode, {
-      sourceType: 'U9',
-      priceOrgCode: resolveBomTreePriceOrgCode(),
-    })
-  } catch (error) {
-    bomTree.value = null
-    ElMessage.error(error?.message || '查询 BOM 层级树失败')
-  } finally {
-    bomTreeLoading.value = false
-  }
-}
-
-function resolveBomTreePriceOrgCode() {
-  return normalizePriceOrgCode(bomRows.value.find((row) => normalizePriceOrgCode(row?.priceOrgCode))?.priceOrgCode)
-    || priceOrgCodeFromOrganization(bomRows.value.find((row) => priceOrgCodeFromOrganization(row?.materialOrganizationCode))?.materialOrganizationCode)
-    || normalizePriceOrgCode(item.value?.priceOrgCode)
-    || normalizePriceOrgCode(header.value?.priceOrgCode)
-    || normalizePriceOrgCode(workbench.value?.priceOrgCode)
-    || priceOrgCodeFromOrganization(item.value?.materialOrganizationCode)
-    || priceOrgCodeFromOrganization(header.value?.materialOrganizationCode)
-    || priceOrgCodeFromOrganization(workbench.value?.materialOrganizationCode)
-    || priceOrgCodeFromProcess(oaNo.value)
-    || priceOrgCodeFromProductText(item.value?.productName, item.value?.sunlModel)
-    || priceOrgCodeFromOrganization(item.value?.businessUnitType)
-    || priceOrgCodeFromOrganization(header.value?.businessUnitType)
-    || priceOrgCodeFromOrganization(workbench.value?.businessUnitType)
-    || priceOrgCodeFromOrganization(userStore.businessUnitType)
-    || '210'
-}
-
-function normalizePriceOrgCode(value) {
-  const priceOrgCode = String(value || '').trim()
-  return ['210', '220'].includes(priceOrgCode) ? priceOrgCode : ''
-}
-
-function priceOrgCodeFromOrganization(value) {
-  const organization = String(value || '').trim().toUpperCase()
-  if (organization === 'PLATE' || organization === '220' || organization === '板换') return '220'
-  if (organization === 'COMMERCIAL' || organization === '210' || organization === '商用') return '210'
-  return ''
-}
-
-function priceOrgCodeFromProcess(value) {
-  const process = String(value || '').trim().toUpperCase()
-  const compact = process.replace(/[-_]/g, '')
-  return process.startsWith('FI-SC-020') || compact.startsWith('FISC020') ? '220' : ''
-}
-
-function priceOrgCodeFromProductText(...values) {
-  const text = values.map((value) => String(value || '')).join(' ')
-  return /板换|板式换热器|板式热交换器|钎焊板式/.test(text) ? '220' : ''
-}
-
 async function loadEffectiveBom(showError = true) {
   if (!oaNo.value || !itemId.value) {
     clearEffectiveBom()
@@ -2099,9 +2016,7 @@ function setBomTreeExpanded(expanded) {
     ? bomTreeRef.value.find((candidate) => candidate?.getNode)
     : bomTreeRef.value
   if (!tree?.getNode) return
-  const roots = effectiveBomFeatureEnabled.value
-    ? effectiveBomTreeData.value
-    : bomTreeData.value
+  const roots = effectiveBomTreeData.value
   const visitNode = (node) => {
     if (!node) return
     if (expanded) node.expand()
@@ -2111,7 +2026,7 @@ function setBomTreeExpanded(expanded) {
     if (!expanded) node.collapse()
   }
   roots.forEach((data) => {
-    const key = effectiveBomFeatureEnabled.value ? data?.nodeKey : data?.path
+    const key = data?.nodeKey
     visitNode(key ? tree.getNode(key) : null)
   })
 }
@@ -2158,24 +2073,6 @@ function effectiveSupplierText(node) {
   return effectiveSupplierEvidence(node)
 }
 
-function isTakeoverNode(node) {
-  return (node?.materialName || '').includes('接管')
-}
-
-function bomNodeShapeAttr(node) {
-  return node?.shapeAttr || ''
-}
-
-function bomNodeShapeTagType(node) {
-  const shapeAttr = bomNodeShapeAttr(node)
-  if (!shapeAttr) return 'info'
-  if (shapeAttr.includes('采购')) return 'success'
-  if (shapeAttr.includes('委外')) return 'warning'
-  if (shapeAttr.includes('部品联动')) return 'warning'
-  if (shapeAttr.includes('虚拟')) return 'info'
-  return ''
-}
-
 function openMaterialPriceTypePage() {
   const first = missingPriceTypeRows.value[0] || {}
   router.push({
@@ -2184,7 +2081,7 @@ function openMaterialPriceTypePage() {
       materialCode: first.materialCode || '',
       oaNo: oaNo.value,
       oaFormItemId: itemId.value,
-      productCode: item.value.materialNo || '',
+      productCode: costingProductCode.value,
       periodMonth: workbench.value.periodMonth || '',
       returnTo: route.fullPath,
     },
@@ -2309,7 +2206,7 @@ function openPriceSource(row) {
       periodMonth: pricingMonth,
       oaNo: oaNo.value,
       oaFormItemId: itemId.value,
-      productCode: item.value.materialNo || '',
+      productCode: costingProductCode.value,
       returnTo: priceSourceReturnTo(),
     },
   }).catch(() => {
@@ -2346,7 +2243,7 @@ function openNoScrapConfirmDialog(row) {
   currentNoScrapGap.value = row
   noScrapConfirmContext.value = {
     oaNo: row?.oaNo || oaNo.value,
-    topProductCode: row?.topProductCode || item.value.materialNo || '',
+    topProductCode: row?.topProductCode || costingProductCode.value,
     materialNo,
     materialName: row?.gapMaterialName || row?.materialName || '',
     businessUnitType,
@@ -2611,8 +2508,8 @@ async function exportCostRun(row = null) {
 }
 
 function openCostRunDetail(row = null) {
-  if (!oaNo.value || !item.value.materialNo) {
-    ElMessage.error('缺少 OA 单号或物料编码')
+  if (!oaNo.value || !costingProductCode.value) {
+    ElMessage.error('缺少 OA 单号或产品身份')
     return
   }
   const displayVersion = row || costRun.value.currentDisplayVersion || costRun.value.latestTrial || {}
@@ -2620,10 +2517,10 @@ function openCostRunDetail(row = null) {
     ElMessage.error('当前成本版本缺少核算单号')
     return
   }
-  const productCode = costRun.value.resultHeader?.productCode || item.value.materialNo || ''
+  const productCode = costRun.value.resultHeader?.productCode || costingProductCode.value
   router.push({
     name: 'cost-run-detail',
-    params: { oaNo: oaNo.value },
+    params: { oaNo: oaNo.value, itemId: itemId.value },
     query: {
       customer: header.value.customer || '',
       productName: costRun.value.resultHeader?.productName || item.value.productName || '',
@@ -2764,7 +2661,7 @@ function beforeWorkbenchTabLeave() {
 function tabBadgeLabel(tab) {
   const code = normalizeTabCode(tab?.code)
   if (code === 'PRODUCT_DETAIL') {
-    return effectiveBomFeatureEnabled.value ? effectiveBomStateInfo.value.label : '旧版原始 BOM'
+    return effectiveBomStateInfo.value.label
   }
   if (code === 'QUOTE_BOM') {
     const workspaceStatus = String(costingWorkspace.value.workspaceStatus || '').toUpperCase()
@@ -2808,7 +2705,7 @@ function tabBadgeLabel(tab) {
 function tabBadgeType(tab) {
   const code = normalizeTabCode(tab?.code)
   if (code === 'PRODUCT_DETAIL') {
-    return effectiveBomFeatureEnabled.value ? effectiveBomStateInfo.value.type : 'info'
+    return effectiveBomStateInfo.value.type
   }
   if (code === 'QUOTE_BOM') {
     const workspaceStatus = String(costingWorkspace.value.workspaceStatus || '').toUpperCase()
@@ -3058,11 +2955,16 @@ function priceTypeTagType(row) {
 }
 
 async function initializeWorkbench() {
-  await loadWorkbench({ resetTab: true, loadChildren: true })
-  await applyRouteTab()
-  if (historyViewMode.value) return
-  await refreshPriceSourceFromReturn()
-  await ensurePriceSourceChecked()
+  initializingWorkbench = true
+  try {
+    await loadWorkbench({ resetTab: true, loadChildren: true })
+    await applyRouteTab()
+    if (historyViewMode.value) return
+    await refreshPriceSourceFromReturn()
+    await ensurePriceSourceChecked()
+  } finally {
+    initializingWorkbench = false
+  }
 }
 
 watch([oaNo, itemId, historyVersionId], () => {
@@ -3071,7 +2973,8 @@ watch([oaNo, itemId, historyVersionId], () => {
 
 watch(activeTab, async (tabCode) => {
   if (
-    isPriceTypeTab(tabCode)
+    !initializingWorkbench
+    && isPriceTypeTab(tabCode)
     && pricingBomReadyForNextStep.value
     && !priceTypeLoading.value
   ) {
