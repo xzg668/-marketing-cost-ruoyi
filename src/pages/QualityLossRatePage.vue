@@ -2,41 +2,39 @@
   <div class="base-page">
     <el-card shadow="never" class="filter-card">
       <div class="filter-header">
-        <div class="filter-title">报价净损失率配置表</div>
+        <div>
+          <div class="filter-title">质量损失率（裸品料号）</div>
+          <div class="filter-tip">支持原始多表文件或独立的“报价系统展示”单表，导入会覆盖同年度同裸品料号的手工修正。</div>
+        </div>
         <div class="filter-actions">
           <el-upload
+            ref="uploadRef"
             class="upload-btn"
             :show-file-list="false"
             :auto-upload="false"
-            accept=".xlsx,.xls,.csv"
+            accept=".xlsx,.xls"
             :on-change="handleFileChange"
           >
-            <el-button :loading="importing">导入</el-button>
+            <el-button :loading="importing">导入 Excel</el-button>
           </el-upload>
           <el-button type="primary" @click="openCreate">新增</el-button>
         </div>
       </div>
-      <el-form :inline="true" label-width="90px">
+      <el-form :inline="true" label-width="82px">
         <el-form-item label="年度">
-          <el-date-picker
-            v-model="filters.rateYear"
-            type="year"
-            format="YYYY"
-            value-format="YYYY"
-            placeholder="选择年度"
-          />
+          <el-date-picker v-model="filters.rateYear" type="year" format="YYYY" value-format="YYYY" />
+        </el-form-item>
+        <el-form-item label="裸品料号">
+          <el-input v-model="filters.bareProductCode" placeholder="裸品料号" clearable />
         </el-form-item>
         <el-form-item label="事业部">
-          <el-input v-model="filters.businessDivision" placeholder="四通阀事业部" />
+          <el-input v-model="filters.businessDivision" placeholder="事业部" clearable />
         </el-form-item>
-        <el-form-item label="产品料号">
-          <el-input v-model="filters.productCode" placeholder="产品料号" />
+        <el-form-item label="大类">
+          <el-input v-model="filters.productCategory" placeholder="大类" clearable />
         </el-form-item>
-        <el-form-item label="产品型号">
-          <el-input v-model="filters.productModel" placeholder="产品型号" />
-        </el-form-item>
-        <el-form-item label="产品大类">
-          <el-input v-model="filters.productCategory" placeholder="产品大类" />
+        <el-form-item label="型号">
+          <el-input v-model="filters.productModel" placeholder="型号" clearable />
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="applyFilters">查询</el-button>
@@ -48,29 +46,25 @@
     <el-card shadow="never">
       <el-table :data="tableRows" stripe v-loading="loading">
         <el-table-column type="index" label="序号" width="70" />
-        <el-table-column prop="businessDivision" label="事业部" min-width="140" />
-        <el-table-column prop="productCategory" label="产品大类" min-width="140" />
-        <el-table-column prop="productCode" label="产品料号" min-width="150" />
-        <el-table-column prop="productName" label="产品名称" min-width="150" />
-        <el-table-column prop="productModel" label="产品型号" min-width="150" />
-        <el-table-column prop="productSpec" label="产品规格" min-width="150" />
-        <el-table-column label="报价净损失率" width="130">
+        <el-table-column prop="bareProductCode" label="裸品料号" min-width="145" fixed="left" />
+        <el-table-column prop="productName" label="品名" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="materialSpec" label="物料规格" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="productModel" label="型号" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="businessDivision" label="事业部" min-width="130" />
+        <el-table-column prop="productCategory" label="大类" min-width="130" show-overflow-tooltip />
+        <el-table-column prop="productSubcategory" label="小类" min-width="130" show-overflow-tooltip />
+        <el-table-column prop="categorySpec" label="分类规格" min-width="160" show-overflow-tooltip />
+        <el-table-column prop="fourthLevel" label="四级" min-width="120" show-overflow-tooltip />
+        <el-table-column label="净损失率" width="120" fixed="right">
           <template #default="{ row }">{{ formatRate(row.lossRate) }}</template>
         </el-table-column>
-        <el-table-column prop="remark" label="备注" min-width="160" />
-        <el-table-column label="操作" width="140" fixed="right">
+        <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" link @click="openEdit(row)">
-              编辑
-            </el-button>
-            <el-button type="danger" link @click="removeRow(row)">
-              删除
-            </el-button>
+            <el-button type="primary" link @click="openEdit(row)">编辑</el-button>
+            <el-button type="danger" link @click="removeRow(row)">删除</el-button>
           </template>
         </el-table-column>
-        <template #empty>
-          <el-empty description="暂无数据" />
-        </template>
+        <template #empty><el-empty description="暂无数据" /></template>
       </el-table>
       <BasePagination
         v-model:current-page="currentPage"
@@ -79,41 +73,24 @@
       />
     </el-card>
 
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="620px">
-      <el-form :model="formModel" label-width="110px">
-        <el-form-item label="年度">
-          <el-date-picker
-            v-model="formModel.rateYear"
-            type="year"
-            format="YYYY"
-            value-format="YYYY"
-            placeholder="选择年度"
-          />
-        </el-form-item>
-        <el-form-item label="事业部">
-          <el-input v-model="formModel.businessDivision" />
-        </el-form-item>
-        <el-form-item label="产品大类">
-          <el-input v-model="formModel.productCategory" />
-        </el-form-item>
-        <el-form-item label="产品料号">
-          <el-input v-model="formModel.productCode" />
-        </el-form-item>
-        <el-form-item label="产品名称">
-          <el-input v-model="formModel.productName" />
-        </el-form-item>
-        <el-form-item label="产品型号">
-          <el-input v-model="formModel.productModel" />
-        </el-form-item>
-        <el-form-item label="产品规格">
-          <el-input v-model="formModel.productSpec" />
-        </el-form-item>
-        <el-form-item label="报价净损失率">
-          <el-input v-model="formModel.lossRate" placeholder="例如 1% 或 0.01" />
-        </el-form-item>
-        <el-form-item label="备注">
-          <el-input v-model="formModel.remark" />
-        </el-form-item>
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="720px">
+      <el-form :model="formModel" label-width="100px">
+        <div class="form-grid">
+          <el-form-item label="年度" required>
+            <el-date-picker v-model="formModel.rateYear" type="year" format="YYYY" value-format="YYYY" />
+          </el-form-item>
+          <el-form-item label="裸品料号" required><el-input v-model="formModel.bareProductCode" /></el-form-item>
+          <el-form-item label="品名"><el-input v-model="formModel.productName" /></el-form-item>
+          <el-form-item label="物料规格"><el-input v-model="formModel.materialSpec" /></el-form-item>
+          <el-form-item label="型号"><el-input v-model="formModel.productModel" /></el-form-item>
+          <el-form-item label="事业部"><el-input v-model="formModel.businessDivision" /></el-form-item>
+          <el-form-item label="大类"><el-input v-model="formModel.productCategory" /></el-form-item>
+          <el-form-item label="小类"><el-input v-model="formModel.productSubcategory" /></el-form-item>
+          <el-form-item label="分类规格"><el-input v-model="formModel.categorySpec" /></el-form-item>
+          <el-form-item label="四级"><el-input v-model="formModel.fourthLevel" /></el-form-item>
+          <el-form-item label="净损失率" required><el-input v-model="formModel.lossRate" placeholder="例如 0.475% 或 0.00475" /></el-form-item>
+          <el-form-item label="备注"><el-input v-model="formModel.remark" /></el-form-item>
+        </div>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -134,31 +111,37 @@ import {
   updateQualityLossRate,
   deleteQualityLossRate,
 } from '../api/qualityLossRates'
+import {
+  parseQualityLossRate,
+  parseQualityLossRateWorkbook,
+} from '../utils/qualityLossRateImportUtils'
 
 const loading = ref(false)
 const importing = ref(false)
+const uploadRef = ref(null)
 const dialogVisible = ref(false)
 const editingId = ref(null)
-
 const currentYear = String(new Date().getFullYear())
 
-const filters = ref({
+const newFilters = () => ({
   rateYear: currentYear,
+  bareProductCode: '',
   businessDivision: '',
   productCategory: '',
-  productCode: '',
-  productName: '',
   productModel: '',
 })
-
+const filters = ref(newFilters())
 const emptyForm = () => ({
   rateYear: filters.value.rateYear || currentYear,
+  bareProductCode: '',
+  productName: '',
+  materialSpec: '',
+  productModel: '',
   businessDivision: '',
   productCategory: '',
-  productCode: '',
-  productName: '',
-  productModel: '',
-  productSpec: '',
+  productSubcategory: '',
+  categorySpec: '',
+  fourthLevel: '',
   lossRate: '',
   remark: '',
 })
@@ -168,10 +151,7 @@ const tableRows = ref([])
 const total = ref(0)
 const currentPage = ref(1)
 const pageSize = ref(20)
-
-const dialogTitle = computed(() =>
-  editingId.value ? '编辑报价净损失率' : '新增报价净损失率',
-)
+const dialogTitle = computed(() => (editingId.value ? '编辑质量损失率' : '新增质量损失率'))
 
 const toYearNumber = (value) => {
   const parsed = Number(value)
@@ -180,10 +160,9 @@ const toYearNumber = (value) => {
 
 const buildParams = () => ({
   rateYear: toYearNumber(filters.value.rateYear),
+  bareProductCode: filters.value.bareProductCode.trim(),
   businessDivision: filters.value.businessDivision.trim(),
   productCategory: filters.value.productCategory.trim(),
-  productCode: filters.value.productCode.trim(),
-  productName: filters.value.productName.trim(),
   productModel: filters.value.productModel.trim(),
   page: currentPage.value,
   pageSize: pageSize.value,
@@ -205,41 +184,31 @@ const fetchList = async () => {
 }
 
 const applyFilters = () => {
-  if (currentPage.value === 1) {
-    fetchList()
-  } else {
-    currentPage.value = 1
-  }
+  if (currentPage.value === 1) fetchList()
+  else currentPage.value = 1
 }
-
 const resetFilters = () => {
-  filters.value = {
-    rateYear: currentYear,
-    businessDivision: '',
-    productCategory: '',
-    productCode: '',
-    productName: '',
-    productModel: '',
-  }
+  filters.value = newFilters()
   applyFilters()
 }
-
 const openCreate = () => {
   editingId.value = null
   formModel.value = emptyForm()
   dialogVisible.value = true
 }
-
 const openEdit = (row) => {
   editingId.value = row.id
   formModel.value = {
     rateYear: row.rateYear ? String(row.rateYear) : currentYear,
-    businessDivision: row.businessDivision ?? row.businessUnit ?? '',
-    productCategory: row.productCategory ?? '',
-    productCode: row.productCode ?? '',
+    bareProductCode: row.bareProductCode ?? '',
     productName: row.productName ?? '',
+    materialSpec: row.materialSpec ?? '',
     productModel: row.productModel ?? '',
-    productSpec: row.productSpec ?? '',
+    businessDivision: row.businessDivision ?? '',
+    productCategory: row.productCategory ?? '',
+    productSubcategory: row.productSubcategory ?? '',
+    categorySpec: row.categorySpec ?? '',
+    fourthLevel: row.fourthLevel ?? '',
     lossRate: row.lossRate ?? '',
     remark: row.remark ?? '',
   }
@@ -247,70 +216,29 @@ const openEdit = (row) => {
 }
 
 watch(pageSize, () => {
-  if (currentPage.value === 1) {
-    fetchList()
-  } else {
-    currentPage.value = 1
-  }
+  if (currentPage.value === 1) fetchList()
+  else currentPage.value = 1
 })
-
-watch(currentPage, () => {
-  fetchList()
-})
-
-const normalizeHeader = (value) =>
-  String(value || '')
-    .replace(/^\uFEFF/, '')
-    .replace(/[：:]/g, '')
-    .replace(/[\s\u3000]+/g, '')
-    .trim()
-
-const parseRate = (value) => {
-  const text = String(value ?? '').replace(/,/g, '').trim()
-  if (!text) {
-    return null
-  }
-  if (text.endsWith('%')) {
-    const parsed = Number(text.slice(0, -1).trim())
-    return Number.isNaN(parsed) ? null : parsed / 100
-  }
-  const parsed = Number(text)
-  return Number.isNaN(parsed) ? null : parsed
-}
+watch(currentPage, fetchList)
 
 const formatRate = (value) => {
-  if (value === null || value === undefined || value === '') {
-    return ''
-  }
   const parsed = Number(value)
-  return Number.isNaN(parsed) ? value : `${(parsed * 100).toFixed(2)}%`
+  if (!Number.isFinite(parsed)) return ''
+  return `${(parsed * 100).toLocaleString('zh-CN', { minimumFractionDigits: 3, maximumFractionDigits: 6 })}%`
 }
 
 const submitRow = async () => {
   const rateYear = toYearNumber(formModel.value.rateYear)
-  const lossRate = parseRate(formModel.value.lossRate)
-  if (!rateYear || lossRate === null) {
-    ElMessage.warning('年度、报价净损失率必填')
+  const lossRate = parseQualityLossRate(formModel.value.lossRate)
+  if (!rateYear || !formModel.value.bareProductCode.trim()) {
+    ElMessage.warning('年度、裸品料号必填')
     return
   }
-  if (!formModel.value.productCode.trim() && !formModel.value.productModel.trim()) {
-    ElMessage.warning('产品料号和产品型号至少填写一个')
+  if (!Number.isFinite(lossRate) || lossRate < 0 || lossRate >= 1) {
+    ElMessage.warning('净损失率必须大于等于0且小于100%')
     return
   }
-  const payload = {
-    rateYear,
-    period: `${rateYear}-01`,
-    businessDivision: formModel.value.businessDivision,
-    businessUnit: formModel.value.businessDivision,
-    productCategory: formModel.value.productCategory,
-    productCode: formModel.value.productCode,
-    productName: formModel.value.productName,
-    productModel: formModel.value.productModel,
-    productSpec: formModel.value.productSpec,
-    lossRate,
-    remark: formModel.value.remark,
-    sourceType: 'MANUAL',
-  }
+  const payload = { ...formModel.value, rateYear, lossRate }
   try {
     if (editingId.value) {
       await updateQualityLossRate(editingId.value, payload)
@@ -328,18 +256,12 @@ const submitRow = async () => {
 
 const removeRow = async (row) => {
   try {
-    await ElMessageBox.confirm('确定删除该记录吗？', '提示', {
-      type: 'warning',
-    })
-  } catch (error) {
-    return
-  }
-  try {
+    await ElMessageBox.confirm(`确定删除裸品料号 ${row.bareProductCode} 吗？`, '提示', { type: 'warning' })
     await deleteQualityLossRate(row.id)
     ElMessage.success('已删除')
     fetchList()
   } catch (error) {
-    ElMessage.error(error?.message || '删除失败')
+    if (error !== 'cancel' && error !== 'close') ElMessage.error(error?.message || '删除失败')
   }
 }
 
@@ -349,124 +271,32 @@ const handleFileChange = async (uploadFile) => {
     ElMessage.warning('请先选择导入年度')
     return
   }
-  const rawFile = uploadFile.raw
-  if (!rawFile) {
-    return
-  }
+  if (!uploadFile.raw) return
   importing.value = true
   try {
-    let XLSX = null
-    try {
-      const mod = await import('xlsx')
-      XLSX = mod
-    } catch (error) {
-      ElMessage.error('未安装xlsx，请先运行 npm install xlsx')
-      return
-    }
-    const buffer = await rawFile.arrayBuffer()
+    const XLSX = await import('xlsx')
+    const buffer = await uploadFile.raw.arrayBuffer()
     const workbook = XLSX.read(buffer, { type: 'array', cellDates: true })
-    const sheet = workbook.Sheets[workbook.SheetNames[0]]
-    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false })
-    const headerAliases = {
-      businessDivision: ['事业部', '生产事业部'],
-      productCategory: ['产品大类'],
-      productCode: ['产品料号', '料号'],
-      productName: ['产品名称', '品名'],
-      productModel: ['产品型号', '型号'],
-      productSpec: ['产品规格', '规格'],
-      lossRate: ['报价净损失率', '净损失率', '质量损失率', '损失率'],
-      remark: ['备注'],
-    }
-    const headerMap = Object.entries(headerAliases).reduce((acc, [key, values]) => {
-      values.forEach((value) => {
-        acc[normalizeHeader(value)] = key
-      })
-      return acc
-    }, {})
-    const headerKeys = Object.keys(headerMap).sort((a, b) => b.length - a.length)
-    const resolveHeaderField = (cell) => {
-      const normalized = normalizeHeader(cell)
-      if (!normalized) {
-        return null
-      }
-      if (headerMap[normalized]) {
-        return headerMap[normalized]
-      }
-      const matched = headerKeys.find((key) => normalized.includes(key))
-      return matched ? headerMap[matched] : null
-    }
-    const headerIndex = rows.reduce(
-      (best, row, index) => {
-        const hitCount = row.reduce((count, cell) => {
-          return resolveHeaderField(cell) ? count + 1 : count
-        }, 0)
-        if (hitCount > best.count) {
-          return { index, count: hitCount }
-        }
-        return best
-      },
-      { index: -1, count: 0 },
-    ).index
-    if (headerIndex === -1) {
-      ElMessage.error('未找到表头，请确认Excel格式是否正确')
+    const parsed = parseQualityLossRateWorkbook(workbook, XLSX)
+    if (parsed.rows.length === 0) {
+      ElMessage.warning(`没有有效损失率数据，已跳过${parsed.skippedRows}条`)
       return
     }
-    const headerRow = rows[headerIndex]
-    const nextHeaderRow = rows[headerIndex + 1] || []
-    const fieldIndex = {}
-    headerRow.forEach((cell, index) => {
-      const field = resolveHeaderField(cell)
-      if (field) {
-        fieldIndex[field] = index
-      }
-    })
-    nextHeaderRow.forEach((cell, index) => {
-      const field = resolveHeaderField(cell)
-      if (field && fieldIndex[field] === undefined) {
-        fieldIndex[field] = index
-      }
-    })
-    if (fieldIndex.lossRate === undefined) {
-      ElMessage.error('缺少表头：报价净损失率')
-      return
-    }
-    const dataRows = rows
-      .slice(headerIndex + 1)
-      .map((row, index) => ({
-        rowNo: headerIndex + index + 2,
-        businessDivision: String(row[fieldIndex.businessDivision] || '').trim(),
-        businessUnit: String(row[fieldIndex.businessDivision] || '').trim(),
-        productCategory: String(row[fieldIndex.productCategory] || '').trim(),
-        productCode: String(row[fieldIndex.productCode] || '').trim(),
-        productName: String(row[fieldIndex.productName] || '').trim(),
-        productModel: String(row[fieldIndex.productModel] || '').trim(),
-        productSpec: String(row[fieldIndex.productSpec] || '').trim(),
-        lossRate: parseRate(row[fieldIndex.lossRate]),
-        remark: String(row[fieldIndex.remark] || '').trim(),
-      }))
-      .filter((row) =>
-        Object.entries(row).some(([key, value]) => key !== 'rowNo' && value !== '' && value !== null),
-      )
-    if (dataRows.length === 0) {
-      ElMessage.warning('未解析到有效数据')
-      return
-    }
-    const result = await importQualityLossRates({ rateYear, rows: dataRows })
+    const result = await importQualityLossRates({ rateYear, rows: parsed.rows })
     const imported = (result?.inserted || 0) + (result?.updated || 0)
+    const skipped = parsed.skippedRows + (result?.skipped || 0)
     if (result?.errors > 0) {
-      ElMessage.warning(`导入${imported}条，失败${result.errors}条：${result.errorMessages?.[0] || ''}`)
+      ElMessage.warning(`导入${imported}条，跳过${skipped}条，错误${result.errors}条：${result.errorMessages?.[0] || ''}`)
     } else {
-      ElMessage.success(`已导入${imported}条报价净损失率`)
+      ElMessage.success(`已从“${parsed.sheetName}”导入${imported}条，跳过${skipped}条无有效损失率数据`)
     }
-    if (currentPage.value === 1) {
-      fetchList()
-    } else {
-      currentPage.value = 1
-    }
+    if (currentPage.value === 1) fetchList()
+    else currentPage.value = 1
   } catch (error) {
     ElMessage.error(error?.message || '导入失败')
   } finally {
     importing.value = false
+    uploadRef.value?.clearFiles()
   }
 }
 
@@ -474,31 +304,11 @@ onMounted(fetchList)
 </script>
 
 <style scoped>
-.base-page {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.filter-card {
-  padding-bottom: 6px;
-}
-
-.filter-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.filter-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1f2a37;
-}
-
-.filter-actions {
-  display: flex;
-  gap: 8px;
-}
+.base-page { display: flex; flex-direction: column; gap: 16px; }
+.filter-card { padding-bottom: 6px; }
+.filter-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; gap: 20px; }
+.filter-title { font-size: 15px; font-weight: 600; color: #1f2a37; }
+.filter-tip { margin-top: 6px; color: #6b7280; font-size: 12px; }
+.filter-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 18px; }
 </style>

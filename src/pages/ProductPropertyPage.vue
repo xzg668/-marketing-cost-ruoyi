@@ -2,48 +2,34 @@
   <div class="base-page">
     <el-card shadow="never" class="filter-card">
       <div class="filter-header">
-        <div class="filter-title">产品属性对照表</div>
-        <div class="filter-actions">
-          <el-button :loading="importing" @click="openImportDialog">导入</el-button>
-          <el-button type="primary" @click="openCreate">新增</el-button>
+        <div>
+          <div class="filter-title">产品属性对照表</div>
+          <div class="filter-tip">数据以财务业务清单为准，唯一键为年度 + 料号</div>
         </div>
+        <el-button :loading="importing" @click="openImportDialog">导入</el-button>
       </div>
-      <el-form :inline="true" label-width="110px" class="filter-form">
+      <el-form :inline="true" label-width="88px" class="filter-form">
         <el-form-item label="年度" required>
           <el-date-picker
             v-model="filters.propertyYear"
             type="year"
             value-format="YYYY"
             placeholder="选择年度"
-            @change="onFilterYearChange"
+            @change="onYearChange"
           />
         </el-form-item>
-        <el-form-item label="事业部">
-          <el-input v-model="filters.businessDivision" placeholder="四通阀事业部" clearable />
+        <el-form-item label="生产事业部">
+          <el-input v-model="filters.businessDivision" placeholder="生产事业部" clearable />
         </el-form-item>
-        <el-form-item label="产品料号">
-          <el-input v-model="filters.productCode" placeholder="产品料号" clearable />
+        <el-form-item label="料号">
+          <el-input v-model="filters.productCode" placeholder="料号" clearable />
         </el-form-item>
-        <el-form-item label="产品名称">
-          <el-input v-model="filters.productName" placeholder="产品名称" clearable />
+        <el-form-item label="品名">
+          <el-input v-model="filters.productName" placeholder="品名" clearable />
         </el-form-item>
         <el-form-item label="产品属性">
-          <el-input v-model="filters.productAttr" placeholder="标准品/非标品" clearable />
-        </el-form-item>
-        <el-form-item label="属性来源">
-          <el-select v-model="filters.attrSourceType" placeholder="全部" clearable>
-            <el-option label="全部" value="" />
-            <el-option label="技术导入" value="TECH_IMPORT" />
-            <el-option label="手工维护" value="MANUAL" />
-            <el-option label="OA报价" value="OA_QUOTE_USAGE" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="年用量来源">
-          <el-select v-model="filters.annualUsageSourceType" placeholder="全部" clearable>
-            <el-option label="全部" value="" />
-            <el-option label="技术导入" value="TECH_IMPORT" />
-            <el-option label="手工维护" value="MANUAL" />
-            <el-option label="OA报价" value="OA_QUOTE_USAGE" />
+          <el-select v-model="filters.productAttr" placeholder="全部" clearable>
+            <el-option v-for="item in attributeNames" :key="item" :label="item" :value="item" />
           </el-select>
         </el-form-item>
         <el-form-item class="filter-form-actions">
@@ -53,116 +39,91 @@
       </el-form>
     </el-card>
 
-    <el-card shadow="never">
-      <el-table :data="tableRows" stripe v-loading="loading">
-        <el-table-column type="index" label="序号" width="70" align="center" />
-        <el-table-column prop="businessDivision" label="事业部" min-width="150" show-overflow-tooltip>
-          <template #default="{ row }">{{ displayBusinessDivision(row) }}</template>
-        </el-table-column>
-        <el-table-column prop="productCode" label="产品料号" min-width="150" show-overflow-tooltip>
-          <template #default="{ row }">{{ displayProductCode(row) }}</template>
-        </el-table-column>
-        <el-table-column prop="productName" label="产品名称" min-width="160" show-overflow-tooltip>
-          <template #default="{ row }">{{ displayProductName(row) }}</template>
-        </el-table-column>
-        <el-table-column prop="productModel" label="产品型号" min-width="150" show-overflow-tooltip>
-          <template #default="{ row }">{{ displayProductModel(row) }}</template>
-        </el-table-column>
-        <el-table-column prop="productSpec" label="产品规格" min-width="150" show-overflow-tooltip>
-          <template #default="{ row }">{{ displayProductSpec(row) }}</template>
-        </el-table-column>
-        <el-table-column prop="productAttr" label="产品属性" width="120" />
-        <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip />
-        <el-table-column prop="annualUsage" label="预计年用量" width="130" />
-        <el-table-column label="操作" width="140" fixed="right">
-          <template #default="{ row }">
-            <el-button type="primary" link @click="openEdit(row)">
-              编辑
-            </el-button>
-            <el-button type="danger" link @click="removeRow(row)">
-              删除
-            </el-button>
-          </template>
-        </el-table-column>
-        <template #empty>
-          <el-empty description="暂无数据" />
-        </template>
-      </el-table>
+    <el-card shadow="never" class="rule-card">
+      <template #header>
+        <div class="card-header">
+          <div>
+            <div class="card-title">{{ filters.propertyYear }} 年产品属性上浮规则</div>
+            <div class="filter-tip">系数 = 1 + 上浮比例；规则变更会在重新核算时生效，已冻结结果不会被直接改写</div>
+          </div>
+          <el-button type="primary" :loading="savingRules" @click="saveRules">保存规则</el-button>
+        </div>
+      </template>
+      <div class="rule-grid" v-loading="rulesLoading">
+        <div v-for="rule in ruleRows" :key="rule.productAttr" class="rule-item">
+          <span class="rule-name">{{ rule.productAttr }}</span>
+          <el-input-number
+            v-model="rule.upliftPercent"
+            :min="0"
+            :max="100"
+            :precision="2"
+            :step="0.5"
+            controls-position="right"
+          />
+          <span class="percent">%</span>
+          <span class="coefficient">系数 {{ formatCoefficient(rule.upliftPercent) }}</span>
+        </div>
+      </div>
     </el-card>
 
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="760px">
-      <el-form :model="formModel" label-width="110px" class="property-form">
-        <div class="form-grid">
-          <el-form-item label="年度" required>
-            <el-date-picker
-              v-model="formModel.propertyYear"
-              type="year"
-              value-format="YYYY"
-              placeholder="选择年度"
-            />
-          </el-form-item>
-          <el-form-item label="事业部" required>
-            <el-input v-model="formModel.businessDivision" />
-          </el-form-item>
-          <el-form-item label="产品料号" required>
-            <el-input v-model="formModel.productCode" />
-          </el-form-item>
-          <el-form-item label="产品名称">
-            <el-input v-model="formModel.productName" />
-          </el-form-item>
-          <el-form-item label="产品型号">
-            <el-input v-model="formModel.productModel" />
-          </el-form-item>
-          <el-form-item label="产品规格">
-            <el-input v-model="formModel.productSpec" />
-          </el-form-item>
-          <el-form-item label="产品属性" required>
-            <el-input v-model="formModel.productAttr" />
-          </el-form-item>
-          <el-form-item label="预计年用量">
-            <el-input-number
-              v-model="formModel.annualUsage"
-              :precision="2"
-              :min="0"
-              :controls="false"
-              placeholder="预计年用量"
-            />
-          </el-form-item>
-          <el-form-item label="属性系数">
-            <el-input v-model="formModel.coefficient" disabled />
-          </el-form-item>
-          <el-form-item label="年用量来源">
-            <el-input :model-value="sourceText(formModel.annualUsageSourceType)" disabled />
-          </el-form-item>
-        </div>
-        <el-form-item label="备注">
-          <el-input v-model="formModel.remark" type="textarea" :rows="2" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitRow">保存</el-button>
-      </template>
-    </el-dialog>
+    <el-card shadow="never">
+      <el-table :data="tableRows" stripe v-loading="loading">
+        <el-table-column label="序号" width="70" align="center">
+          <template #default="scope">{{ (pagination.page - 1) * pagination.pageSize + scope.$index + 1 }}</template>
+        </el-table-column>
+        <el-table-column prop="propertyYear" label="年度" width="90" />
+        <el-table-column prop="productCode" label="料号" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="productName" label="品名" min-width="160" show-overflow-tooltip />
+        <el-table-column prop="productSpec" label="规格" min-width="140" show-overflow-tooltip />
+        <el-table-column prop="productModel" label="型号" min-width="140" show-overflow-tooltip />
+        <el-table-column prop="productAttr" label="产品属性" width="110" />
+        <el-table-column prop="businessDivision" label="生产事业部" min-width="170" show-overflow-tooltip />
+        <el-table-column label="上浮比例" width="110" align="right">
+          <template #default="{ row }">{{ formatPercent(row.upliftRate) }}</template>
+        </el-table-column>
+        <el-table-column label="系数" width="90" align="right">
+          <template #default="{ row }">{{ formatStoredCoefficient(row.coefficient) }}</template>
+        </el-table-column>
+        <template #empty><el-empty description="暂无数据" /></template>
+      </el-table>
+      <div class="pagination-wrap">
+        <el-pagination
+          v-model:current-page="pagination.page"
+          v-model:page-size="pagination.pageSize"
+          :total="pagination.total"
+          :page-sizes="[20, 50, 100, 200]"
+          layout="total, sizes, prev, pager, next, jumper"
+          @size-change="fetchList"
+          @current-change="fetchList"
+        />
+      </div>
+    </el-card>
 
     <el-dialog v-model="importDialogVisible" title="导入产品属性" width="760px">
-      <el-form label-width="90px" class="import-form">
+      <el-alert type="info" :closable="false" show-icon class="import-help">
+        <template #title>支持原工作簿第二页或单独的 A–E / A–F 工作表</template>
+        A–F 有生产事业部时以 Excel 为准；只有 A–E 或 F 为空时，系统按料号从料品档案匹配生产事业部。
+      </el-alert>
+      <el-form label-width="100px" class="import-form">
         <el-form-item label="导入年度" required>
-          <el-date-picker
-            v-model="importYear"
-            type="year"
-            value-format="YYYY"
-            placeholder="选择年度"
-          />
+          <el-date-picker v-model="importYear" type="year" value-format="YYYY" />
+        </el-form-item>
+        <el-form-item label="导入方式" required>
+          <el-radio-group v-model="importMode">
+            <el-radio value="INCREMENTAL">增量导入</el-radio>
+            <el-radio value="FULL">全量导入</el-radio>
+          </el-radio-group>
+          <div class="mode-tip">
+            {{ importMode === 'FULL' ? '全量会删除该年度未出现在文件中的料号' : '增量只新增或更新文件中的料号' }}
+          </div>
         </el-form-item>
         <el-form-item label="上传文件" required>
           <el-upload
             class="upload-field"
             drag
             :limit="1"
-            :show-file-list="true"
             :auto-upload="false"
-            accept=".xlsx,.xls,.csv"
+            accept=".xlsx,.xls"
             :on-change="handleImportFileChange"
             :on-remove="handleImportFileRemove"
           >
@@ -172,25 +133,25 @@
       </el-form>
 
       <section v-if="importResult" class="import-result">
+        <el-alert
+          :type="importResult.success ? 'success' : 'error'"
+          :title="importResult.success ? '导入成功' : '校验未通过，数据库未写入'"
+          :closable="false"
+          show-icon
+          class="result-alert"
+        />
         <div class="result-grid">
+          <div><span>文件数据</span><strong>{{ importResult.total || 0 }}</strong></div>
           <div><span>新增</span><strong>{{ importResult.inserted || 0 }}</strong></div>
           <div><span>更新</span><strong>{{ importResult.updated || 0 }}</strong></div>
-          <div><span>跳过</span><strong>{{ importResult.skipped || 0 }}</strong></div>
-          <div><span>错误</span><strong>{{ importResult.errors || 0 }}</strong></div>
-          <div><span>风险</span><strong>{{ importResult.risks || 0 }}</strong></div>
+          <div><span>全量删除</span><strong>{{ importResult.removed || 0 }}</strong></div>
+          <div><span>Excel 事业部</span><strong>{{ importResult.excelDivision || 0 }}</strong></div>
+          <div><span>档案匹配</span><strong>{{ importResult.resolvedDivision || 0 }}</strong></div>
         </div>
-        <el-table
-          v-if="importIssues.length"
-          :data="importIssues"
-          size="small"
-          max-height="260"
-          class="issue-table"
-        >
+        <el-table v-if="importIssues.length" :data="importIssues" size="small" max-height="260">
           <el-table-column prop="type" label="类型" width="80">
             <template #default="{ row }">
-              <el-tag :type="row.type === '错误' ? 'danger' : 'warning'" effect="light">
-                {{ row.type }}
-              </el-tag>
+              <el-tag :type="row.type === '错误' ? 'danger' : 'warning'">{{ row.type }}</el-tag>
             </template>
           </el-table-column>
           <el-table-column prop="message" label="明细" show-overflow-tooltip />
@@ -210,122 +171,98 @@ import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   fetchProductProperties,
-  createProductProperty,
-  updateProductProperty,
-  deleteProductProperty,
+  fetchProductPropertyRules,
   importProductProperties,
+  saveProductPropertyRules,
 } from '../api/productProperties'
 
 const currentYear = () => String(new Date().getFullYear())
+const attributeNames = ['非标品', '标准品', '定制品', 'OEM']
+const defaultRates = { 非标品: 5, 标准品: 0, 定制品: 5, OEM: 0 }
 
 const loading = ref(false)
+const rulesLoading = ref(false)
+const savingRules = ref(false)
 const importing = ref(false)
-const dialogVisible = ref(false)
 const importDialogVisible = ref(false)
-const editingId = ref(null)
 const importYear = ref(currentYear())
+const importMode = ref('INCREMENTAL')
 const importFile = ref(null)
 const importResult = ref(null)
-const localImportWarnings = ref([])
-
+const tableRows = ref([])
+const ruleRows = ref(attributeNames.map((productAttr) => ({
+  productAttr,
+  upliftPercent: defaultRates[productAttr],
+})))
+const pagination = ref({ page: 1, pageSize: 20, total: 0 })
 const filters = ref({
   propertyYear: currentYear(),
   businessDivision: '',
   productCode: '',
   productName: '',
   productAttr: '',
-  attrSourceType: '',
-  annualUsageSourceType: '',
 })
 
-const formModel = ref({
-  propertyYear: currentYear(),
-  businessDivision: '',
-  productCode: '',
-  productName: '',
-  productModel: '',
-  productSpec: '',
-  productAttr: '',
-  annualUsage: null,
-  remark: '',
-  coefficient: '',
-  annualUsageSourceType: '',
-  annualUsageSourceBatchNo: '',
-  annualUsageOaNo: '',
-  annualUsageOaLineId: '',
-  originalAnnualUsage: null,
-})
-
-const tableRows = ref([])
-
-const dialogTitle = computed(() =>
-  editingId.value ? '编辑产品属性' : '新增产品属性',
-)
-
-const importIssues = computed(() => {
-  const errors = (importResult.value?.errorMessages || []).map((message) => ({
-    type: '错误',
-    message,
-  }))
-  const warnings = [
-    ...localImportWarnings.value,
-    ...(importResult.value?.warnings || []),
-  ].map((message) => ({
-    type: '风险',
-    message,
-  }))
-  return [...errors, ...warnings]
-})
-
-const sourceLabels = {
-  TECH_IMPORT: '技术导入',
-  MANUAL: '手工维护',
-  OA_QUOTE_USAGE: 'OA报价',
-}
-
-const sourceText = (value) => sourceLabels[value] || value || '-'
-
-const displayBusinessDivision = (row) => row.businessDivision || row.level1Name || '-'
-const displayProductCode = (row) => row.productCode || row.parentCode || '-'
-const displayProductName = (row) => row.productName || row.parentName || '-'
-const displayProductModel = (row) => row.productModel || row.parentModel || '-'
-const displayProductSpec = (row) => row.productSpec || row.parentSpec || '-'
+const importIssues = computed(() => [
+  ...(importResult.value?.errors || []).map((message) => ({ type: '错误', message })),
+  ...(importResult.value?.warnings || []).map((message) => ({ type: '提示', message })),
+])
 
 const buildParams = () => ({
   propertyYear: filters.value.propertyYear ? Number(filters.value.propertyYear) : undefined,
   businessDivision: filters.value.businessDivision.trim(),
   productCode: filters.value.productCode.trim(),
   productName: filters.value.productName.trim(),
-  productAttr: filters.value.productAttr.trim(),
-  attrSourceType: filters.value.attrSourceType,
-  annualUsageSourceType: filters.value.annualUsageSourceType,
+  productAttr: filters.value.productAttr,
+  page: pagination.value.page,
+  pageSize: pagination.value.pageSize,
 })
 
 const fetchList = async () => {
-  if (!filters.value.propertyYear) {
-    tableRows.value = []
-    ElMessage.warning('年度必选')
-    return
-  }
+  if (!filters.value.propertyYear) return
   loading.value = true
   try {
     const data = await fetchProductProperties(buildParams())
     tableRows.value = data?.list || []
+    pagination.value.total = Number(data?.total || 0)
   } catch (error) {
     tableRows.value = []
+    pagination.value.total = 0
     ElMessage.error(error?.message || '查询失败')
   } finally {
     loading.value = false
   }
 }
 
+const fetchRules = async () => {
+  if (!filters.value.propertyYear) return
+  rulesLoading.value = true
+  try {
+    const rows = await fetchProductPropertyRules({ propertyYear: Number(filters.value.propertyYear) })
+    const rates = Object.fromEntries((rows || []).map((row) => [
+      row.productAttr,
+      Number(row.upliftRate || 0) * 100,
+    ]))
+    ruleRows.value = attributeNames.map((productAttr) => ({
+      productAttr,
+      upliftPercent: Object.hasOwn(rates, productAttr) ? rates[productAttr] : defaultRates[productAttr],
+    }))
+  } catch (error) {
+    ElMessage.error(error?.message || '规则查询失败')
+  } finally {
+    rulesLoading.value = false
+  }
+}
+
 const applyFilters = () => {
+  pagination.value.page = 1
   fetchList()
 }
 
-const onFilterYearChange = () => {
+const onYearChange = () => {
   importYear.value = filters.value.propertyYear || currentYear()
-  fetchList()
+  pagination.value.page = 1
+  Promise.all([fetchList(), fetchRules()])
 }
 
 const resetFilters = () => {
@@ -335,400 +272,85 @@ const resetFilters = () => {
     productCode: '',
     productName: '',
     productAttr: '',
-    attrSourceType: '',
-    annualUsageSourceType: '',
   }
   importYear.value = filters.value.propertyYear
-  applyFilters()
+  pagination.value.page = 1
+  Promise.all([fetchList(), fetchRules()])
 }
 
-const openCreate = () => {
-  editingId.value = null
-  formModel.value = {
-    propertyYear: filters.value.propertyYear || currentYear(),
-    businessDivision: '',
-    productCode: '',
-    productName: '',
-    productModel: '',
-    productSpec: '',
-    productAttr: '',
-    annualUsage: null,
-    remark: '',
-    coefficient: '1.0000',
-    annualUsageSourceType: '',
-    annualUsageSourceBatchNo: '',
-    annualUsageOaNo: '',
-    annualUsageOaLineId: '',
-    originalAnnualUsage: null,
-  }
-  dialogVisible.value = true
-}
-
-const openEdit = (row) => {
-  editingId.value = row.id
-  formModel.value = {
-    propertyYear: row.propertyYear ? String(row.propertyYear) : currentYear(),
-    businessDivision: row.businessDivision ?? row.level1Name ?? '',
-    productCode: row.productCode ?? row.parentCode ?? '',
-    productName: row.productName ?? row.parentName ?? '',
-    productModel: row.productModel ?? row.parentModel ?? '',
-    productSpec: row.productSpec ?? row.parentSpec ?? '',
-    productAttr: row.productAttr ?? '',
-    annualUsage: row.annualUsage ?? null,
-    remark: row.remark ?? '',
-    coefficient: row.coefficient ?? '1.0000',
-    annualUsageSourceType: row.annualUsageSourceType ?? '',
-    annualUsageSourceBatchNo: row.annualUsageSourceBatchNo ?? '',
-    annualUsageOaNo: row.annualUsageOaNo ?? '',
-    annualUsageOaLineId: row.annualUsageOaLineId ?? '',
-    originalAnnualUsage: row.annualUsage ?? null,
-  }
-  dialogVisible.value = true
-}
-
-const hasAnnualUsage = (value) =>
-  value !== undefined && value !== null && String(value).trim() !== ''
-
-const sameNumberValue = (left, right) => {
-  if (!hasAnnualUsage(left) && !hasAnnualUsage(right)) return true
-  return Number(left) === Number(right)
-}
-
-const submitRow = async () => {
-  if (
-    !formModel.value.propertyYear ||
-    !formModel.value.businessDivision ||
-    !formModel.value.productCode ||
-    !formModel.value.productAttr
-  ) {
-    ElMessage.warning('年度、事业部、产品料号、产品属性必填')
+const saveRules = async () => {
+  if (!filters.value.propertyYear) {
+    ElMessage.warning('请先选择年度')
     return
   }
-  const annualUsageChanged = !sameNumberValue(
-    formModel.value.annualUsage,
-    formModel.value.originalAnnualUsage,
-  )
-  const annualUsageSourceType = annualUsageChanged
-    ? 'MANUAL'
-    : formModel.value.annualUsageSourceType || (hasAnnualUsage(formModel.value.annualUsage) ? 'MANUAL' : '')
-  const payload = {
-    propertyYear: Number(formModel.value.propertyYear),
-    businessDivision: formModel.value.businessDivision,
-    productCode: formModel.value.productCode,
-    productName: formModel.value.productName,
-    productModel: formModel.value.productModel,
-    productSpec: formModel.value.productSpec,
-    productAttr: formModel.value.productAttr,
-    annualUsage: hasAnnualUsage(formModel.value.annualUsage)
-      ? Number(formModel.value.annualUsage)
-      : null,
-    remark: formModel.value.remark,
-    level1Code: formModel.value.businessDivision,
-    level1Name: formModel.value.businessDivision,
-    parentCode: formModel.value.productCode,
-    parentName: formModel.value.productName,
-    parentSpec: formModel.value.productSpec,
-    parentModel: formModel.value.productModel,
-    period: `${formModel.value.propertyYear}-01`,
-    annualUsageSourceType,
-    annualUsageSourceBatchNo: annualUsageChanged
-      ? ''
-      : formModel.value.annualUsageSourceBatchNo,
-    annualUsageOaNo: annualUsageChanged ? '' : formModel.value.annualUsageOaNo,
-    annualUsageOaLineId: annualUsageChanged ? '' : formModel.value.annualUsageOaLineId,
-  }
+  savingRules.value = true
   try {
-    if (editingId.value) {
-      await updateProductProperty(editingId.value, payload)
-      ElMessage.success('已更新')
-    } else {
-      await createProductProperty(payload)
-      ElMessage.success('已新增')
-    }
-    dialogVisible.value = false
-    fetchList()
-  } catch (error) {
-    ElMessage.error(error?.message || '保存失败')
-  }
-}
-
-const removeRow = async (row) => {
-  try {
-    await ElMessageBox.confirm('确定删除该记录吗？', '提示', {
-      type: 'warning',
+    await saveProductPropertyRules({
+      propertyYear: Number(filters.value.propertyYear),
+      rules: ruleRows.value.map((row) => ({
+        productAttr: row.productAttr,
+        upliftRate: Number(row.upliftPercent || 0) / 100,
+      })),
     })
+    ElMessage.success('上浮规则已保存，重新核算时生效')
+    await fetchList()
   } catch (error) {
-    return
+    ElMessage.error(error?.message || '规则保存失败')
+  } finally {
+    savingRules.value = false
   }
-  try {
-    await deleteProductProperty(row.id)
-    ElMessage.success('已删除')
-    fetchList()
-  } catch (error) {
-    ElMessage.error(error?.message || '删除失败')
-  }
-}
-
-const normalizeHeader = (value) =>
-  String(value || '')
-    .replace(/^\uFEFF/, '')
-    .replace(/[：:]/g, '')
-    .replace(/[（）()，,；;_/\\-]/g, '')
-    .replace(/[\s\u3000]+/g, '')
-    .trim()
-
-const formatPeriod = (value) => {
-  if (!value) {
-    return ''
-  }
-  if (value instanceof Date) {
-    const year = value.getFullYear()
-    const month = String(value.getMonth() + 1).padStart(2, '0')
-    return `${year}-${month}`
-  }
-  const text = String(value).trim()
-  if (!text) {
-    return ''
-  }
-  const match = text.match(/^(\d{4})[-/.](\d{1,2})/)
-  if (match) {
-    return `${match[1]}-${String(match[2]).padStart(2, '0')}`
-  }
-  return text
 }
 
 const openImportDialog = () => {
   importYear.value = filters.value.propertyYear || currentYear()
+  importMode.value = 'INCREMENTAL'
   importFile.value = null
   importResult.value = null
-  localImportWarnings.value = []
   importDialogVisible.value = true
 }
 
 const handleImportFileChange = (uploadFile) => {
   importFile.value = uploadFile.raw || null
   importResult.value = null
-  localImportWarnings.value = []
 }
 
-const handleImportFileRemove = () => {
-  importFile.value = null
-}
-
-const headerAliases = {
-  level1Code: ['一级编码'],
-  businessDivision: ['事业部', '一级编码名称', '生产事业部'],
-  productCode: ['产品料号', '父件编码', '物料编码', '料号'],
-  productName: ['产品名称', '父件名称', '物料名称', '品名', '品名描述'],
-  productSpec: ['产品规格', '父件规格', '规格'],
-  productModel: ['产品型号', '父件型号', '型号', '主花型号'],
-  propertyYear: ['年度', '年份'],
-  period: ['期间', '月份'],
-  productAttr: ['产品属性'],
-  annualUsage: ['预计年用量', '年用量'],
-  remark: ['备注'],
-}
-
-const headerMap = Object.entries(headerAliases).reduce((acc, [key, values]) => {
-  values.forEach((value) => {
-    acc[normalizeHeader(value)] = key
-  })
-  return acc
-}, {})
-
-const headerKeys = Object.keys(headerMap).sort((a, b) => b.length - a.length)
-
-const resolveHeaderField = (cell) => {
-  const normalized = normalizeHeader(cell)
-  if (!normalized) {
-    return null
-  }
-  if (headerMap[normalized]) {
-    return headerMap[normalized]
-  }
-  const matched = headerKeys.find((key) => normalized.includes(key))
-  return matched ? headerMap[matched] : null
-}
-
-const findHeader = (rows) => {
-  const maxScanRow = Math.min(rows.length, 20)
-  let best = { start: -1, end: -1, count: 0, fields: {} }
-  for (let start = 0; start < maxScanRow; start += 1) {
-    for (let span = 1; span <= 3 && start + span <= rows.length; span += 1) {
-      const fields = {}
-      const maxColumns = Math.max(
-        ...rows.slice(start, start + span).map((row) => row.length),
-        0,
-      )
-      for (let column = 0; column < maxColumns; column += 1) {
-        const combined = rows
-          .slice(start, start + span)
-          .map((row) => row[column])
-          .filter((cell) => String(cell || '').trim())
-          .join('')
-        const field = resolveHeaderField(combined)
-        if (field && fields[field] === undefined) {
-          fields[field] = column
-        }
-      }
-      const count = Object.keys(fields).length
-      if (count > best.count) {
-        best = { start, end: start + span - 1, count, fields }
-      }
-    }
-  }
-  return best.count >= 3 ? best : { start: -1, end: -1, count: 0, fields: {} }
-}
-
-const parseNumber = (raw) => {
-  if (raw === undefined || raw === null) return null
-  const text = String(raw).trim().replace(/,/g, '')
-  if (!text) return null
-  const num = Number(text)
-  return Number.isFinite(num) ? num : null
-}
-
-const parseYear = (raw) => {
-  if (raw === undefined || raw === null) return null
-  const match = String(raw).match(/\d{4}/)
-  return match ? Number(match[0]) : null
-}
-
-const cellText = (row, index) => {
-  if (index === undefined || index === null) return ''
-  return String(row[index] || '').trim()
-}
-
-const isImportRowEmpty = (row) =>
-  !row.productCode &&
-  !row.productName &&
-  !row.productModel &&
-  !row.productSpec &&
-  !row.productAttr &&
-  row.annualUsage === null
-
-const parseImportRows = (rows) => {
-  const header = findHeader(rows)
-  if (header.start === -1) {
-    return {
-      rows: [],
-      warnings: [],
-      errors: ['未找到表头，请确认Excel格式是否正确'],
-    }
-  }
-  const requiredFields = ['productAttr']
-  const requiredLabels = {
-    productAttr: '产品属性',
-  }
-  const missing = requiredFields.filter((field) => header.fields[field] === undefined)
-  if (missing.length > 0) {
-    return {
-      rows: [],
-      warnings: [],
-      errors: [`缺少表头：${missing.map((field) => requiredLabels[field] || field).join('、')}`],
-    }
-  }
-  const warnings = []
-  const errors = []
-  const parsedRows = []
-  rows.slice(header.end + 1).forEach((sourceRow, offset) => {
-    const excelRowNo = header.end + offset + 2
-    const item = {
-      level1Code: cellText(sourceRow, header.fields.level1Code),
-      level1Name: cellText(sourceRow, header.fields.businessDivision),
-      businessDivision: cellText(sourceRow, header.fields.businessDivision),
-      parentCode: cellText(sourceRow, header.fields.productCode),
-      productCode: cellText(sourceRow, header.fields.productCode),
-      parentName: cellText(sourceRow, header.fields.productName),
-      productName: cellText(sourceRow, header.fields.productName),
-      parentSpec: cellText(sourceRow, header.fields.productSpec),
-      productSpec: cellText(sourceRow, header.fields.productSpec),
-      parentModel: cellText(sourceRow, header.fields.productModel),
-      productModel: cellText(sourceRow, header.fields.productModel),
-      period: formatPeriod(cellText(sourceRow, header.fields.period)),
-      propertyYear: parseYear(cellText(sourceRow, header.fields.propertyYear)),
-      productAttr: cellText(sourceRow, header.fields.productAttr),
-      annualUsage:
-        header.fields.annualUsage === undefined
-          ? null
-          : parseNumber(sourceRow[header.fields.annualUsage]),
-      remark: cellText(sourceRow, header.fields.remark),
-    }
-    if (isImportRowEmpty(item)) {
-      return
-    }
-    if (!item.productAttr) {
-      errors.push(`Excel第${excelRowNo}行缺产品属性`)
-      return
-    }
-    if (!item.productCode) {
-      errors.push(`Excel第${excelRowNo}行缺产品料号`)
-      return
-    }
-    parsedRows.push(item)
-  })
-  return { rows: parsedRows, warnings, errors }
-}
+const handleImportFileRemove = () => { importFile.value = null }
 
 const submitImport = async () => {
-  const rawFile = importFile.value
   if (!importYear.value) {
     ElMessage.warning('请先选择导入年度')
     return
   }
-  if (!rawFile) {
-    ElMessage.warning('请先选择导入文件')
+  if (!importFile.value) {
+    ElMessage.warning('请先选择 Excel 文件')
     return
+  }
+  if (importMode.value === 'FULL') {
+    try {
+      await ElMessageBox.confirm(
+        `全量导入会删除 ${importYear.value} 年未出现在文件中的料号，确定继续吗？`,
+        '确认全量导入',
+        { type: 'warning', confirmButtonText: '继续导入' },
+      )
+    } catch {
+      return
+    }
   }
   importing.value = true
   try {
-    let XLSX = null
-    try {
-      const mod = await import('xlsx')
-      XLSX = mod
-    } catch (error) {
-      ElMessage.error('未安装xlsx，请先运行 npm install xlsx')
-      return
-    }
-    const buffer = await rawFile.arrayBuffer()
-    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true })
-    const sheet = workbook.Sheets[workbook.SheetNames[0]]
-    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false })
-    const parsed = parseImportRows(rows)
-    localImportWarnings.value = parsed.warnings
-    if (parsed.errors.length > 0) {
-      importResult.value = {
-        inserted: 0,
-        updated: 0,
-        skipped: 0,
-        errors: parsed.errors.length,
-        risks: parsed.warnings.length,
-        errorMessages: parsed.errors,
-        warnings: [],
-      }
-      ElMessage.error(parsed.errors[0])
-      return
-    }
-    const dataRows = parsed.rows
-    if (dataRows.length === 0) {
-      ElMessage.warning('未解析到有效数据')
-      return
-    }
     const result = await importProductProperties({
-      propertyYear: importYear.value ? Number(importYear.value) : undefined,
-      rows: dataRows,
+      file: importFile.value,
+      propertyYear: Number(importYear.value),
+      importMode: importMode.value,
     })
-    importResult.value = {
-      ...result,
-      risks: (result?.risks || 0) + localImportWarnings.value.length,
-    }
-    const imported = (result?.inserted || 0) + (result?.updated || 0)
-    const riskText = importResult.value?.risks ? `，风险${importResult.value.risks}条` : ''
-    ElMessage.success(`已处理${imported}条产品属性${riskText}`)
-    filters.value.propertyYear = importYear.value
-    fetchList()
-    if (result?.errors) {
-      ElMessage.warning(`导入完成但存在错误：${result.errors}条`)
+    importResult.value = result
+    if (result?.success) {
+      ElMessage.success(`导入成功：新增 ${result.inserted || 0}，更新 ${result.updated || 0}`)
+      filters.value.propertyYear = importYear.value
+      pagination.value.page = 1
+      await Promise.all([fetchList(), fetchRules()])
+    } else {
+      ElMessage.error(result?.errors?.[0] || '导入校验未通过，数据库未写入')
     }
   } catch (error) {
     ElMessage.error(error?.message || '导入失败')
@@ -737,145 +359,46 @@ const submitImport = async () => {
   }
 }
 
-onMounted(fetchList)
+const formatPercent = (rate) => rate === null || rate === undefined
+  ? '-'
+  : `${(Number(rate) * 100).toFixed(2).replace(/\.00$/, '')}%`
+const formatCoefficient = (percent) => (1 + Number(percent || 0) / 100).toFixed(4)
+const formatStoredCoefficient = (value) => value === null || value === undefined
+  ? '-'
+  : Number(value).toFixed(4)
+
+onMounted(() => Promise.all([fetchList(), fetchRules()]))
 </script>
 
 <style scoped>
-.base-page {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.filter-card {
-  padding-bottom: 6px;
-}
-
-.filter-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.filter-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1f2a37;
-}
-
-.filter-actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.filter-form {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 16px;
-  align-items: center;
-}
-
-.filter-form :deep(.el-form-item) {
-  margin-right: 0;
-  margin-bottom: 0;
-}
-
-.filter-form :deep(.el-form-item__label) {
-  white-space: nowrap;
-}
-
-.filter-form :deep(.el-input) {
-  width: 240px;
-}
-
-.filter-form :deep(.el-select),
-.filter-form :deep(.el-date-editor) {
-  width: 240px;
-}
-
-.filter-form-actions {
-  margin-left: auto;
-}
-
-.property-form :deep(.el-input),
-.property-form :deep(.el-date-editor),
-.property-form :deep(.el-input-number) {
-  width: 100%;
-}
-
-.import-form :deep(.el-date-editor) {
-  width: 220px;
-}
-
-.upload-field {
-  width: 100%;
-}
-
-.upload-text {
-  color: #1f2a37;
-  font-size: 14px;
-  line-height: 88px;
-}
-
-.form-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0 16px;
-}
-
-.import-result {
-  margin-top: 12px;
-}
-
-.result-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.result-grid > div {
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
-  padding: 10px 12px;
-}
-
-.result-grid span {
-  color: #6b7280;
-  display: block;
-  font-size: 12px;
-}
-
-.result-grid strong {
-  color: #111827;
-  font-size: 18px;
-  line-height: 24px;
-}
-
-.issue-table {
-  width: 100%;
-}
-
+.base-page { display: flex; flex-direction: column; gap: 16px; }
+.filter-header, .card-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.filter-header { margin-bottom: 16px; }
+.filter-title, .card-title { color: #1f2a37; font-size: 15px; font-weight: 600; }
+.filter-tip, .mode-tip { color: #8a919f; font-size: 12px; line-height: 20px; margin-top: 3px; }
+.filter-form { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: center; }
+.filter-form :deep(.el-form-item) { margin: 0; }
+.filter-form :deep(.el-input), .filter-form :deep(.el-select), .filter-form :deep(.el-date-editor) { width: 220px; }
+.filter-form-actions { margin-left: auto !important; }
+.rule-grid { display: grid; grid-template-columns: repeat(4, minmax(220px, 1fr)); gap: 12px; }
+.rule-item { align-items: center; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 6px; display: grid; grid-template-columns: 58px 110px 18px 1fr; gap: 6px; padding: 12px; }
+.rule-name { color: #303846; font-weight: 600; }
+.percent, .coefficient { color: #6b7280; font-size: 12px; }
+.pagination-wrap { display: flex; justify-content: flex-end; padding-top: 16px; }
+.import-help, .result-alert { margin-bottom: 16px; }
+.import-form :deep(.el-date-editor) { width: 220px; }
+.upload-field { width: 100%; }
+.upload-text { color: #1f2a37; font-size: 14px; line-height: 88px; }
+.mode-tip { margin-left: 14px; }
+.import-result { margin-top: 16px; }
+.result-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+.result-grid > div { border: 1px solid #e5e7eb; border-radius: 6px; padding: 10px 12px; }
+.result-grid span { color: #6b7280; display: block; font-size: 12px; }
+.result-grid strong { color: #111827; font-size: 18px; line-height: 24px; }
+@media (max-width: 1180px) { .rule-grid { grid-template-columns: repeat(2, minmax(220px, 1fr)); } }
 @media (max-width: 760px) {
-  .filter-header {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .filter-actions,
-  .form-grid {
-    width: 100%;
-  }
-
-  .form-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .result-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+  .filter-header, .card-header { align-items: flex-start; flex-direction: column; }
+  .rule-grid, .result-grid { grid-template-columns: 1fr 1fr; }
+  .filter-form-actions { margin-left: 0 !important; }
 }
 </style>

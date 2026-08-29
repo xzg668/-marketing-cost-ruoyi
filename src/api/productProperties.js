@@ -3,14 +3,20 @@ import { request } from './http'
 export const fetchProductProperties = (params) =>
   request('/api/v1/product-properties', { params })
 
-export const createProductProperty = (body) =>
-  request('/api/v1/product-properties', { method: 'POST', body })
+export const fetchProductPropertyRules = (params) =>
+  request('/api/v1/product-properties/rules', { params })
 
-export const updateProductProperty = (id, body) =>
-  request(`/api/v1/product-properties/${id}`, { method: 'PATCH', body })
+export const saveProductPropertyRules = (body) =>
+  request('/api/v1/product-properties/rules', { method: 'PUT', body })
 
-export const deleteProductProperty = (id) =>
-  request(`/api/v1/product-properties/${id}`, { method: 'DELETE' })
-
-export const importProductProperties = (body) =>
-  request('/api/v1/product-properties/import', { method: 'POST', body })
+export const importProductProperties = ({ file, propertyYear, importMode }) => {
+  const body = new FormData()
+  body.append('file', file)
+  body.append('propertyYear', String(propertyYear))
+  body.append('importMode', importMode)
+  return request('/api/v1/product-properties/import', {
+    method: 'POST',
+    body,
+    timeout: 180000,
+  })
+}
