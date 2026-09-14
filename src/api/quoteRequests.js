@@ -9,40 +9,22 @@ export const fetchQuoteRequests = (params) =>
 export const fetchQuoteRequestDetail = (oaNo) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}`)
 
-export const fetchQuoteCollaborationSummary = (oaNo) =>
-  request(`/api/v1/quote-requests/${encodePath(oaNo)}/collaboration-summary`)
-
-export const refreshQuoteCollaborationSummary = (oaNo) =>
-  request(`/api/v1/quote-requests/${encodePath(oaNo)}/collaboration-summary/refresh`, {
-    method: 'POST',
+export const fetchElectronicDrawingMaterialResolution = (taskId) =>
+  request(`/api/v1/quote-requests/electronic-drawing/tasks/${encodePath(taskId)}/material-resolution`, {
+    suppressErrorToast: true,
   })
 
-export const scanQuoteItemCollaboration = (oaNo, itemId) =>
-  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/collaboration/scan`, {
-    method: 'POST',
+export const searchElectronicDrawingMaterialOptions = (taskId, params) =>
+  request(`/api/v1/quote-requests/electronic-drawing/tasks/${encodePath(taskId)}/material-options`, {
+    params,
+    suppressErrorToast: true,
   })
 
-export const fetchQuoteTechnicianCandidates = (oaNo, itemId) =>
-  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/collaboration/technician-candidates`)
-
-export const startQuoteItemCollaboration = (oaNo, itemId, body = {}) =>
-  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/collaboration/start`, {
-    method: 'POST',
+export const saveElectronicDrawingMaterialResolutions = (taskId, body) =>
+  request(`/api/v1/quote-requests/electronic-drawing/tasks/${encodePath(taskId)}/material-resolutions`, {
+    method: 'PUT',
     body,
-  })
-
-export const batchStartQuoteCollaboration = (oaNo, body) =>
-  request(`/api/v1/quote-requests/${encodePath(oaNo)}/collaboration/batch-start`, {
-    method: 'POST',
-    body,
-  })
-
-export const fetchQuoteItemCollaborationHistory = (oaNo, itemId) =>
-  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/collaboration/history`)
-
-export const createCollaborationPortalAccessLink = (taskId) =>
-  request(`/api/v1/collaboration/product-tasks/${encodePath(taskId)}/access-link`, {
-    method: 'POST',
+    suppressErrorToast: true,
   })
 
 export const fetchQuoteCostingWorkbench = (oaNo, itemId) =>

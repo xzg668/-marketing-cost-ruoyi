@@ -4,7 +4,7 @@
       <div><h1>报价单详情</h1><p>{{ oaNo }} · {{ detail.items?.length || 0 }} 个产品</p></div>
       <div class="page-actions">
         <el-button :icon="ArrowLeft" @click="goBack">返回</el-button>
-        <el-button :loading="checking" @click="refreshCollaboration">重新检查</el-button>
+        <el-button :loading="checking" @click="refreshQuoteState">刷新状态</el-button>
         <el-button v-if="canConfirmClassification(detail)" type="warning" @click="openConfirmDialog">确认分类</el-button>
         <el-button
           type="primary"
@@ -19,14 +19,14 @@
 
     <div v-if="batchRun && batchRun.status !== 'NOT_STARTED'" class="batch-progress">
       <div class="batch-progress__head">
-        <strong>整单核算进度</strong>
+        <strong>最近一次整单核算结果</strong>
         <span>{{ batchStatusLabel(batchRun.status) }} · {{ batchRun.progress || 0 }}%</span>
       </div>
       <el-progress :percentage="batchRun.progress || 0" :show-text="false" :stroke-width="8" />
       <div class="batch-progress__counts">
-        业务结果：{{ batchBusinessOutcomeLabel(batchRun.businessOutcome) }}；
+        该次业务结果：{{ batchBusinessOutcomeLabel(batchRun.businessOutcome) }}；
         共 {{ batchRun.totalCount || 0 }} 项，成功 {{ batchRun.successCount || 0 }}，
-        协作 {{ batchRun.collaborationCount || 0 }}，运行 {{ batchRun.runningCount || 0 }}，
+        等待资料 {{ batchRun.waitingInputCount || 0 }}，运行 {{ batchRun.runningCount || 0 }}，
         排队 {{ batchRun.queuedCount || 0 }}，跳过 {{ batchRun.skippedCurrentCount || 0 }}，
         失败 {{ batchRun.failedCount || 0 }}
       </div>
@@ -64,15 +64,9 @@
     <el-tabs v-model="activeTab" class="detail-tabs">
       <el-tab-pane label="产品明细" name="items">
         <el-alert type="info" :closable="false" show-icon class="guide-alert">
-          <template #title>系统直接显示最近一次核算或协作任务保存的状态</template>
-          打开页面不会逐个展开 BOM 和检查价格；核算任务完成后更新状态，每个产品只显示一个当前状态和一个下一步。
+          <template #title>技术资料补录已切换到新工作台</template>
+          OA 待办只发布新技术资料任务；本页直接展示BOM、价格与核算工作区状态，并继续提供报价核算入口。
         </el-alert>
-        <div class="table-toolbar">
-          <div class="table-toolbar__meta">已选择 {{ selectedItems.length }} 项</div>
-          <el-button type="warning" :disabled="selectedItems.length === 0" :loading="tasking" @click="handleBatchSupplement">
-            批量发起协作
-          </el-button>
-        </div>
         <el-table
           ref="itemsTableRef"
           :data="detail.items || []"
@@ -80,9 +74,7 @@
           row-key="id"
           class="items-table"
           :row-class-name="rowClassName"
-          @selection-change="selectedItems = $event"
         >
-          <el-table-column type="selection" width="48" fixed="left" :selectable="canBatchStartCollaboration" />
           <el-table-column label="序号" width="64" align="center" fixed="left">
             <template #default="{ row }">
               <span class="product-seq">{{ row.seq || '-' }}</span>
@@ -114,28 +106,28 @@
           </el-table-column>
           <el-table-column label="BOM状态" min-width="190">
             <template #default="{ row }">
-              <el-tag :type="collaborationTagType(row.collaboration?.bomStatus)" effect="plain">
-                {{ row.collaboration?.bomStatusLabel || '待检查' }}
+              <el-tag :type="workflowStatusTagType(row.workflow?.bomStatus)" effect="plain">
+                {{ row.workflow?.bomStatusLabel || '待检查' }}
               </el-tag>
             </template>
           </el-table-column>
           <el-table-column label="价格状态" min-width="170">
             <template #default="{ row }">
-              <el-tag :type="collaborationTagType(row.collaboration?.priceStatus === 'READY' ? 'AVAILABLE' : row.collaboration?.currentStatus)" effect="plain">
-                {{ row.collaboration?.priceStatusLabel || '待检查' }}
+              <el-tag :type="workflowStatusTagType(row.workflow?.priceStatus === 'READY' ? 'AVAILABLE' : row.workflow?.currentStatus)" effect="plain">
+                {{ row.workflow?.priceStatusLabel || '待检查' }}
               </el-tag>
             </template>
           </el-table-column>
           <el-table-column label="处理人" min-width="120">
-            <template #default="{ row }">{{ row.collaboration?.assigneeName || row.technicianName || '-' }}</template>
+            <template #default="{ row }">{{ row.workflow?.assigneeName || row.technicianName || '-' }}</template>
           </el-table-column>
           <el-table-column label="当前状态" min-width="160">
             <template #default="{ row }">
-              <el-tag :type="collaborationTagType(row.collaboration?.currentStatus)" effect="plain">
-                {{ row.collaboration?.currentStatusLabel || '待检查' }}
+              <el-tag :type="workflowStatusTagType(row.workflow?.currentStatus)" effect="plain">
+                {{ row.workflow?.currentStatusLabel || '待检查' }}
               </el-tag>
-              <div v-if="row.collaboration?.message" class="state-message" :title="row.collaboration.message">
-                {{ row.collaboration.message }}
+              <div v-if="row.workflow?.message" class="state-message" :title="row.workflow.message">
+                {{ row.workflow.message }}
               </div>
             </template>
           </el-table-column>
@@ -143,16 +135,16 @@
             <template #default="{ row }">
               <div class="row-actions">
                 <el-button
-                  v-if="row.collaboration?.actionEnabled"
+                  v-if="row.workflow?.actionEnabled"
                   link
-                  :type="operationType(row.collaboration?.nextAction)"
+                  :type="operationType(row.workflow?.nextAction)"
                   :loading="actionLoadingId === rowActionKey(row)"
                   @click="handleRowAction(row)"
                 >
-                  {{ row.collaboration?.nextActionLabel }}
+                  {{ row.workflow?.nextActionLabel }}
                 </el-button>
                 <el-button
-                  v-if="hasHistoricalCostResult(row) && row.collaboration?.nextAction !== 'VIEW_COSTING_RESULT'"
+                  v-if="hasHistoricalCostResult(row) && row.workflow?.nextAction !== 'VIEW_COSTING_RESULT'"
                   link
                   type="primary"
                   :loading="costResultDialog.loading && costResultDialog.itemId === row.id"
@@ -160,7 +152,7 @@
                 >
                   查看结果
                 </el-button>
-                <span v-if="!row.collaboration?.actionEnabled && !hasHistoricalCostResult(row)" class="no-action">—</span>
+                <span v-if="!row.workflow?.actionEnabled && !hasHistoricalCostResult(row)" class="no-action">—</span>
               </div>
             </template>
           </el-table-column>
@@ -179,29 +171,6 @@
         </el-descriptions>
       </el-tab-pane>
     </el-tabs>
-
-    <el-dialog v-model="historyDialog.visible" title="补录内容与状态记录" width="720px">
-      <el-descriptions :column="2" border class="history-summary">
-        <el-descriptions-item label="产品任务">{{ historyDialog.data.productTaskNo || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="当前处理人">{{ historyDialog.data.assigneeName || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="当前状态" :span="2">{{ historyDialog.data.currentStatusLabel || '-' }}</el-descriptions-item>
-      </el-descriptions>
-      <el-timeline v-if="historyDialog.data.entries?.length">
-        <el-timeline-item v-for="(entry, index) in historyDialog.data.entries" :key="`${entry.occurredAt}-${index}`" :timestamp="formatDateTime(entry.occurredAt)">
-          <strong>{{ entry.title }}</strong><div class="history-description">{{ entry.description }}</div>
-        </el-timeline-item>
-      </el-timeline>
-      <el-empty v-else description="暂无变更记录" />
-      <template #footer>
-        <el-button
-          v-if="historyDialog.data.productTaskId"
-          type="primary"
-          :loading="historyDialog.creatingLink"
-          @click="createPortalLink"
-        >复制技术协作链接</el-button>
-        <el-button @click="historyDialog.visible = false">关闭</el-button>
-      </template>
-    </el-dialog>
 
     <el-dialog
       v-model="costResultDialog.visible"
@@ -316,56 +285,6 @@
       <template #footer><el-button @click="costResultDialog.visible = false">关闭</el-button></template>
     </el-dialog>
 
-    <el-dialog
-      v-model="assignmentDialog.visible"
-      :title="assignmentDialog.rows.length > 1 ? '批量指定技术负责人' : '指定技术负责人'"
-      width="520px"
-      :close-on-click-modal="false"
-    >
-      <el-alert type="info" :closable="false" show-icon class="assignment-alert">
-        <template #title>
-          {{ assignmentDialog.rows.length > 1
-            ? `将为 ${assignmentDialog.unresolvedCount} 个未匹配产品指定同一负责人`
-            : '选择实际处理本产品的技术人员' }}
-        </template>
-        {{ assignmentDialog.message || '候选人只包含当前业务单元中有效的技术协作账号。' }}
-      </el-alert>
-      <el-form label-position="top" v-loading="assignmentDialog.loading">
-        <el-form-item label="技术负责人" required>
-          <el-select
-            v-model="assignmentDialog.selectedUserId"
-            filterable
-            placeholder="请选择技术负责人"
-            style="width: 100%"
-            :disabled="assignmentDialog.candidates.length === 0"
-          >
-            <el-option
-              v-for="candidate in assignmentDialog.candidates"
-              :key="candidate.userId"
-              :value="candidate.userId"
-              :label="candidateLabel(candidate)"
-            />
-          </el-select>
-        </el-form-item>
-        <el-empty
-          v-if="!assignmentDialog.loading && assignmentDialog.candidates.length === 0"
-          :description="assignmentDialog.message || '暂无可选技术负责人'"
-          :image-size="72"
-        />
-      </el-form>
-      <template #footer>
-        <el-button :disabled="assignmentDialog.submitting" @click="assignmentDialog.visible = false">取消</el-button>
-        <el-button
-          type="primary"
-          :loading="assignmentDialog.submitting"
-          :disabled="!assignmentDialog.selectedUserId"
-          @click="submitTechnicianAssignment"
-        >
-          确定并发起补录
-        </el-button>
-      </template>
-    </el-dialog>
-
     <el-dialog v-model="confirmDialog.visible" title="确认报价单分类" width="460px">
       <el-form :model="confirmDialog.form" label-width="96px">
         <el-form-item label="报价场景">
@@ -384,37 +303,22 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import {
-  batchStartQuoteCollaboration,
   confirmQuoteRequestClassification,
-  createCollaborationPortalAccessLink,
-  fetchQuoteItemCollaborationHistory,
-  fetchQuoteCollaborationSummary,
   fetchQuoteCostResultHistory,
   fetchQuoteMonthlyCostResultDetail,
   fetchCurrentQuoteBatchCostRun,
   fetchQuoteRequestDetail,
-  fetchQuoteTechnicianCandidates,
-  refreshQuoteCollaborationSummary,
-  scanQuoteItemCollaboration,
-  startQuoteItemCollaboration,
   submitQuoteProductCostRun,
   submitQuoteBatchCostRun,
 } from '../api/quoteRequests'
-import {
-  ASSIGN_TECHNICIAN_ACTION,
-  buildCollaborationBatchStartItems,
-  buildStoredCollaborationSummary,
-  canBatchStartCollaboration,
-  collaborationTagType,
-  mergeCollaborationItems,
-  mergeCollaborationSummary,
-  STARTABLE_COLLABORATION_ACTIONS,
-} from '../utils/quoteCollaboration'
+import { useQuoteBatchCosting } from '../composables/useQuoteBatchCosting'
+import { withQuoteItemWorkflow } from '../utils/quoteItemWorkflow'
+import { workflowStatusTagType } from '../utils/workflowStatus'
 import {
   QUOTE_SCENARIO_OPTIONS,
   canConfirmClassification,
@@ -428,16 +332,11 @@ const router = useRouter()
 const oaNo = computed(() => String(route.params.oaNo || ''))
 const loading = ref(false)
 const checking = ref(false)
-const batchSubmitting = ref(false)
-const batchRun = ref(null)
 const confirming = ref(false)
-const tasking = ref(false)
 const actionLoadingId = ref('')
 const activeTab = ref('items')
 const detail = ref({})
-const selectedItems = ref([])
 const itemsTableRef = ref()
-const historyDialog = reactive({ visible: false, creatingLink: false, data: {} })
 const costResultDialog = reactive({
   visible: false,
   loading: false,
@@ -448,115 +347,80 @@ const costResultDialog = reactive({
   selected: null,
   monthlyDetail: { partItems: [], costItems: [] },
 })
-const assignmentDialog = reactive({
-  visible: false,
-  loading: false,
-  submitting: false,
-  rows: [],
-  candidates: [],
-  selectedUserId: null,
-  unresolvedCount: 0,
-  message: '',
-})
 const confirmDialog = reactive({ visible: false, form: { quoteScenario: '', businessUnitType: 'COMMERCIAL' } })
-let batchPollTimer = null
+let electronicDrawingContinuationHandled = false
 
 async function loadDetail() {
   if (!oaNo.value) return
-  const requestedOaNo = oaNo.value
+  const scope = captureScope()
+  const requestedOaNo = scope.oaNo
   loading.value = true
   try {
     const base = await fetchQuoteRequestDetail(requestedOaNo)
-    if (requestedOaNo !== oaNo.value) return
-    detail.value = mergeCollaborationSummary(base, buildStoredCollaborationSummary(base))
+    if (!scope.isCurrent()) return
+    detail.value = withQuoteItemWorkflow(base)
     loading.value = false
-    selectedItems.value = []
     await locateReturnRow()
-    const [summaryResult] = await Promise.allSettled([
-      fetchQuoteCollaborationSummary(requestedOaNo),
-      loadBatchProgress(),
-    ])
-    if (requestedOaNo === oaNo.value && summaryResult.status === 'fulfilled') {
-      detail.value = mergeCollaborationSummary(detail.value, summaryResult.value)
-    }
+    if (!scope.isCurrent()) return
+    await loadBatchProgress()
+    if (scope.isCurrent()) await continueElectronicDrawingCosting()
   } catch (error) {
+    if (!scope.isCurrent()) return
     detail.value = {}
     ElMessage.error(error?.message || '获取报价单详情失败')
   } finally {
-    loading.value = false
+    if (scope.isCurrent()) loading.value = false
   }
 }
 
-async function submitWholeQuoteCosting() {
-  batchSubmitting.value = true
+async function continueElectronicDrawingCosting() {
+  if (electronicDrawingContinuationHandled || route.query.electronicDrawing !== 'resolved') return
+  electronicDrawingContinuationHandled = true
+  const scope = captureScope()
+  const itemId = String(route.query.itemId || '')
+  const nextQuery = { ...route.query }
+  delete nextQuery.electronicDrawing
+  await router.replace({ path: route.path, query: nextQuery })
+  if (!itemId || !scope.isCurrent()) return
   try {
-    batchRun.value = await submitQuoteBatchCostRun(oaNo.value, { mode: 'ALL' })
-    ElMessage.success(`整单核算已提交，共 ${batchRun.value?.totalCount || 0} 个产品`)
-    scheduleBatchPoll()
+    const base = await fetchQuoteRequestDetail(scope.oaNo)
+    if (!scope.isCurrent()) return
+    detail.value = withQuoteItemWorkflow(base)
+    const row = detail.value.items?.find((item) => String(item.id) === itemId)
+    if (row?.workflow?.nextAction === 'START_COSTING') {
+      ElMessage.success('电子图库 BOM 已准备，正在继续价格检查与核算')
+      await submitSingleProductCosting(row, 'ELECTRONIC_DRAWING_RESOLVED')
+      return
+    }
+    ElMessage.warning(row?.workflow?.message || '电子图库 BOM 已保存，请按当前状态继续处理')
   } catch (error) {
-    ElMessage.error(error?.message || '整单核算提交失败')
-  } finally {
-    batchSubmitting.value = false
+    if (!scope.isCurrent()) return
+    ElMessage.error(error?.message || '电子图库 BOM 已保存，自动继续核算失败，请点击“核算本产品”重试')
   }
 }
 
-async function loadBatchProgress() {
-  stopBatchPoll()
-  if (!oaNo.value) return
-  try {
-    batchRun.value = await fetchCurrentQuoteBatchCostRun(oaNo.value)
-    scheduleBatchPoll()
-  } catch {
-    batchRun.value = null
-  }
-}
-
-function scheduleBatchPoll() {
-  stopBatchPoll()
-  if (!batchRun.value?.active) return
-  batchPollTimer = window.setTimeout(pollBatchProgress, 2000)
-}
-
-async function pollBatchProgress() {
-  const requestedOaNo = oaNo.value
-  try {
-    const next = await fetchCurrentQuoteBatchCostRun(requestedOaNo)
-    if (requestedOaNo !== oaNo.value) return
-    const finished = batchRun.value?.active && !next?.active
-    batchRun.value = next
-    if (finished) {
+const { batchRun, batchSubmitting, loadBatchProgress, submitWholeQuoteCosting, captureScope } =
+  useQuoteBatchCosting(oaNo, {
+    fetchProgress: fetchCurrentQuoteBatchCostRun,
+    submitBatch: submitQuoteBatchCostRun,
+    refreshDetail: async (scope) => {
+      const base = await fetchQuoteRequestDetail(scope.oaNo)
+      if (scope.isCurrent()) detail.value = withQuoteItemWorkflow(base)
+    },
+    onSubmitted: (next) => ElMessage.success(`整单核算已提交，共 ${next?.totalCount || 0} 个产品`),
+    onError: (error) => ElMessage.error(error?.message || '整单核算提交失败'),
+    onFinished: (next) => {
       if (next?.businessOutcome === 'WAITING_INPUT') {
         ElMessage.warning('整单处理结束，但产品仍在等待业务资料补齐')
       } else if (next?.businessOutcome === 'PARTIAL_SUCCESS') {
-        ElMessage.warning('整单仅部分产品核算成功，请处理协作或失败项')
+        ElMessage.warning('整单仅部分产品核算成功，请处理资料缺口或失败项')
       } else if (next?.status === 'FAILED') {
         ElMessage.error(next.message || '整单核算执行失败，请处理后重新发起')
       } else if (next?.status === 'PARTIAL_FAILED') {
         ElMessage.warning(next.message || '整单核算已完成，但存在失败项')
       }
-      const summaryPromise = fetchQuoteCollaborationSummary(requestedOaNo)
-      const base = await fetchQuoteRequestDetail(requestedOaNo)
-      if (requestedOaNo === oaNo.value) {
-        detail.value = mergeCollaborationSummary(base, buildStoredCollaborationSummary(base))
-      }
-      const summary = await summaryPromise
-      if (requestedOaNo === oaNo.value) {
-        detail.value = mergeCollaborationSummary(detail.value, summary)
-      }
-    }
-  } catch {
-    // 短轮询失败不打断用户；下一次进入页面仍可读取持久化进度。
-  } finally {
-    scheduleBatchPoll()
-  }
-}
-
-function stopBatchPoll() {
-  if (batchPollTimer !== null) {
-    window.clearTimeout(batchPollTimer)
-    batchPollTimer = null
-  }
-}
+    },
+  })
 
 function batchBusinessOutcomeLabel(outcome) {
   return ({
@@ -581,17 +445,19 @@ function batchStatusLabel(status) {
   })[status] || status || '未开始'
 }
 
-async function refreshCollaboration(showMessage = true) {
+async function refreshQuoteState(showMessage = true) {
+  const scope = captureScope()
   checking.value = true
   try {
-    const summary = await refreshQuoteCollaborationSummary(oaNo.value)
-    detail.value = mergeCollaborationSummary(detail.value, summary)
-    selectedItems.value = []
-    if (showMessage) ElMessage.success('产品状态已按 U9、协作任务和价格结果刷新')
+    const base = await fetchQuoteRequestDetail(scope.oaNo)
+    if (!scope.isCurrent()) return
+    detail.value = withQuoteItemWorkflow(base)
+    await loadBatchProgress()
+    if (scope.isCurrent() && showMessage) ElMessage.success('报价、技术资料与成本状态已刷新')
   } catch (error) {
-    ElMessage.error(error?.message || '刷新产品状态失败')
+    if (scope.isCurrent()) ElMessage.error(error?.message || '刷新产品状态失败')
   } finally {
-    checking.value = false
+    if (scope.isCurrent()) checking.value = false
   }
 }
 
@@ -614,21 +480,8 @@ async function submitClassification() {
 }
 
 async function handleRowAction(row) {
-  if (needsAuthoritativeProjection(row)) {
-    actionLoadingId.value = rowActionKey(row)
-    try {
-      row.collaboration = await scanQuoteItemCollaboration(oaNo.value, row.id)
-    } catch (error) {
-      ElMessage.error(error?.message || '刷新产品状态失败')
-      return
-    } finally {
-      actionLoadingId.value = ''
-    }
-  }
-  const action = row?.collaboration?.nextAction
-  if (action === ASSIGN_TECHNICIAN_ACTION) return openTechnicianAssignment([row])
-  if (STARTABLE_COLLABORATION_ACTIONS.has(action)) return startCollaboration(row)
-  if (action === 'VIEW_SUPPLEMENT') return openHistory(row)
+  const action = row?.workflow?.nextAction
+  if (action === 'RESOLVE_ELECTRONIC_DRAWING_MATERIAL') return openElectronicDrawingResolution(row)
   if (action === 'START_COSTING') return startCosting(row)
   if (action === 'RESTART_COSTING') return restartCosting(row)
   if (action === 'RETRY_COSTING') return submitSingleProductCosting(row, 'RETRY')
@@ -636,151 +489,13 @@ async function handleRowAction(row) {
   if (action === 'VIEW_COSTING_PROGRESS') return openCostingWorkbench(row, { tab: 'COST_RUN' })
   if (action === 'VIEW_COSTING_GAP') return openCostingGap(row)
 }
-async function startCollaboration(row) {
-  actionLoadingId.value = rowActionKey(row)
-  try {
-    const response = await startQuoteItemCollaboration(oaNo.value, row.id, {
-      expectedProjectionVersion: row.collaboration?.projectionVersion,
-    })
-    applyCollaborationProjections([response?.item])
-    ElMessage.success(response?.message || '协作状态已更新')
-  } catch (error) { ElMessage.error(error?.message || '发起补录失败') }
-  finally { actionLoadingId.value = '' }
+function openElectronicDrawingResolution(row) {
+  const taskId = row?.electronicDrawingWorkflowId
+  if (!taskId) return ElMessage.warning('电子图库处理记录尚未准备好，请重新检查后再试')
+  router.push({
+    path: `/ingest/quote-requests/${encodeURIComponent(oaNo.value)}/items/${encodeURIComponent(row.id)}/electronic-drawing/${encodeURIComponent(taskId)}/material-resolution`,
+  })
 }
-async function handleBatchSupplement() {
-  let rows = selectedItems.value.filter(canBatchStartCollaboration)
-  if (!rows.length) return ElMessage.warning('请选择可发起协作的产品')
-  const staleRows = rows.filter(needsAuthoritativeProjection)
-  if (staleRows.length) {
-    tasking.value = true
-    try {
-      const projections = await Promise.all(staleRows.map(row =>
-        scanQuoteItemCollaboration(oaNo.value, row.id)))
-      staleRows.forEach((row, index) => { row.collaboration = projections[index] })
-      rows = selectedItems.value.filter(canBatchStartCollaboration)
-    } catch (error) {
-      ElMessage.error(error?.message || '刷新所选产品状态失败')
-      return
-    } finally {
-      tasking.value = false
-    }
-  }
-  if (!rows.length) return ElMessage.info('所选产品状态已更新，无需重复发起协作')
-  if (rows.some(row => row.collaboration?.nextAction === ASSIGN_TECHNICIAN_ACTION)) {
-    return openTechnicianAssignment(rows)
-  }
-  return executeBatchStart(rows)
-}
-
-function needsAuthoritativeProjection(row) {
-  const action = row?.collaboration?.nextAction
-  return !row?.collaboration?.projectionVersion
-    && (action === ASSIGN_TECHNICIAN_ACTION || STARTABLE_COLLABORATION_ACTIONS.has(action))
-}
-async function executeBatchStart(rows, technicianUserId = null) {
-  tasking.value = true
-  try {
-    const response = await batchStartQuoteCollaboration(oaNo.value, {
-      items: buildCollaborationBatchStartItems(rows, technicianUserId),
-    })
-    applyCollaborationProjections(
-      (response.results || []).filter((result) => result.success).map((result) => result.item),
-    )
-    if (response.failureCount) {
-      const failureSummary = (response.results || [])
-        .filter(result => !result.success)
-        .slice(0, 2)
-        .map(result => `${result.itemId || '未知产品'}：${result.message || '发起失败'}`)
-        .join('；')
-      ElMessage.warning(`成功 ${response.successCount} 项，失败 ${response.failureCount} 项${failureSummary ? `；${failureSummary}` : ''}`)
-    }
-    else ElMessage.success(`已处理 ${response.successCount} 项补录协作`)
-  } catch (error) { ElMessage.error(error?.message || '批量发起补录失败') }
-  finally { tasking.value = false }
-}
-
-async function openTechnicianAssignment(rows) {
-  const unresolvedRows = rows.filter(row => row.collaboration?.nextAction === ASSIGN_TECHNICIAN_ACTION)
-  const first = unresolvedRows[0]
-  if (!first) return executeBatchStart(rows)
-  assignmentDialog.visible = true
-  assignmentDialog.loading = true
-  assignmentDialog.rows = rows
-  assignmentDialog.unresolvedCount = unresolvedRows.length
-  assignmentDialog.candidates = []
-  assignmentDialog.selectedUserId = null
-  assignmentDialog.message = ''
-  try {
-    const response = await fetchQuoteTechnicianCandidates(oaNo.value, first.id)
-    assignmentDialog.candidates = response?.candidates || []
-    assignmentDialog.message = response?.message || ''
-    const recommended = assignmentDialog.candidates.filter(candidate => candidate.recommended)
-    if (recommended.length === 1) assignmentDialog.selectedUserId = recommended[0].userId
-  } catch (error) {
-    assignmentDialog.message = error?.message || '获取技术负责人失败'
-    ElMessage.error(assignmentDialog.message)
-  } finally {
-    assignmentDialog.loading = false
-  }
-}
-
-async function submitTechnicianAssignment() {
-  if (!assignmentDialog.selectedUserId) return ElMessage.warning('请选择技术负责人')
-  const rows = [...assignmentDialog.rows]
-  assignmentDialog.submitting = true
-  try {
-    if (rows.length === 1) {
-      const row = rows[0]
-      const response = await startQuoteItemCollaboration(oaNo.value, row.id, {
-        technicianUserId: assignmentDialog.selectedUserId,
-        expectedProjectionVersion: row.collaboration?.projectionVersion,
-      })
-      applyCollaborationProjections([response?.item])
-      assignmentDialog.visible = false
-      ElMessage.success(response?.message || '已指定负责人并发起补录')
-      return
-    }
-    assignmentDialog.visible = false
-    await executeBatchStart(rows, assignmentDialog.selectedUserId)
-  } catch (error) {
-    ElMessage.error(error?.message || '指定技术负责人失败')
-  } finally {
-    assignmentDialog.submitting = false
-  }
-}
-async function openHistory(row) {
-  actionLoadingId.value = rowActionKey(row)
-  try {
-    historyDialog.data = await fetchQuoteItemCollaborationHistory(oaNo.value, row.id)
-    historyDialog.visible = true
-  } catch (error) { ElMessage.error(error?.message || '获取补录内容失败') }
-  finally { actionLoadingId.value = '' }
-}
-
-async function createPortalLink() {
-  const taskId = historyDialog.data?.productTaskId
-  if (!taskId) return ElMessage.warning('当前没有可生成链接的协作任务')
-  historyDialog.creatingLink = true
-  try {
-    const result = await createCollaborationPortalAccessLink(taskId)
-    const url = result?.accessUrl || ''
-    if (!url) throw new Error('服务端没有返回协作链接')
-    try {
-      await navigator.clipboard.writeText(url)
-      ElMessage.success('技术协作链接已复制，可放入 OA 待办')
-    } catch {
-      await ElMessageBox.alert(url, '技术协作链接', {
-        confirmButtonText: '关闭',
-        customClass: 'collaboration-link-dialog',
-      })
-    }
-  } catch (error) {
-    ElMessage.error(error?.message || '生成技术协作链接失败')
-  } finally {
-    historyDialog.creatingLink = false
-  }
-}
-
 function hasHistoricalCostResult(row) {
   return Boolean(row?.confirmedCostVersionId || row?.calcAt || row?.calcStatus === '已核算')
 }
@@ -858,19 +573,22 @@ function openCostingWorkbench(row, query = {}) {
   })
 }
 async function startCosting(row) {
-  if (row?.collaboration?.nextAction !== 'START_COSTING') return ElMessage.warning('当前产品尚未具备核算条件')
+  if (row?.workflow?.nextAction !== 'START_COSTING') return ElMessage.warning('当前产品尚未具备核算条件')
   return submitSingleProductCosting(row, 'USER_REQUEST')
 }
 async function restartCosting(row) {
-  if (row?.collaboration?.nextAction !== 'RESTART_COSTING') return ElMessage.warning('当前产品无需重新核算')
+  if (row?.workflow?.nextAction !== 'RESTART_COSTING') return ElMessage.warning('当前产品无需重新核算')
   return submitSingleProductCosting(row, 'INPUT_CHANGED')
 }
 async function submitSingleProductCosting(row, reason) {
+  if (actionLoadingId.value) return
+  const scope = captureScope()
   actionLoadingId.value = rowActionKey(row)
   try {
-    const result = await submitQuoteProductCostRun(oaNo.value, row.id, {
+    const result = await submitQuoteProductCostRun(scope.oaNo, row.id, {
       reason,
     })
+    if (!scope.isCurrent()) return
     if (result?.pipelineStatus === 'SUCCESS') {
       ElMessage.success(result.reusedSuccess ? '当前结果已是最新，无需重复核算' : '本产品核算完成')
       openCostingWorkbench(row, { tab: 'COST_RUN' })
@@ -889,15 +607,10 @@ async function submitSingleProductCosting(row, reason) {
       tab: costingStepTab(result?.currentStep, result?.errorCode),
       guide: 'costing-input-gap',
     })
-  } catch (error) { ElMessage.error(error?.message || '本产品核算失败') }
-  finally { actionLoadingId.value = '' }
+  } catch (error) { if (scope.isCurrent()) ElMessage.error(error?.message || '本产品核算失败') }
+  finally { if (scope.isCurrent()) actionLoadingId.value = '' }
 }
 
-function applyCollaborationProjections(projections) {
-  detail.value = mergeCollaborationItems(detail.value, projections)
-  selectedItems.value = []
-  itemsTableRef.value?.clearSelection()
-}
 function openCostingGap(row) {
   openCostingWorkbench(row, {
     tab: costingStepTab(
@@ -916,11 +629,7 @@ function costingStepTab(step, errorCode = '') {
   return 'PRODUCT_DETAIL'
 }
 function rowActionKey(row) { return `row:${row?.id || ''}` }
-function candidateLabel(candidate) {
-  const identity = candidate.loginName && candidate.loginName !== candidate.userName ? `（${candidate.loginName}）` : ''
-  return `${candidate.userName}${identity}${candidate.recommended ? ' · 系统推荐' : ''}`
-}
-function operationType(action) { return STARTABLE_COLLABORATION_ACTIONS.has(action) || action === ASSIGN_TECHNICIAN_ACTION ? 'warning' : 'primary' }
+function operationType(action) { return action === 'VIEW_COSTING_GAP' ? 'warning' : 'primary' }
 function rowClassName({ row }) { return String(route.query.itemId || '') === String(row.id) ? 'return-row' : '' }
 async function locateReturnRow() {
   if (!route.query.itemId) return
@@ -929,9 +638,14 @@ async function locateReturnRow() {
   if (row) itemsTableRef.value?.setCurrentRow?.(row)
 }
 
-watch(oaNo, loadDetail)
+watch(oaNo, () => {
+  electronicDrawingContinuationHandled = false
+  checking.value = false
+  actionLoadingId.value = ''
+  detail.value = {}
+  loadDetail()
+})
 onMounted(loadDetail)
-onUnmounted(stopBatchPoll)
 </script>
 
 <style scoped>
@@ -1056,15 +770,6 @@ onUnmounted(stopBatchPoll)
   border-radius: 8px;
 }
 
-.table-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.table-toolbar__meta,
 .state-message,
 .history-description {
   color: #697386;
@@ -1148,10 +853,6 @@ onUnmounted(stopBatchPoll)
 
 .history-summary {
   margin-bottom: 20px;
-}
-
-.assignment-alert {
-  margin-bottom: 18px;
 }
 
 :deep(.el-table .return-row > td) {

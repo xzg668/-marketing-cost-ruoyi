@@ -212,6 +212,10 @@ const submitRow = async () => {
     ElMessage.warning('制造费用率必填')
     return
   }
+  if (productModel && !businessDivision) {
+    ElMessage.warning('型号级制造费用率必须填写事业部')
+    return
+  }
   if (!productCode && !productModel && !(businessDivision && productName) && !businessDivision) {
     ElMessage.warning('料号、产品型号、产品大类+事业部、产品名称+事业部、事业部至少满足一个匹配条件')
     return

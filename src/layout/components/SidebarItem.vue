@@ -1,6 +1,6 @@
 <template>
   <template v-if="visibleChildren.length === 0">
-    <el-menu-item v-if="!route.meta?.hidden" :index="fullPath" @click="onClick">
+    <el-menu-item v-if="!route.meta?.hidden" :index="fullPath">
       <el-icon v-if="iconComponent"><component :is="iconComponent" /></el-icon>
       <template #title>{{ route.meta?.title || route.path }}</template>
     </el-menu-item>
@@ -21,7 +21,6 @@
 
 <script setup>
 import { computed } from 'vue'
-import { useRouter } from 'vue-router'
 import * as ElIcons from '@element-plus/icons-vue'
 import { resolveRoutePath } from '../utils/resolveRoutePath'
 
@@ -30,7 +29,6 @@ const props = defineProps({
   basePath: { type: String, default: '' },
 })
 
-const router = useRouter()
 const ICONLESS_MENU_TITLES = new Set([
   'U9数据',
   'U9基础数据',
@@ -67,7 +65,4 @@ const shouldHideIcon = computed(() => {
   return ICONLESS_MENU_TITLES.has(title) || ICONLESS_MENU_PATHS.has(fullPath.value)
 })
 
-function onClick() {
-  if (fullPath.value) router.push(fullPath.value)
-}
 </script>

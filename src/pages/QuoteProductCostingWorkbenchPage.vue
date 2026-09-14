@@ -1476,13 +1476,18 @@ const hasCostRunResult = computed(() =>
 )
 const inputGapGuideVisible = computed(() => route.query.guide === 'costing-input-gap')
 const workflowGuideVisible = computed(() =>
-  !currentSuccessVersion.value?.id
+  !historyViewMode.value
+  && (!currentSuccessVersion.value?.id || ['WAIT_TECH_DATA', 'WAIT_BOM', 'WAIT_PRICE_TYPE', 'WAIT_PRICE', 'SYSTEM_FAILED']
+    .includes(costingWorkspace.value.workspaceStatus))
   && (inputGapGuideVisible.value || Boolean(localWorkflowGuideText.value))
 )
 const workflowGuideText = computed(() => localWorkflowGuideText.value || inputGapGuideText.value)
 const inputGapGuideText = computed(() => {
   const workspaceStatus = String(costingWorkspace.value.workspaceStatus || '').toUpperCase()
   const blockedStep = normalizeTabCode(workbench.value.workflowStatus?.currentBlockedStep)
+  if (workspaceStatus === 'WAIT_TECH_DATA') {
+    return costingWorkspace.value.lastErrorMessage || '当前月份缺少已审核生效的技术资料，请由产品技术处理后重新核算'
+  }
   if (workspaceStatus === 'WAIT_BOM' || blockedStep === 'QUOTE_BOM') {
     return '当前产品缺少可核算 BOM，请由产品技术补录后重新核算本产品'
   }

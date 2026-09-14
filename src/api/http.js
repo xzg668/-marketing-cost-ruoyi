@@ -5,10 +5,6 @@ import {
   saveTraceId,
   getTraceId,
 } from '../utils/errorHandler'
-import {
-  getCollaborationPortalToken,
-  isCollaborationPortalPath,
-} from '../utils/collaborationPortal'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 
@@ -20,11 +16,11 @@ const instance = axios.create({
 
 // 请求拦截器：注入 token + 回传 traceId（来自上一次响应），便于全链路追踪
 instance.interceptors.request.use((config) => {
-  if (isCollaborationPortalPath()) {
-    const collaborationToken = getCollaborationPortalToken()
-    if (collaborationToken) {
-      config.headers['X-Collaboration-Token'] = collaborationToken
-    }
+  if (config.skipAuth) {
+    delete config.headers.Authorization
+  } else if (window.location.pathname.startsWith('/technical-data-access')) {
+    const shortToken = sessionStorage.getItem('technicalDataAccessToken')
+    if (shortToken) config.headers.Authorization = `Bearer ${shortToken}`
   } else {
     const token = localStorage.getItem('token')
     if (token) config.headers.Authorization = `Bearer ${token}`
@@ -77,7 +73,7 @@ export const cancelPendingRequests = (pathPrefix) => {
 
 export const request = async (
   path,
-  { method = 'GET', params, body, dedupKey, timeout, suppressErrorToast = false } = {}
+  { method = 'GET', params, body, dedupKey, timeout, suppressErrorToast = false, skipAuth = false } = {}
 ) => {
   // GET request dedup: reuse in-flight promise for same URL
   const isGet = method === 'GET'
@@ -96,6 +92,7 @@ export const request = async (
         method,
         signal: controller.signal,
         suppressErrorToast,
+        skipAuth,
       }
       if (timeout !== undefined) {
         config.timeout = timeout

@@ -5,11 +5,10 @@ import LoginPage from '../pages/LoginPage.vue'
 import NotFoundPage from '../pages/NotFoundPage.vue'
 import { useUserStore } from '../store/modules/user'
 import { usePermissionStore } from '../store/modules/permission'
-import { hasCollaborationPortalSession } from '../utils/collaborationPortal'
 
 /**
  * 静态路由只保留三类：
- *   1. 公共页：/login、/404、/collaborate（协作者独立 token）
+ *   1. 公共页：/login、/404、技术资料一次性短票入口
  *   2. 业务详情页（带路由参数，业务代码硬编码跳转依赖）：
  *      - /ingest/quote-requests/:oaNo/items/:itemId/costing/result
  *   3. 后台工具页：/system/dict/data
@@ -28,25 +27,53 @@ const staticRoutes = [
     component: NotFoundPage,
     meta: { title: '页面不存在', public: true },
   },
-  // 技术协作者受限路由（无侧边栏，使用系统内协作令牌）
   {
-    path: '/collaborate',
-    component: () => import('../layout/CollaborateLayout.vue'),
-    meta: { public: true },
-    children: [
-      {
-        path: 'tasks',
-        name: 'collaborate-tasks',
-        component: () => import('../views/collaboration/technical/index.vue'),
-        meta: { title: '技术协作任务', public: true, collaborationPortal: true },
-      },
-      {
-        path: 'product-tasks/:taskId',
-        name: 'collaborate-product-task',
-        component: () => import('../pages/TechnicalCollaborationTaskPage.vue'),
-        meta: { title: '技术协作任务', public: true, collaborationPortal: true },
-      },
-    ],
+    path: '/technical-data-access',
+    name: 'technical-data-ticket-entry',
+    component: () => import('../pages/TechnicalDataAccessTicketPage.vue'),
+    meta: { title: '技术资料待办验证', public: true },
+  },
+  {
+    path: '/technical-data-access/tasks/:taskId',
+    name: 'technical-data-access-workbench',
+    component: () => import('../pages/TechnicalDataWorkbenchPage.vue'),
+    meta: { title: '技术员录入工作台', public: true, technicalDataShortSession: true },
+  },
+  {
+    path: '/technical-data-access/tasks/:taskId/products/:productId/package/reference',
+    name: 'technical-data-access-package-reference',
+    component: () => import('../pages/TechnicalDataPackagePage.vue'),
+    meta: { title: '包装组件参照', public: true, technicalDataShortSession: true },
+  },
+  {
+    path: '/technical-data-access/tasks/:taskId/products/:productId/package/entry',
+    name: 'technical-data-access-package-entry',
+    component: () => import('../pages/TechnicalDataPackagePage.vue'),
+    meta: { title: '包装组件录入', public: true, technicalDataShortSession: true },
+  },
+  {
+    path: '/technical-data-access/tasks/:taskId/products/:productId/auxiliary/reference',
+    name: 'technical-data-access-auxiliary-reference',
+    component: () => import('../pages/TechnicalDataAuxiliaryPage.vue'),
+    meta: { title: '辅料信息参照', public: true, technicalDataShortSession: true },
+  },
+  {
+    path: '/technical-data-access/tasks/:taskId/products/:productId/auxiliary/entry',
+    name: 'technical-data-access-auxiliary-entry',
+    component: () => import('../pages/TechnicalDataAuxiliaryPage.vue'),
+    meta: { title: '辅料信息录入', public: true, technicalDataShortSession: true },
+  },
+  {
+    path: '/technical-data-access/tasks/:taskId/products/:productId/salary/reference',
+    name: 'technical-data-access-salary-reference',
+    component: () => import('../pages/TechnicalDataSalaryPage.vue'),
+    meta: { title: '工资信息参照', public: true, technicalDataShortSession: true },
+  },
+  {
+    path: '/technical-data-access/tasks/:taskId/products/:productId/salary/entry',
+    name: 'technical-data-access-salary-entry',
+    component: () => import('../pages/TechnicalDataSalaryPage.vue'),
+    meta: { title: '工资信息录入', public: true, technicalDataShortSession: true },
   },
   {
     path: '/',
@@ -71,21 +98,63 @@ const staticRoutes = [
         meta: { title: '报价单详情', activeMenu: '/ingest/quote-requests' },
       },
       {
+        path: '/ingest/quote-requests/:oaNo/items/:itemId/electronic-drawing/:taskId/material-resolution',
+        name: 'electronic-drawing-material-resolution',
+        component: () => import('../pages/ElectronicDrawingMaterialResolutionPage.vue'),
+        meta: { title: '选择 U9 料号', activeMenu: '/ingest/quote-requests' },
+      },
+      {
         path: '/ingest/quote-requests/:oaNo/items/:itemId/costing',
         name: 'ingest-quote-product-costing',
         component: () => import('../pages/QuoteProductCostingWorkbenchPage.vue'),
         meta: { title: '单产品核算工作台', activeMenu: '/ingest/quote-requests' },
       },
       {
-        path: '/collaboration/product-tasks/:taskId',
-        name: 'technical-collaboration-task',
-        component: () => import('../pages/TechnicalCollaborationTaskPage.vue'),
-        meta: { title: '技术协作任务', activeMenu: '/collaboration/tasks' },
+        path: '/collaboration/technical-data/tasks/:taskId',
+        name: 'technical-data-workbench',
+        component: () => import('../pages/TechnicalDataWorkbenchPage.vue'),
+        meta: { title: '技术员录入工作台', activeMenu: '/collaboration/tasks' },
       },
       {
-        path: '/collaboration/finance-reviews/:reviewId',
-        name: 'finance-collaboration-review',
-        component: () => import('../views/collaboration/finance/index.vue'),
+        path: '/collaboration/technical-data/tasks/:taskId/products/:productId/package/reference',
+        name: 'technical-data-package-reference',
+        component: () => import('../pages/TechnicalDataPackagePage.vue'),
+        meta: { title: '包装组件参照', activeMenu: '/collaboration/tasks' },
+      },
+      {
+        path: '/collaboration/technical-data/tasks/:taskId/products/:productId/package/entry',
+        name: 'technical-data-package-entry',
+        component: () => import('../pages/TechnicalDataPackagePage.vue'),
+        meta: { title: '包装组件录入', activeMenu: '/collaboration/tasks' },
+      },
+      {
+        path: '/collaboration/technical-data/tasks/:taskId/products/:productId/auxiliary/reference',
+        name: 'technical-data-auxiliary-reference',
+        component: () => import('../pages/TechnicalDataAuxiliaryPage.vue'),
+        meta: { title: '辅料信息参照', activeMenu: '/collaboration/tasks' },
+      },
+      {
+        path: '/collaboration/technical-data/tasks/:taskId/products/:productId/auxiliary/entry',
+        name: 'technical-data-auxiliary-entry',
+        component: () => import('../pages/TechnicalDataAuxiliaryPage.vue'),
+        meta: { title: '辅料信息录入', activeMenu: '/collaboration/tasks' },
+      },
+      {
+        path: '/collaboration/technical-data/tasks/:taskId/products/:productId/salary/reference',
+        name: 'technical-data-salary-reference',
+        component: () => import('../pages/TechnicalDataSalaryPage.vue'),
+        meta: { title: '工资信息参照', activeMenu: '/collaboration/tasks' },
+      },
+      {
+        path: '/collaboration/technical-data/tasks/:taskId/products/:productId/salary/entry',
+        name: 'technical-data-salary-entry',
+        component: () => import('../pages/TechnicalDataSalaryPage.vue'),
+        meta: { title: '工资信息录入', activeMenu: '/collaboration/tasks' },
+      },
+      {
+        path: '/collaboration/technical-data/reviews/:taskId',
+        name: 'technical-data-review',
+        component: () => import('../views/technical-data/reviews/index.vue'),
         meta: { title: '补录审核', activeMenu: '/collaboration/finance-reviews' },
       },
       {
@@ -167,10 +236,12 @@ router.beforeEach(async (to, from, next) => {
   const token = userStore.token || localStorage.getItem('token')
   const isPublic = to.meta?.public
 
-  // 外部协作链接一旦在当前标签页建立受限会话，该标签页就只能访问协作门户。
-  // 即便浏览器里残留普通用户 JWT，也不能借此跳进报价、成本或系统管理页面。
-  if (hasCollaborationPortalSession() && !to.meta?.collaborationPortal) {
-    return next({ path: '/collaborate/tasks', replace: true })
+  if (to.meta?.technicalDataShortSession) {
+    const shortToken = sessionStorage.getItem('technicalDataAccessToken')
+    const scopedTaskId = sessionStorage.getItem('technicalDataAccessTaskId')
+    if (!shortToken || String(to.params.taskId) !== scopedTaskId) {
+      return next({ path: '/login', replace: true })
+    }
   }
 
   if (isPublic) {

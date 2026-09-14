@@ -16,12 +16,14 @@
         v-else
         class="sidebar-menu"
         :default-active="activeMenu"
+        :router="true"
         :collapse="effectiveCollapsed"
         :collapse-transition="false"
         :unique-opened="false"
         background-color="#ffffff"
         text-color="#1f2a37"
         active-text-color="#409eff"
+        @select="handleMenuSelect"
       >
         <sidebar-item
           v-for="route in displayRoutes"
@@ -37,6 +39,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { usePermissionStore } from '../../store/modules/permission'
 import { useAppStore } from '../../store/modules/app'
 import SidebarItem from './SidebarItem.vue'
@@ -78,6 +81,14 @@ const displayRoutes = computed(() =>
 
 const activeMenu = computed(() => route.meta?.activeMenu || route.path)
 const effectiveCollapsed = computed(() => appStore.sidebarCollapsed || isNarrowViewport.value)
+
+function handleMenuSelect(_index, _indexPath, _item, routerResult) {
+  if (!routerResult || typeof routerResult.catch !== 'function') return
+  routerResult.catch((error) => {
+    console.error('[sidebar] 菜单跳转失败', error)
+    ElMessage.error('页面跳转失败，请刷新后重试')
+  })
+}
 
 function syncViewport() {
   isNarrowViewport.value = window.innerWidth <= 768
