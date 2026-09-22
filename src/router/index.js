@@ -37,43 +37,7 @@ const staticRoutes = [
     path: '/technical-data-access/tasks/:taskId',
     name: 'technical-data-access-workbench',
     component: () => import('../pages/TechnicalDataWorkbenchPage.vue'),
-    meta: { title: '技术员录入工作台', public: true, technicalDataShortSession: true },
-  },
-  {
-    path: '/technical-data-access/tasks/:taskId/products/:productId/package/reference',
-    name: 'technical-data-access-package-reference',
-    component: () => import('../pages/TechnicalDataPackagePage.vue'),
-    meta: { title: '包装组件参照', public: true, technicalDataShortSession: true },
-  },
-  {
-    path: '/technical-data-access/tasks/:taskId/products/:productId/package/entry',
-    name: 'technical-data-access-package-entry',
-    component: () => import('../pages/TechnicalDataPackagePage.vue'),
-    meta: { title: '包装组件录入', public: true, technicalDataShortSession: true },
-  },
-  {
-    path: '/technical-data-access/tasks/:taskId/products/:productId/auxiliary/reference',
-    name: 'technical-data-access-auxiliary-reference',
-    component: () => import('../pages/TechnicalDataAuxiliaryPage.vue'),
-    meta: { title: '辅料信息参照', public: true, technicalDataShortSession: true },
-  },
-  {
-    path: '/technical-data-access/tasks/:taskId/products/:productId/auxiliary/entry',
-    name: 'technical-data-access-auxiliary-entry',
-    component: () => import('../pages/TechnicalDataAuxiliaryPage.vue'),
-    meta: { title: '辅料信息录入', public: true, technicalDataShortSession: true },
-  },
-  {
-    path: '/technical-data-access/tasks/:taskId/products/:productId/salary/reference',
-    name: 'technical-data-access-salary-reference',
-    component: () => import('../pages/TechnicalDataSalaryPage.vue'),
-    meta: { title: '工资信息参照', public: true, technicalDataShortSession: true },
-  },
-  {
-    path: '/technical-data-access/tasks/:taskId/products/:productId/salary/entry',
-    name: 'technical-data-access-salary-entry',
-    component: () => import('../pages/TechnicalDataSalaryPage.vue'),
-    meta: { title: '工资信息录入', public: true, technicalDataShortSession: true },
+    meta: { title: '补录工作台', public: true, technicalDataShortSession: true },
   },
   {
     path: '/',
@@ -113,49 +77,7 @@ const staticRoutes = [
         path: '/collaboration/technical-data/tasks/:taskId',
         name: 'technical-data-workbench',
         component: () => import('../pages/TechnicalDataWorkbenchPage.vue'),
-        meta: { title: '技术员录入工作台', activeMenu: '/collaboration/tasks' },
-      },
-      {
-        path: '/collaboration/technical-data/tasks/:taskId/products/:productId/package/reference',
-        name: 'technical-data-package-reference',
-        component: () => import('../pages/TechnicalDataPackagePage.vue'),
-        meta: { title: '包装组件参照', activeMenu: '/collaboration/tasks' },
-      },
-      {
-        path: '/collaboration/technical-data/tasks/:taskId/products/:productId/package/entry',
-        name: 'technical-data-package-entry',
-        component: () => import('../pages/TechnicalDataPackagePage.vue'),
-        meta: { title: '包装组件录入', activeMenu: '/collaboration/tasks' },
-      },
-      {
-        path: '/collaboration/technical-data/tasks/:taskId/products/:productId/auxiliary/reference',
-        name: 'technical-data-auxiliary-reference',
-        component: () => import('../pages/TechnicalDataAuxiliaryPage.vue'),
-        meta: { title: '辅料信息参照', activeMenu: '/collaboration/tasks' },
-      },
-      {
-        path: '/collaboration/technical-data/tasks/:taskId/products/:productId/auxiliary/entry',
-        name: 'technical-data-auxiliary-entry',
-        component: () => import('../pages/TechnicalDataAuxiliaryPage.vue'),
-        meta: { title: '辅料信息录入', activeMenu: '/collaboration/tasks' },
-      },
-      {
-        path: '/collaboration/technical-data/tasks/:taskId/products/:productId/salary/reference',
-        name: 'technical-data-salary-reference',
-        component: () => import('../pages/TechnicalDataSalaryPage.vue'),
-        meta: { title: '工资信息参照', activeMenu: '/collaboration/tasks' },
-      },
-      {
-        path: '/collaboration/technical-data/tasks/:taskId/products/:productId/salary/entry',
-        name: 'technical-data-salary-entry',
-        component: () => import('../pages/TechnicalDataSalaryPage.vue'),
-        meta: { title: '工资信息录入', activeMenu: '/collaboration/tasks' },
-      },
-      {
-        path: '/collaboration/technical-data/reviews/:taskId',
-        name: 'technical-data-review',
-        component: () => import('../views/technical-data/reviews/index.vue'),
-        meta: { title: '补录审核', activeMenu: '/collaboration/finance-reviews' },
+        meta: { title: '补录工作台', activeMenu: '/collaboration/tasks' },
       },
       {
         path: '/price/linked',
@@ -180,14 +102,13 @@ const CATCH_ALL_NAME = 'dyn-catch-all'
 const QUOTE_REQUEST_LIST_PATH = '/ingest/quote-requests'
 const TECHNICAL_TASK_LIST_PATH = '/collaboration/tasks'
 
-function isTechnicalOnlyUser(userStore) {
-  return userStore.roles.some(
-    (role) => String(role).toUpperCase() === 'TECHNICAL_COLLABORATOR'
-  ) && !userStore.permissions.includes('ingest:quote:list')
+function hasWorkbenchWithoutQuoteList() {
+  const paths = new Set(router.getRoutes().map(route => route.path))
+  return paths.has(TECHNICAL_TASK_LIST_PATH) && !paths.has(QUOTE_REQUEST_LIST_PATH)
 }
 
-function resolveLandingPath(userStore) {
-  return isTechnicalOnlyUser(userStore)
+function resolveLandingPath() {
+  return hasWorkbenchWithoutQuoteList()
     ? TECHNICAL_TASK_LIST_PATH
     : QUOTE_REQUEST_LIST_PATH
 }
@@ -259,9 +180,9 @@ router.beforeEach(async (to, from, next) => {
       const dynRoutes = await permissionStore.generateRoutes()
       registerDynamicRoutes(dynRoutes, permissionStore)
       if (to.path === '/') {
-        return next({ path: resolveLandingPath(userStore), replace: true })
+        return next({ path: resolveLandingPath(), replace: true })
       }
-      if (isTechnicalOnlyUser(userStore) && to.path === QUOTE_REQUEST_LIST_PATH) {
+      if (hasWorkbenchWithoutQuoteList() && to.path === QUOTE_REQUEST_LIST_PATH) {
         return next({ path: TECHNICAL_TASK_LIST_PATH, replace: true })
       }
       // replace:true 避免历史栈出现加载跳板
@@ -275,9 +196,9 @@ router.beforeEach(async (to, from, next) => {
   }
 
   if (to.path === '/') {
-    return next({ path: resolveLandingPath(userStore), replace: true })
+    return next({ path: resolveLandingPath(), replace: true })
   }
-  if (isTechnicalOnlyUser(userStore) && to.path === QUOTE_REQUEST_LIST_PATH) {
+  if (hasWorkbenchWithoutQuoteList() && to.path === QUOTE_REQUEST_LIST_PATH) {
     return next({ path: TECHNICAL_TASK_LIST_PATH, replace: true })
   }
 

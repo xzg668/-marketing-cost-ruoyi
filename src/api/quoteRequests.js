@@ -9,8 +9,9 @@ export const fetchQuoteRequests = (params) =>
 export const fetchQuoteRequestDetail = (oaNo) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}`)
 
-export const fetchElectronicDrawingMaterialResolution = (taskId) =>
+export const fetchElectronicDrawingMaterialResolution = (taskId, accountingMonth) =>
   request(`/api/v1/quote-requests/electronic-drawing/tasks/${encodePath(taskId)}/material-resolution`, {
+    params: { accountingMonth },
     suppressErrorToast: true,
   })
 
@@ -20,9 +21,10 @@ export const searchElectronicDrawingMaterialOptions = (taskId, params) =>
     suppressErrorToast: true,
   })
 
-export const saveElectronicDrawingMaterialResolutions = (taskId, body) =>
+export const saveElectronicDrawingMaterialResolutions = (taskId, body, accountingMonth) =>
   request(`/api/v1/quote-requests/electronic-drawing/tasks/${encodePath(taskId)}/material-resolutions`, {
     method: 'PUT',
+    params: { accountingMonth },
     body,
     suppressErrorToast: true,
   })
@@ -30,8 +32,8 @@ export const saveElectronicDrawingMaterialResolutions = (taskId, body) =>
 export const fetchQuoteCostingWorkbench = (oaNo, itemId) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/costing-workbench`)
 
-export const fetchQuoteEffectiveBom = (oaNo, itemId) =>
-  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/effective-bom`)
+export const fetchQuoteEffectiveBom = (oaNo, itemId, options = {}) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/effective-bom`, options)
 
 export const rebuildQuoteEffectiveBom = (oaNo, itemId) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/effective-bom/rebuild`, {
@@ -141,4 +143,12 @@ export const confirmQuoteRequestClassification = (oaNo, body) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}/confirm-classification`, {
     method: 'POST',
     body,
+  })
+
+export const fetchQuoteFinalSubmission = (oaNo) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/final-submission`, { suppressErrorToast: true })
+
+export const confirmQuoteFinalSubmission = (oaNo, fingerprint) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/final-submission`, {
+    method: 'POST', body: { fingerprint }, suppressErrorToast: true,
   })

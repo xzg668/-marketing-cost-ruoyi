@@ -342,39 +342,16 @@
             <td></td>
             <td></td>
           </tr>
-          <!-- 模具费/认证费按 costName 在 OTHER_EXP_<id> 系列里 lookup。
-               包装费已经计入材料费 (T24 见机表口径)，不在这里展示避免双重。 -->
-          <tr class="attr-row">
-            <td class="left-label">模具费</td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
+          <!-- 三项单件费用分别展示；包装已计入材料费。 -->
+          <tr v-for="feeName in ['工装费', '模具费', '认证费']" :key="feeName" class="attr-row">
+            <td class="left-label">{{ feeName }}</td>
+            <td></td><td></td><td></td><td></td>
             <td class="formula">
-              <button type="button" class="trace-link" @click="openOtherExpenseTrace('模具费')">
-                {{ getOtherExpenseByName('模具费') || '-' }}
+              <button type="button" class="trace-link" @click="openOtherExpenseTrace(feeName)">
+                {{ getOtherExpenseByName(feeName) || '-' }}
               </button>
             </td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-          </tr>
-          <tr class="attr-row">
-            <td class="left-label">认证费</td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td class="formula">
-              <button type="button" class="trace-link" @click="openOtherExpenseTrace('认证费')">
-                {{ getOtherExpenseByName('认证费') || '-' }}
-              </button>
-            </td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
+            <td></td><td></td><td></td><td></td>
           </tr>
           <tr class="total-row">
             <td colspan="3" class="total-label">不含税总成本</td>
@@ -419,6 +396,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { fetchCostRunDetail } from '../api/costRunDetail'
+import { netLossPercent } from '../utils/netLossRate'
 import CostRunTraceDrawer from '../components/CostRunTraceDrawer.vue'
 
 const route = useRoute()
@@ -501,7 +479,12 @@ const formatCoefficient = (value) => {
 }
 
 const getCostAmount = (code) => formatAmount(costMap.value?.[code]?.amount)
-const getCostRate = (code) => formatRate(costMap.value?.[code]?.rate)
+const getCostRate = (code) => {
+  const rate = costMap.value?.[code]?.rate
+  if (code !== 'LOSS') return formatRate(rate)
+  const percent = netLossPercent(rate)
+  return percent === '' ? '' : `${percent}%`
+}
 const getCostCoefficient = (code) => formatCoefficient(costMap.value?.[code]?.rate)
 // 在 lp_other_expense_rate 派生的 OTHER_EXP_<id> 行里按 costName lookup
 // （模具费/认证费等占位行用），找不到返空字符串
@@ -666,13 +649,9 @@ const exportSheet = () => {
     const AUX_TEMPLATE_ROWS = 4
     const AUX_INSERT_BASE = AUX_START + AUX_TEMPLATE_ROWS
     const AUX_GAP_BASE = 29
-    const OTHER_EXP_START = 40
-    const OTHER_EXP_TEMPLATE_ROWS = 2
-    const OTHER_EXP_INSERT_BASE = OTHER_EXP_START + OTHER_EXP_TEMPLATE_ROWS
 
     const partCount = partRows.value.length
     const auxCount = auxItems.value.length
-    const otherExpenseCount = otherExpenseItems.value.length
     let partDelta = 0
     if (partCount > PART_TEMPLATE_ROWS) {
       const insertCount = partCount - PART_TEMPLATE_ROWS
@@ -774,24 +753,8 @@ const exportSheet = () => {
       return row
     }
 
-    // 系统不核算运费，固定删除模板中的运费行，让模具费、认证费和总成本上移。
-    sheet.spliceRows(rowIndexAfterGap(40), 1)
-    const freightRowDelta = -1
-    const otherExpenseDelta = 0
-    void otherExpenseCount  // 仅为了避免 lint 未使用变量警告
-    void OTHER_EXP_TEMPLATE_ROWS
-    void OTHER_EXP_INSERT_BASE
-
-    const rowIndexFinal = (base) => {
-      let row = rowIndexAfterGap(base)
-      if (base > 40) {
-        row += freightRowDelta
-      }
-      if (base >= OTHER_EXP_INSERT_BASE) {
-        row += otherExpenseDelta
-      }
-      return row
-    }
+    // 模板原运费行用于工装费，三项单件费用各占一行；运费仍不计入成本。
+    const rowIndexFinal = rowIndexAfterGap
 
     const setCellValue = (row, col, value) => {
       const cell = sheet.getCell(row, col)
@@ -906,7 +869,7 @@ const exportSheet = () => {
     setCellValue(rowIndexFinal(30), 6, toNumber(getCostAmountValue('MATERIAL')))
     setCellValue(rowIndexFinal(31), 6, toNumber(getCostAmountValue('DIRECT_LABOR')))
     setCellValue(rowIndexFinal(32), 6, toNumber(getCostAmountValue('INDIRECT_LABOR')))
-    setCellValue(rowIndexFinal(33), 3, formatRate(getCostRateValue('LOSS')))
+    setCellValue(rowIndexFinal(33), 3, getCostRate('LOSS'))
     setCellValue(rowIndexFinal(33), 6, toNumber(getCostAmountValue('LOSS')))
     setCellValue(rowIndexFinal(34), 3, formatRate(getCostRateValue('MANUFACTURE')))
     setCellValue(rowIndexFinal(34), 6, toNumber(getCostAmountValue('MANUFACTURE')))
@@ -925,14 +888,25 @@ const exportSheet = () => {
     setCellValue(rowIndexFinal(38), 6, toNumber(getCostAmountValue('SALES_EXP')))
     setCellValue(rowIndexFinal(39), 3, formatRate(getCostRateValue('FIN_EXP')))
     setCellValue(rowIndexFinal(39), 6, toNumber(getCostAmountValue('FIN_EXP')))
-    // 模板 r40 运费行已固定删除；包装费已在材料费里（T24）不在这里展示。
+    // 三项金额直接来自同一核算版本；包装费已经进入材料费。
+    setCellValue(rowIndexFinal(40), 1, '工装费')
+    setCellValue(rowIndexFinal(40), 6, toNumber(getOtherExpenseValueByName('工装费')))
     setCellValue(rowIndexFinal(41), 6, toNumber(getOtherExpenseValueByName('模具费')))
     setCellValue(rowIndexFinal(42), 6, toNumber(getOtherExpenseValueByName('认证费')))
     const totalRow = rowIndexFinal(43)
+    // 模板第 43 行是签字栏，单独插入总成本行，保留编制／审核位置。
+    sheet.spliceRows(totalRow, 0, [])
+    const summaryStyleRow = sheet.getRow(rowIndexFinal(35))
+    sheet.getRow(totalRow).height = summaryStyleRow.height
+    for (let col = 1; col <= 10; col += 1) {
+      sheet.getCell(totalRow, col).style = { ...summaryStyleRow.getCell(col).style }
+    }
+    setCellValue(totalRow, 1, '不含税总成本')
     setCellValue(totalRow, 6, toNumber(getCostAmountValue('TOTAL')))
     setCellValue(totalRow, 2, null)
     setCellValue(totalRow, 3, null)
     restoreTemplateMerges(totalRow)
+    applyMergedRange(totalRow + 1, 1, totalRow + 1, 3)
 
     if (columnWidths.length > 0) {
       sheet.columns.forEach((column, index) => {

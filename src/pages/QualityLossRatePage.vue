@@ -234,8 +234,8 @@ const submitRow = async () => {
     ElMessage.warning('年度、裸品料号必填')
     return
   }
-  if (!Number.isFinite(lossRate) || lossRate < 0 || lossRate >= 1) {
-    ElMessage.warning('净损失率必须大于等于0且小于100%')
+  if (!Number.isFinite(lossRate) || lossRate <= 0 || lossRate >= 1) {
+    ElMessage.warning('公共净损失率必须大于0且小于100%')
     return
   }
   const payload = { ...formModel.value, rateYear, lossRate }

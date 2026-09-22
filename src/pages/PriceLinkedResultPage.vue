@@ -1,5 +1,17 @@
 <template>
   <div class="linked-result">
+    <el-alert v-if="correctionContextInvalid" title="补录修正上下文不完整，请回原产品核算页重新进入" type="error" :closable="false" />
+    <el-alert v-else-if="correctionContext" :title="`正在处理报价 ${correctionContext.oaNo} 产品行 ${correctionContext.oaFormItemId}／${correctionContext.pricingMonth} 的自行公式。导入后请返回原产品检查价格。`" type="info" :closable="false" />
+    <el-card v-if="lastImportResult?.technicalResults?.length" class="technical-import-results">
+      <template #header>补录公式逐项结果</template>
+      <el-table :data="lastImportResult.technicalResults" border>
+        <el-table-column prop="materialNo" label="料号" />
+        <el-table-column prop="sheetName" label="工作表" />
+        <el-table-column prop="rowNumber" label="行号" width="80" />
+        <el-table-column prop="linkedItemId" label="公式记录" width="110" />
+        <el-table-column prop="message" label="处理结果" min-width="300" />
+      </el-table>
+    </el-card>
     <el-card shadow="never" class="filter-card">
       <div class="filter-header">
         <div class="filter-title">
@@ -689,6 +701,7 @@
         <el-form-item label="导入月份" required>
           <el-date-picker
             v-model="importForm.pricingMonth"
+            :disabled="Boolean(correctionContext)"
             type="month"
             format="YYYY-MM"
             value-format="YYYY-MM"
@@ -699,6 +712,7 @@
         <el-form-item label="业务单元" required>
           <el-input
             v-model="importForm.businessUnitType"
+            :disabled="Boolean(correctionContext)"
             placeholder="COMMERCIAL"
             @change="handleMonthlyImportContextChange"
           />
@@ -732,7 +746,9 @@
         </el-form-item>
         <el-form-item label="Excel 文件" required>
           <el-upload
+            ref="monthlyUploadRef"
             class="monthly-upload"
+            :disabled="importing"
             drag
             :limit="1"
             :show-file-list="true"
@@ -1115,6 +1131,7 @@
 </template>
 
 <script setup>
+import { technicalPriceContext, priceWorkbenchReturn } from '../utils/technicalPriceCorrection'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -1174,6 +1191,7 @@ const rowTraceMap = ref({})
 const rowTraceLoading = ref(false)
 const dialogVisible = ref(false)
 const importing = ref(false)
+const monthlyUploadRef = ref(null)
 const importDialogVisible = ref(false)
 const selectedImportFile = ref(null)
 const importPreviewLoading = ref(false)
@@ -1190,10 +1208,12 @@ const selectedImportBatchId = ref('')
 const showTechnicalLogs = ref(false)
 const batchResultTab = ref('formulas')
 const importBatchResultRef = ref(null)
-const returnToWorkbenchVisible = computed(() => Boolean(route.query.returnTo))
+const correctionContext = computed(() => technicalPriceContext(route.query))
+const correctionContextInvalid = computed(() => Boolean(route.query.technicalVersionId) && !correctionContext.value)
+const returnToWorkbenchVisible = computed(() => Boolean(priceWorkbenchReturn(route.query)))
 
 const returnToWorkbench = () => {
-  const target = String(route.query.returnTo || '')
+  const target = priceWorkbenchReturn(route.query)
   if (!target) return
   router.push(target)
 }
@@ -2346,22 +2366,25 @@ const handleBindingCsvChange = async (uploadFile) => {
 }
 
 const openMonthlyImport = () => {
-  const pricingMonth = filters.value.pricingMonth || currentMonthText()
+  if (correctionContextInvalid.value) { ElMessage.error('补录修正上下文不完整，请返回原产品重新进入'); return }
+  const pricingMonth = correctionContext.value?.pricingMonth || filters.value.pricingMonth || currentMonthText()
   importForm.value = {
     pricingMonth,
     businessUnitType:
-      filters.value.businessUnitType || userStore.businessUnitType || '',
+      correctionContext.value?.businessUnitType || filters.value.businessUnitType || userStore.businessUnitType || '',
     overwriteManual: false,
     formulaEffectiveDate: firstDayOfMonth(pricingMonth),
     factorPriceConflictStrategy: 'KEEP_EXISTING',
   }
   selectedImportFile.value = null
+  monthlyUploadRef.value?.clearFiles()
   invalidateMonthlyImportPreview()
   importProgressActiveStep.value = 0
   importDialogVisible.value = true
 }
 
 const previewOptions = () => ({
+  technicalContext: correctionContext.value,
   businessUnitType: importForm.value.businessUnitType,
   overwriteManual: importForm.value.overwriteManual,
   formulaEffectiveDate: importForm.value.formulaEffectiveDate,
@@ -2438,6 +2461,7 @@ const isExcelFile = (file) => {
 }
 
 const submitMonthlyImport = async () => {
+  if (correctionContextInvalid.value) { ElMessage.error('补录修正上下文不完整'); return }
   const rawFile = selectedImportFile.value
   if (!importForm.value.pricingMonth) {
     ElMessage.warning('导入月份必填')
@@ -2472,6 +2496,7 @@ const submitMonthlyImport = async () => {
   try {
     importProgressActiveStep.value = 1
     const result = await importLinkedItemsExcel(rawFile, importForm.value.pricingMonth, {
+      technicalContext: correctionContext.value,
       businessUnitType: importForm.value.businessUnitType,
       overwriteManual: importForm.value.overwriteManual,
       formulaEffectiveDate: importForm.value.formulaEffectiveDate,

@@ -1,466 +1,341 @@
 <template>
-  <div class="technical-data-workbench">
-    <button class="back-link" type="button" @click="backToTasks">← 返回我的协作任务</button>
-
-    <div class="page-heading">
+  <section class="technical-data-workbench" :class="{ embedded }" aria-label="产品补录">
+    <header class="editor-header">
       <div>
-        <h2>技术员录入工作台</h2>
-        <p>OA 信息自动带入；补齐全部必填资料，整任务校验通过后提交审核。</p>
+        <div class="editor-eyebrow"><span>补录工作台</span><el-tag v-if="task" :type="finished ? 'success' : modulePresentation(product, activeModule).type" size="small">{{ finished ? '本人资料已齐' : modulePresentation(product, activeModule).label }}</el-tag></div>
+        <h2>{{ finished ? '本人资料补录完成' : moduleName(activeModule) || '补录资料' }}<span v-if="product"> · {{ product.materialNo || product.sourceModel || '本次产品' }}</span></h2>
+        <p v-if="product">{{ product.productName || product.sourceModel || '来源未提供名称' }} · {{ task.accountingMonth }} · {{ task.oaNo }}</p>
       </div>
-      <div>
-        <el-button :loading="loading" @click="load">刷新</el-button>
-        <el-button type="primary" :loading="saving" :disabled="!editable" @click="saveSelectedProfiles">
-          保存产品基本信息
-        </el-button>
-        <el-button :loading="validating" :disabled="!editable" @click="validateAll">校验全部资料</el-button>
-        <el-button type="success" :loading="submitting" :disabled="!editable" @click="submitAll">
-          提交审核
-        </el-button>
-      </div>
+      <el-button text aria-label="关闭补录" :disabled="formBusy || submitting" @click="backToTasks">×</el-button>
+    </header>
+    <div v-if="product && workflow && !overview" class="guide-progress" aria-live="polite">
+      <b>{{ selectedPerson?.returnReason ? `本次复核 ${reviewed.length} / ${progress.total}` : `已齐 ${progress.complete} / ${progress.total} 项` }}</b>
+      <span>{{ finished ? '资料已补齐，确认后提交本人部门领导' : nextModule ? `当前：${moduleName(activeModule)} → 下一项：${moduleName(nextModule)}` : '当前为最后一项，完成后检查并提交' }}</span>
     </div>
-
-    <el-skeleton v-if="loading && !task" :rows="8" animated />
-    <el-result
-      v-else-if="accessDenied"
-      icon="warning"
-      title="当前账号不能查看此技术资料任务"
-      sub-title="技术员只能查看本人负责的活动任务。"
-    />
-    <template v-else-if="task">
-      <div class="summary">
-        <div><span>协作任务</span><b>{{ task.taskNo }}</b></div>
-        <div><span>产品数量</span><b>{{ products.length }}</b></div>
-        <div><span>核算月份</span><b>{{ task.accountingMonth }}</b></div>
-        <div><span>任务状态</span><b>{{ taskStatusLabel }}</b></div>
-        <div><span>审核人</span><b>{{ task.reviewerName || '-' }}</b></div>
+    <div ref="bodyRef" class="editor-body">
+      <el-skeleton v-if="loading && !task" :rows="8" animated />
+      <el-result v-else-if="accessDenied" icon="warning" title="当前账号不能查看此补录任务" sub-title="请使用分派给本人的任务链接。" />
+      <el-result v-else-if="!product || !workflow" icon="warning" title="补录资料加载失败"><template #extra><el-button @click="load">重新加载</el-button></template></el-result>
+      <template v-else>
+        <el-alert v-if="selectedPerson?.returnReason" :title="`退回说明：${selectedPerson.returnReason}`" type="warning" :closable="false" show-icon />
+        <div v-if="finished" class="guide-complete">
+          <div class="complete-mark">✓</div><h3>本次负责的资料已补齐</h3>
+          <p v-if="selectedPerson">{{ selectedPerson.assigneeName }}负责的 {{ progress.total }} 项资料已检查通过，提交后交 {{ selectedPerson.leaderName }} 审批。</p>
+          <p v-else>资料已保存，可返回工作台继续分派和办理。</p>
+        </div>
+        <details class="task-context">
+          <summary>产品来源与办理范围<span>{{ scopeLabel }}</span></summary>
+          <el-button link type="primary" :disabled="formBusy" @click="refresh">刷新资料</el-button>
+          <el-descriptions :column="2" size="small" border class="source-info">
+            <el-descriptions-item label="产品名称">{{ product.productName || '来源未提供' }}</el-descriptions-item>
+            <el-descriptions-item label="产品型号">{{ product.sourceModel || '来源未提供' }}</el-descriptions-item>
+            <el-descriptions-item label="来源规格">{{ product.sourceSpec || '来源未提供' }}</el-descriptions-item>
+            <el-descriptions-item label="预计年用量">{{ product.annualVolume == null ? '来源未提供' : `${product.annualVolume} ${annualVolumeUnitLabel}` }}</el-descriptions-item>
+          </el-descriptions>
+          <div v-if="workflow.canAdminister && workflow.participants.length > 1" class="person-scope"><span>本次代办人员</span><el-select :model-value="selectedAssignee" @change="selectPerson"><el-option v-for="person in workflow.participants" :key="person.assigneeUserId" :value="person.assigneeUserId" :label="`${person.assigneeName} → ${person.leaderName}审批`" /></el-select></div>
+        </details>
+        <section v-if="validation && !validation.valid" class="validation-panel">
+          <b>还有 {{ validation.issues.length }} 个问题，请处理后再提交</b>
+          <el-table :data="validation.issues" size="small" border>
+            <el-table-column label="模块" width="135"><template #default="{ row }">{{ moduleName(row.moduleType) }}</template></el-table-column>
+            <el-table-column prop="lineNo" label="明细行" width="70" />
+            <el-table-column prop="message" label="问题" />
+            <el-table-column label="操作" width="75"><template #default="{ row }"><el-button link type="primary" @click="selectModule(row.moduleType)">去处理</el-button></template></el-table-column>
+          </el-table>
+        </section>
+        <section v-if="!finished" class="module-form" :aria-label="`${moduleName(activeModule)}办理`">
+          <p class="reason">{{ activeState?.requirementReason || '尚未取得本模块的来源检查结论' }}<span v-if="activeState?.assigneeName"> · {{ moduleOwner(activeModule) }}</span></p>
+          <el-alert v-if="activeState?.sourceAvailability === 'ERROR'" title="资料查询失败，请核实来源后重新检查。" type="error" :closable="false" />
+          <component v-if="formComponent && !isTechnicalModuleStatusOnly(product, activeModule)" :is="formComponent" ref="formRef" :key="formKey" v-bind="formProps" @dirty="dirty = $event" @busy="formBusy = $event" @saved="afterSave" />
+          <el-empty v-else :description="unavailableMessage" />
+        </section>
+        <details class="module-directory">
+          <summary>{{ finished ? '复核已填资料' : '查看其他模块' }}</summary>
+          <nav class="module-nav" aria-label="补录模块"><button v-for="item in TECHNICAL_DATA_MODULES" :key="item.code" type="button" :disabled="isTechnicalModuleStatusOnly(product, item.code)" :class="{ active: activeModule === item.code && !finished }" @click="selectModule(item.code)"><b>{{ item.label }}</b><el-tag :type="modulePresentation(product, item.code).type" size="small">{{ modulePresentation(product, item.code).label }}</el-tag><small>{{ moduleOwner(item.code) }}</small></button></nav>
+        </details>
+        <el-collapse class="approval-details"><el-collapse-item title="查看办理进度与审批意见" name="approval"><technical-data-approval-panel :task="task" :workflow="workflow" @changed="load" /></el-collapse-item></el-collapse>
+      </template>
+    </div>
+    <footer class="editor-footer">
+      <span class="save-status" aria-live="polite">{{ formBusy ? '正在处理资料…' : dirty ? '有修改尚未保存' : overview ? '当前资料只读' : '已保存的资料可稍后继续办理' }}</span>
+      <div class="footer-actions">
+        <el-button :disabled="formBusy || submitting" @click="backToTasks">{{ overview ? '关闭' : finished ? '稍后提交' : '稍后继续' }}</el-button>
+        <template v-if="product && workflow">
+          <template v-if="finished">
+            <el-button v-if="selectedPerson" type="primary" :loading="submitting || validating" :disabled="!selectedPerson.canSubmit" @click="submitAll">{{ selectedPerson.returnReason ? '重新提交审批' : '提交本人资料审批' }}</el-button>
+          </template>
+          <template v-else-if="editable">
+            <el-button :disabled="!formRef?.canSave || loading" :loading="formBusy" @click="saveCurrent(false)">{{ activeModule === 'DRAWING_BOM' ? '检查并保存' : '保存草稿' }}</el-button>
+            <el-button type="primary" :disabled="loading || formBusy || (!canContinueWithoutSaving && !formRef?.canSave)" :loading="validating" @click="continueEntry">{{ primaryLabel }}</el-button>
+          </template>
+          <el-button v-else-if="!overview" type="primary" :disabled="loading || formBusy" @click="goNext">{{ nextModule ? '继续补录下一项' : '检查并完成' }}</el-button>
+          <el-button v-else-if="workflow.canViewSupplementOverview" @click="backToQuote">返回报价单</el-button>
+        </template>
       </div>
-
-      <div v-if="!editable" class="readonly-note">
-        <b>{{ task.taskStatus === 'SUBMITTED' ? '已提交审核' : taskStatusLabel }}</b>
-        <span>V{{ task.reviewRound || 1 }} 提交内容已冻结，产品基本信息和三类明细均为只读。</span>
-      </div>
-
-      <section v-if="validation" class="validation-panel" :class="{ passed: validation.valid }">
-        <div class="validation-title">
-          <b>{{ validation.valid ? '整任务校验通过' : `整任务校验发现 ${validation.issues.length} 个问题` }}</b>
-          <span>校验产品 {{ validation.productCount }} 行；问题已定位到产品、模块、字段和明细行</span>
-        </div>
-        <el-table v-if="!validation.valid" :data="validation.issues" border size="small">
-          <el-table-column prop="materialNo" label="产品料号" width="155" />
-          <el-table-column label="模块" width="110">
-            <template #default="{ row }">{{ moduleLabel(row.moduleType) }}</template>
-          </el-table-column>
-          <el-table-column prop="field" label="字段" width="150" />
-          <el-table-column label="明细行" width="80">
-            <template #default="{ row }">{{ row.lineNo || '-' }}</template>
-          </el-table-column>
-          <el-table-column prop="message" label="问题" min-width="300" />
-          <el-table-column label="定位" width="80">
-            <template #default="{ row }">
-              <el-button link type="primary" @click="locateIssue(row)">查看</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-      </section>
-
-      <section class="panel">
-        <div class="band">产品信息</div>
-        <div class="tools">
-          <span>OA 信息只读；红色字段为技术员维护字段</span>
-          <el-input v-model="keyword" clearable placeholder="搜索产品料号 / 名称" style="width: 280px" />
-        </div>
-
-        <div ref="tableScroll" class="table-scroll" @scroll="rememberScroll">
-          <table class="workbench-table">
-            <thead>
-              <tr>
-                <th v-for="column in TECHNICAL_DATA_COLUMNS" :key="column" :class="{ required: editableColumns.has(column) }">
-                  {{ column }}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in visibleProducts" :key="row.id" :data-product-id="row.id">
-                <td class="center">
-                  <input v-model="selectedIds" type="checkbox" :value="row.id" :disabled="!profileEditable(row)" aria-label="选择产品" />
-                </td>
-                <td class="center">{{ row.levelNo }}</td>
-                <td><b>{{ row.materialNo || '-' }}</b><small>OA带出</small></td>
-                <td>{{ row.productName || '-' }}<small>OA带入</small></td>
-                <td :id="`product-${row.id}-profile`">
-                  <el-input
-                    v-model="row.profile.productModel"
-                    :disabled="!profileEditable(row)"
-                    maxlength="255"
-                    placeholder="请输入产品型号"
-                    @input="markDirty(row.id)"
-                  />
-                  <small class="required">必填</small>
-                </td>
-                <td>{{ row.sourceSpec || '-' }}<small>OA带入</small></td>
-                <td>
-                  <el-select v-model="row.profile.productProperty" :disabled="!profileEditable(row)" @change="markDirty(row.id)">
-                    <el-option v-for="option in PRODUCT_PROPERTY_OPTIONS" :key="option" :label="option" :value="option" />
-                  </el-select>
-                  <small>单选</small>
-                </td>
-                <td><div class="quote-no">{{ row.quoteNo }}</div><small>自动关联</small></td>
-                <td>
-                  <el-select v-model="row.profile.newProduct" :disabled="!profileEditable(row)" @change="markDirty(row.id)">
-                    <el-option v-for="option in NEW_PRODUCT_OPTIONS" :key="option.label" :label="option.label" :value="option.value" />
-                  </el-select>
-                </td>
-                <td :id="`product-${row.id}-package`"><module-entry :product="row" module-type="PACKAGE" :editable="moduleEditable(row, 'PACKAGE')" /></td>
-                <td :id="`product-${row.id}-auxiliary`"><module-entry :product="row" module-type="AUXILIARY" :editable="moduleEditable(row, 'AUXILIARY')" /></td>
-                <td :id="`product-${row.id}-salary`"><module-entry :product="row" module-type="SALARY" :editable="moduleEditable(row, 'SALARY')" /></td>
-              </tr>
-              <tr v-if="visibleProducts.length === 0">
-                <td colspan="12" class="empty">没有匹配的产品</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="foot">
-          <span>共 {{ products.length }} 条产品记录，已选择 {{ selectedIds.length }} 条</span>
-          <span>横向滚动可查看全部补录项</span>
-        </div>
-      </section>
-
-      <div class="note">
-        <b>工作台口径：</b>一行对应一个待报价产品；包装组件、辅料和工资均支持“参照/录入”，当前明细页均不提供附件。
-      </div>
-    </template>
-  </div>
+    </footer>
+  </section>
 </template>
 
 <script setup>
-import { computed, defineComponent, h, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import { ElButton, ElMessage, ElMessageBox, ElTag } from 'element-plus'
-import { useRoute, useRouter } from 'vue-router'
-import {
-  fetchTechnicalDataTask,
-  saveTechnicalDataProfile,
-  submitTechnicalDataTask,
-  validateTechnicalDataTask,
-} from '../api/technicalDataTasks'
-import { isDomainError, showErrorOnce } from '../utils/errorHandler'
-import {
-  NEW_PRODUCT_OPTIONS,
-  PRODUCT_PROPERTY_OPTIONS,
-  TECHNICAL_DATA_COLUMNS,
-  findModule,
-  modulePresentation,
-  validateTechnicalDataProfile,
-} from '../utils/technicalDataWorkbench'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
+import TechnicalDataApprovalPanel from '../components/technical-data/TechnicalDataApprovalPanel.vue'
+import TechnicalDataProfileForm from '../components/technical-data/TechnicalDataProfileForm.vue'
+import TechnicalDataDrawingForm from '../components/technical-data/TechnicalDataDrawingForm.vue'
+import TechnicalDataManufacturingForm from '../components/technical-data/TechnicalDataManufacturingForm.vue'
+import TechnicalDataPackageForm from '../components/technical-data/TechnicalDataPackageForm.vue'
+import TechnicalDataAuxiliaryForm from '../components/technical-data/TechnicalDataAuxiliaryForm.vue'
+import TechnicalDataSolderForm from '../components/technical-data/TechnicalDataSolderForm.vue'
+import TechnicalDataSalaryForm from '../components/technical-data/TechnicalDataSalaryForm.vue'
+import TechnicalDataPriceForm from '../components/technical-data/TechnicalDataPriceForm.vue'
+import TechnicalDataNetLossForm from '../components/technical-data/TechnicalDataNetLossForm.vue'
+import { fetchTechnicalDataTask, fetchTechnicalDataWorkflow, submitTechnicalDataTask, validateTechnicalDataTask } from '../api/technicalDataTasks'
+import { showErrorOnce } from '../utils/errorHandler'
+import { TECHNICAL_DATA_MODULES, findModule, canEditTechnicalModule, moduleName, modulePresentation, isTechnicalModuleStatusOnly, nextTechnicalModule, technicalEntryProgress } from '../utils/technicalDataWorkbench'
 
-const ModuleEntry = defineComponent({
-  name: 'ModuleEntry',
-  props: {
-    product: { type: Object, required: true },
-    moduleType: { type: String, required: true },
-    editable: { type: Boolean, default: false },
-  },
-  setup(props) {
-    const entryRouter = useRouter()
-    const entryRoute = useRoute()
-    return () => {
-      const state = modulePresentation(props.product, props.moduleType)
-      const module = findModule(props.product, props.moduleType)
-      const moduleEnabled = ['PACKAGE', 'AUXILIARY', 'SALARY'].includes(props.moduleType)
-        && props.editable
-        && module?.moduleStatus !== 'NOT_REQUIRED'
-      const routePrefix = ({
-        PACKAGE: 'technical-data-package',
-        AUXILIARY: 'technical-data-auxiliary',
-        SALARY: 'technical-data-salary',
-      })[props.moduleType]
-      const routeName = (mode) => entryRoute.meta?.technicalDataShortSession
-        ? `technical-data-access-${routePrefix.replace('technical-data-', '')}-${mode}`
-        : `${routePrefix}-${mode}`
-      const open = (mode) => entryRouter.push({
-        name: routeName(mode),
-        params: { taskId: entryRoute.params.taskId, productId: props.product.id },
-      })
-      return h('div', { class: 'module-entry' }, [
-        h(ElTag, { type: state.type, effect: 'light', size: 'small' }, () => state.label),
-        h('div', { class: 'module-actions', title: moduleEnabled ? '进入补录明细' : '对应明细页尚未开放或无需补充' }, [
-          h(ElButton, {
-            link: true, type: 'primary', disabled: !moduleEnabled,
-            onClick: () => open('reference'),
-          }, () => '参照'),
-          h(ElButton, {
-            link: true, type: 'primary', disabled: !moduleEnabled,
-            onClick: () => open('entry'),
-          }, () => '录入'),
-        ]),
-      ])
-    }
-  },
-})
-
+const props = defineProps({ embedded: Boolean, taskId: [String, Number] })
+const emit = defineEmits(['close', 'changed', 'width'])
+const formRef = ref(null), bodyRef = ref(null), finished = ref(false), reviewed = ref([])
 const route = useRoute()
 const router = useRouter()
+const task = ref(null)
+const workflow = ref(null)
 const loading = ref(false)
-const saving = ref(false)
+const accessDenied = ref(false)
+const dirty = ref(false)
+const formBusy = ref(false)
 const validating = ref(false)
 const submitting = ref(false)
-const accessDenied = ref(false)
-const task = ref(null)
 const validation = ref(null)
-const products = ref([])
-const keyword = ref('')
-const selectedIds = ref([])
-const dirtyIds = ref(new Set())
-const tableScroll = ref(null)
-const editableColumns = new Set(['产品型号', '产品属性', '新品'])
-const storageKey = computed(() => `technical-data-workbench-state:${route.params.taskId}`)
-const editableStatus = computed(() =>
-  ['PENDING', 'IN_PROGRESS', 'PARTIALLY_RETURNED'].includes(task.value?.taskStatus))
-const editable = computed(() => editableStatus.value)
-const taskStatusLabel = computed(() => ({
-  PENDING: '待补录', IN_PROGRESS: '补录中', SUBMITTED: '审核中',
-  PARTIALLY_RETURNED: '部分退回', APPROVED: '已通过', CANCELLED: '已取消',
-})[task.value?.taskStatus] || task.value?.taskStatus || '-')
-const submittingVersionLabel = computed(() =>
-  `V${Number(task.value?.reviewRound || 0) + 1}`)
-const visibleProducts = computed(() => {
-  const value = keyword.value.trim().toLowerCase()
-  if (!value) return products.value
-  return products.value.filter((row) =>
-    [row.materialNo, row.productName].some((field) => String(field || '').toLowerCase().includes(value)))
+const selectedAssignee = ref(null)
+const coordinator = computed(() => Boolean(workflow.value?.canViewSupplementOverview))
+const overview = computed(() => !workflow.value?.editableModules?.length)
+const formWorkflow = computed(() => workflow.value)
+const activeModule = ref('')
+const formRevision = ref(0)
+let generation = 0
+const product = computed(() => task.value?.products?.[0])
+const annualVolumeUnitLabel = computed(() => ({ PIECE: '只', TEN_THOUSAND_PIECES: '万只' })[product.value?.annualVolumeUnit] || '（来源未注明单位）')
+const selectedPerson = computed(() => workflow.value?.participants?.find(person => person.assigneeUserId === selectedAssignee.value))
+const scope = computed(() => workflow.value?.canAdminister
+  ? selectedPerson.value?.moduleTypes || workflow.value.editableModules || []
+  : workflow.value?.assignedModules || [])
+const progress = computed(() => technicalEntryProgress(product.value, scope.value))
+const scopeLabel = computed(() => overview.value ? '当前资料只读'
+  : selectedPerson.value ? `${workflow.value.canAdminister ? selectedPerson.value.assigneeName + '负责' : '我负责'} ${progress.value.total} 项 · ${selectedPerson.value.leaderName}审批`
+    : `本次需补 ${progress.value.total} 项`)
+const activeState = computed(() => findModule(product.value, activeModule.value))
+const editable = computed(() => canEditTechnicalModule(formWorkflow.value, activeModule.value, activeState.value?.moduleStatus))
+const nextModule = computed(() => {
+  const available = selectedPerson.value?.returnReason ? scope.value.filter(code => !reviewed.value.includes(code)) : scope.value
+  return nextTechnicalModule(product.value, workflow.value, activeModule.value, available)
 })
-
-function moduleEditable(product, moduleType) {
-  if (!editable.value) return false
-  const module = findModule(product, moduleType)
-  if (!module || module.moduleStatus === 'NOT_REQUIRED') return false
-  if (task.value?.taskStatus !== 'PARTIALLY_RETURNED') return true
-  return ['RETURNED', 'EDITING'].includes(module.moduleStatus)
+const canContinueWithoutSaving = computed(() => !dirty.value && ['READY', 'RETURNED'].includes(activeState.value?.moduleStatus))
+const primaryLabel = computed(() => {
+  if (activeModule.value === 'DRAWING_BOM' && !canContinueWithoutSaving.value) return '保存并检查明细表'
+  if (canContinueWithoutSaving.value) return nextModule.value ? '下一项' : '完成核对'
+  return nextModule.value ? '保存并下一项' : '保存并完成'
+})
+const formComponent = computed(() => ({ PROFILE: TechnicalDataProfileForm, DRAWING_BOM: TechnicalDataDrawingForm, MANUFACTURING: TechnicalDataManufacturingForm, PACKAGE: TechnicalDataPackageForm, AUXILIARY: TechnicalDataAuxiliaryForm, SOLDER: TechnicalDataSolderForm, SALARY: TechnicalDataSalaryForm, NET_LOSS: TechnicalDataNetLossForm, PRICE: TechnicalDataPriceForm })[activeModule.value])
+const formProps = computed(() => activeModule.value === 'PROFILE' ? { product: product.value, editable: editable.value }
+  : activeModule.value === 'DRAWING_BOM' ? { productId: product.value.id, editable: editable.value, oaNo: task.value.oaNo }
+  : { productId: product.value.id, editable: editable.value })
+const formKey = computed(() => `${task.value?.id}:${product.value?.id}:${activeModule.value}:${overview.value}:${formRevision.value}`)
+const unavailableMessage = computed(() => activeState.value?.sourceAvailability === 'AVAILABLE' ? '本模块已有可用资料，无需补录。' : '本模块暂未开放办理，已填资料会保留。')
+function moduleOwner(code) {
+  const module = findModule(product.value, code)
+  if (!module?.required) return '来源资料'
+  const name = module.assigneeName || task.value.assigneeName || '尚未分派'
+  const owned = workflow.value.assignedModules?.includes(code)
+  const canEdit = canEditTechnicalModule(formWorkflow.value, code, module.moduleStatus)
+  if (coordinator.value) return `${name}${name === '尚未分派' ? '' : '负责'} · ${canEdit ? '可补录' : '只读'}`
+  return `${name}负责 · ${owned ? (canEdit ? '我负责' : '我负责／只读') : canEdit ? '可代办' : '只读'}`
 }
-
-function profileEditable(product) {
-  return moduleEditable(product, 'PROFILE')
+function firstModule() {
+  return nextTechnicalModule(product.value, workflow.value, null, scope.value)
+    || TECHNICAL_DATA_MODULES.find(item => scope.value.includes(item.code))?.code || 'PROFILE'
 }
-
 async function load() {
+  const request = ++generation
   loading.value = true
-  accessDenied.value = false
   try {
-    const result = await fetchTechnicalDataTask(route.params.taskId)
-    task.value = result
-    products.value = (result?.products || []).map((product) => ({
-      ...product,
-      profile: { ...product.profile },
-    }))
-    restoreState()
-    await nextTick()
-    restoreScroll()
+    const [data, state] = await Promise.all([fetchTechnicalDataTask(props.taskId || route.params.taskId), fetchTechnicalDataWorkflow(props.taskId || route.params.taskId)])
+    if (request !== generation) return
+    task.value = data
+    workflow.value = state
+    accessDenied.value = false
+    if (!state.participants.some(person => person.assigneeUserId === selectedAssignee.value)) {
+      const person = state.canAdminister ? state.participants.find(item => item.canSubmit) || state.participants[0]
+        : state.participants.find(item => item.moduleTypes.some(code => state.assignedModules.includes(code)))
+      selectedAssignee.value = person?.assigneeUserId ?? null
+    }
+    if (!activeModule.value) activeModule.value = TECHNICAL_DATA_MODULES.some(item => item.code === route.query.module) ? route.query.module : firstModule()
+    followModuleAssignee(activeModule.value)
   } catch (error) {
+    if (request !== generation) return
     task.value = null
-    products.value = []
-    if ([401, 403].includes(Number(error?.resultCode)) || isDomainError(error, 'FORBIDDEN')) {
-      accessDenied.value = true
-    } else {
-      showErrorOnce(error, '技术员录入工作台加载失败')
-    }
-  } finally {
-    loading.value = false
-  }
+    workflow.value = null
+    accessDenied.value = [401, 403].includes(Number(error?.resultCode))
+    if (!accessDenied.value) showErrorOnce(error, '补录工作台加载失败')
+  } finally { if (request === generation) loading.value = false }
 }
-
-function markDirty(productId) {
-  dirtyIds.value = new Set([...dirtyIds.value, productId])
-  if (!selectedIds.value.includes(productId)) selectedIds.value.push(productId)
-  persistState()
-}
-
-async function saveSelectedProfiles() {
-  const targetIds = selectedIds.value.length
-    ? selectedIds.value
-    : [...dirtyIds.value]
-  if (!targetIds.length) return ElMessage.warning('请先选择或修改需要保存的产品')
-  const targets = products.value.filter((row) => targetIds.includes(row.id) && profileEditable(row))
-  if (!targets.length) return ElMessage.warning('本轮没有可编辑的产品基本信息')
-  for (const row of targets) {
-    const message = validateTechnicalDataProfile(row.profile)
-    if (message) return ElMessage.warning(`${row.materialNo || row.productName}：${message}`)
-  }
-
-  saving.value = true
+async function discardChanges() {
+  if (submitting.value || validating.value) { ElMessage.warning('正在检查或提交资料，请稍候再切换'); return false }
+  if (formBusy.value) { ElMessage.warning('正在保存资料，请稍候再切换'); return false }
+  if (!dirty.value) return true
   try {
-    for (const row of targets) {
-      const saved = await saveTechnicalDataProfile(row.id, row.profile)
-      row.profile = { ...saved }
-      row.rowVersion = saved.expectedVersion
-      dirtyIds.value.delete(row.id)
-    }
-    dirtyIds.value = new Set(dirtyIds.value)
-    ElMessage.success(`已保存 ${targets.length} 条产品基本信息`)
-    persistState()
-    // 首次保存会把任务从 PENDING 推进到 IN_PROGRESS，并递增任务乐观锁版本。
-    // 立即回读任务，避免随后“校验 → 提交”继续携带保存前的旧 taskVersion。
-    await load()
-  } catch (error) {
-    if (isDomainError(error, 'VERSION_CONFLICT') || Number(error?.resultCode) === 409) {
-      ElMessage.error('数据已被其他会话修改，页面将刷新为最新数据')
-      await load()
-    } else {
-      showErrorOnce(error, '产品基本信息保存失败')
-    }
-  } finally {
-    saving.value = false
+    await ElMessageBox.confirm('当前修改尚未保存，离开后将放弃这些修改。', '未保存的资料', { confirmButtonText: '放弃修改', cancelButtonText: '继续填写', type: 'warning' })
+    dirty.value = false
+    return true
+  } catch { return false }
+}
+async function selectModule(code) {
+  if (!TECHNICAL_DATA_MODULES.some(item => item.code === code)) return
+  if (isTechnicalModuleStatusOnly(product.value, code)) return
+  if (!await discardChanges()) return
+  await router.replace({ query: { ...route.query, module: code, mode: undefined } })
+  finished.value = false
+  activeModule.value = code
+  followModuleAssignee(code)
+  await nextTick()
+  bodyRef.value?.scrollTo({ top: 0 })
+}
+function followModuleAssignee(code) {
+  if (!workflow.value?.canAdminister) return
+  const owner = workflow.value.participants.find(person => person.moduleTypes.includes(code))
+  if (owner && selectedAssignee.value !== owner.assigneeUserId) {
+    selectedAssignee.value = owner.assigneeUserId
+    reviewed.value = []
+    validation.value = null
   }
 }
-
-async function validateAll(notify = true) {
-  if (dirtyIds.value.size) return ElMessage.warning('存在未保存的产品基本信息，请先保存再校验')
+async function selectPerson(id) {
+  if (!await discardChanges()) return
+  selectedAssignee.value = id
+  reviewed.value = []
+  validation.value = null
+  await selectModule(firstModule())
+}
+async function refresh() {
+  if (!await discardChanges()) return
+  await load()
+  formRevision.value++
+}
+async function saveCurrent(next) {
+  if (!editable.value || formBusy.value || !formRef.value?.canSave) return
+  await formRef.value.save(next)
+}
+async function continueEntry() {
+  if (canContinueWithoutSaving.value) await goNext()
+  else await saveCurrent(true)
+}
+async function afterSave({ next = false } = {}) {
+  dirty.value = false
+  validation.value = null
+  await load()
+  emit('changed')
+  if (next && product.value && workflow.value) await goNext()
+}
+async function goNext() {
+  if (dirty.value) return ElMessage.warning('请先保存当前修改，再办理下一项')
+  if (selectedPerson.value?.returnReason && !reviewed.value.includes(activeModule.value)) reviewed.value.push(activeModule.value)
+  if (nextModule.value) return selectModule(nextModule.value)
+  if (selectedPerson.value) {
+    if (!(await validateAll())?.valid) { await nextTick(); bodyRef.value?.scrollTo({ top: 0 }); return }
+  } else if (progress.value.remaining) {
+    ElMessage.warning('还有资料未完整，请按当前模块提示补齐')
+    return
+  }
+  finished.value = true
+  await nextTick()
+  bodyRef.value?.scrollTo({ top: 0 })
+}
+async function validateAll() {
+  if (dirty.value) { ElMessage.warning('请先保存当前修改，再校验或提交'); return null }
   validating.value = true
   try {
-    validation.value = await validateTechnicalDataTask(task.value.id)
-    if (notify) {
-      if (validation.value.valid) ElMessage.success('全部产品和必填模块校验通过，可以提交审核')
-      else ElMessage.warning(`还有 ${validation.value.issues.length} 个问题需要处理`)
-    }
+    validation.value = await validateTechnicalDataTask(task.value.id, selectedAssignee.value)
     return validation.value
-  } catch (error) {
-    showErrorOnce(error, '整任务校验失败')
-    return null
-  } finally {
-    validating.value = false
-  }
+  } catch (error) { showErrorOnce(error, '资料校验失败'); return null }
+  finally { validating.value = false }
 }
-
 async function submitAll() {
-  if (dirtyIds.value.size) return ElMessage.warning('存在未保存的产品基本信息，请先保存再提交')
-  const checked = await validateAll(false)
-  if (!checked?.valid) return
+  if (!(await validateAll())?.valid) return
   try {
-    await ElMessageBox.confirm(
-      `提交后${submittingVersionLabel.value}产品信息、包装、辅料和工资将全部冻结并进入审核，确定继续吗？`,
-      '提交审核确认',
-      { type: 'warning', confirmButtonText: '确定提交', cancelButtonText: '取消' },
-    )
-  } catch {
-    return
-  }
+    await ElMessageBox.confirm(`将 ${selectedPerson.value.assigneeName} 负责的模块提交给 ${selectedPerson.value.leaderName} 审批，确认提交吗？`, '提交审核', { confirmButtonText: '确定提交', cancelButtonText: '取消', type: 'warning' })
+  } catch { return }
   submitting.value = true
-  const keyName = `technical-data-submit-key:${task.value.id}:${task.value.taskVersion}`
+  const keyName = `technical-data-submit-key:${task.value.id}:${selectedAssignee.value}:${task.value.taskVersion}:${product.value.rowVersion}`
   let idempotencyKey = sessionStorage.getItem(keyName)
-  if (!idempotencyKey) {
-    idempotencyKey = globalThis.crypto?.randomUUID?.()
-      || `submit-${task.value.id}-${task.value.taskVersion}-${Date.now()}`
-    sessionStorage.setItem(keyName, idempotencyKey)
-  }
+  if (!idempotencyKey) { idempotencyKey = globalThis.crypto.randomUUID(); sessionStorage.setItem(keyName, idempotencyKey) }
   try {
-    const result = await submitTechnicalDataTask(
-      task.value.id, task.value.taskVersion, idempotencyKey,
-    )
+    const result = await submitTechnicalDataTask(task.value.id, task.value.taskVersion, product.value.rowVersion, idempotencyKey, selectedAssignee.value)
     validation.value = result.validation || validation.value
-    if (!result.submitted) return ElMessage.warning('资料未通过服务端校验，请按问题清单修正')
+    if (!result.submissionId) return ElMessage.warning('资料未通过校验，请按问题清单修正')
     sessionStorage.removeItem(keyName)
-    ElMessage.success(result.idempotentReplay
-      ? '任务已提交，请勿重复操作'
-      : `已提交审核，${submittingVersionLabel.value}内容已冻结`)
+    ElMessage.success(result.idempotentReplay ? '本次资料已经提交' : result.submitted ? '等待本人部门领导审批' : '资料已冻结，等待 OA 确认受理')
     await load()
-  } catch (error) {
-    if (isDomainError(error, 'VERSION_CONFLICT') || Number(error?.resultCode) === 409) {
-      ElMessage.error('任务已被其他会话修改，页面将刷新为最新状态')
-      await load()
-    } else {
-      showErrorOnce(error, '提交审核失败')
-    }
-  } finally {
-    submitting.value = false
-  }
+    formRevision.value++
+    finished.value = false
+    emit('changed')
+    if (props.embedded) emit('close')
+  } catch (error) { showErrorOnce(error, '提交未完成，请查看提示后重试') }
+  finally { submitting.value = false }
 }
-
-function moduleLabel(value) {
-  return ({ TASK: '任务', PROFILE: '产品信息', PACKAGE: '包装', AUXILIARY: '辅料', SALARY: '工资' })[value] || value
+async function backToTasks() {
+  if (props.embedded) { emit('close'); return }
+  if (route.meta.technicalDataShortSession) { if (await discardChanges()) window.close() }
+  else router.push('/collaboration/tasks')
 }
-
-function locateIssue(issue) {
-  const target = issue.anchor ? document.getElementById(issue.anchor) : null
-  if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' })
-  else ElMessage.info('该问题位于任务级信息，请查看页面顶部')
+function backToQuote() {
+  router.push({ name: 'ingest-quote-request-detail', params: { oaNo: task.value.oaNo } })
 }
-
-function backToTasks() {
-  persistState()
-  if (route.meta?.technicalDataShortSession) {
-    window.close()
-    return
-  }
-  router.push('/collaboration/tasks')
-}
-
-function rememberScroll() {
-  persistState()
-}
-
-function restoreState() {
-  try {
-    const state = JSON.parse(sessionStorage.getItem(storageKey.value) || '{}')
-    keyword.value = state.keyword || ''
-    selectedIds.value = (state.selectedIds || []).filter((id) => products.value.some((row) => row.id === id))
-  } catch {
-    sessionStorage.removeItem(storageKey.value)
-  }
-}
-
-function restoreScroll() {
-  try {
-    const state = JSON.parse(sessionStorage.getItem(storageKey.value) || '{}')
-    if (tableScroll.value) tableScroll.value.scrollLeft = Number(state.scrollLeft || 0)
-  } catch {
-    // 已在 restoreState 清理损坏状态
-  }
-}
-
-function persistState() {
-  sessionStorage.setItem(storageKey.value, JSON.stringify({
-    keyword: keyword.value,
-    selectedIds: selectedIds.value,
-    scrollLeft: tableScroll.value?.scrollLeft || 0,
-  }))
-}
-
-onMounted(load)
-onBeforeUnmount(persistState)
+function beforeUnload(event) { if (dirty.value || formBusy.value) { event.preventDefault(); event.returnValue = '' } }
+window.addEventListener('beforeunload', beforeUnload)
+onBeforeRouteLeave(discardChanges)
+onBeforeRouteUpdate(discardChanges)
+watch(() => props.taskId || route.params.taskId, () => {
+  finished.value = false; reviewed.value = []
+  task.value = null; workflow.value = null; activeModule.value = ''; selectedAssignee.value = null; validation.value = null; dirty.value = false; formBusy.value = false
+  load()
+}, { immediate: true })
+watch(() => route.query.module, code => { if (TECHNICAL_DATA_MODULES.some(item => item.code === code)) { finished.value = false; activeModule.value = code; if (workflow.value) followModuleAssignee(code) } })
+watch([activeModule, finished], () => {
+  const widths = { PROFILE: 760, DRAWING_BOM: 1050, MANUFACTURING: 1420, PACKAGE: 1220, AUXILIARY: 1250, SOLDER: 1100, SALARY: 1020, NET_LOSS: 840, PRICE: 1280 }
+  emit('width', finished.value ? 760 : widths[activeModule.value] || 960)
+}, { immediate: true })
+const statusTimer = setInterval(() => {
+  if (!loading.value && !dirty.value && !formBusy.value && !submitting.value && !validating.value
+    && (['SYNC_PENDING', 'UNKNOWN'].includes(task.value?.externalTaskStatus)
+      || workflow.value?.participants.some(person => ['PREPARED', 'RETURN_PENDING', 'SUBMITTED'].includes(person.status)))) load()
+}, 3000)
+onBeforeUnmount(() => { generation++; clearInterval(statusTimer); window.removeEventListener('beforeunload', beforeUnload) })
 </script>
 
 <style scoped>
-.technical-data-workbench { min-width: 940px; color: #303846; }
-.back-link { margin-bottom: 14px; padding: 0; border: 0; background: transparent; color: #318de5; cursor: pointer; }
-.page-heading { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 18px; }
-.page-heading h2 { margin: 0 0 6px; font-size: 24px; }
-.page-heading p { margin: 0; color: #7d8999; }
-.summary { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr; margin-bottom: 16px; border: 1px solid #e1e6ee; background: #fff; }
-.summary > div { padding: 13px 18px; border-right: 1px solid #edf0f4; }
-.summary > div:last-child { border-right: 0; }
-.summary span, small { display: block; color: #8a95a4; font-size: 12px; }
-.summary b { display: block; margin-top: 4px; }
-.panel { border: 1px solid #dde3eb; background: #fff; }
-.band { padding: 8px; background: #dceddf; color: #244d32; text-align: center; font-size: 16px; font-weight: 700; }
-.tools { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid #e5eaf0; color: #7c8796; }
-.table-scroll { overflow-x: auto; }
-.workbench-table { width: 100%; min-width: 1540px; border-collapse: collapse; }
-th, td { padding: 11px 12px; border-right: 1px solid #e2e7ee; border-bottom: 1px solid #e2e7ee; text-align: left; vertical-align: middle; white-space: nowrap; }
-th { background: #f6f8fb; color: #3f4c60; font-weight: 700; }
-th.required, small.required { color: #e64a42; }
-.center { text-align: center; }
-.quote-no { max-width: 230px; overflow: hidden; text-overflow: ellipsis; }
-.module-entry { min-width: 120px; }
-.module-actions { margin-top: 5px; }
-.module-actions :deep(.el-button + .el-button) { margin-left: 5px; }
-.foot { display: flex; justify-content: space-between; padding: 10px 14px; color: #8994a3; }
-.note { margin-top: 14px; padding: 12px 15px; border-left: 4px solid #e9aa36; background: #fff8e8; color: #65502a; }
-.readonly-note { display: flex; gap: 14px; margin-bottom: 14px; padding: 13px 16px; border-left: 4px solid #47a56a; background: #eef9f2; color: #386549; }
-.validation-panel { margin-bottom: 14px; border: 1px solid #f0c6c3; background: #fff; }
-.validation-panel.passed { border-color: #b8ddc5; }
-.validation-title { display: flex; justify-content: space-between; padding: 12px 15px; background: #fff5f4; color: #80413c; }
-.validation-panel.passed .validation-title { background: #eef9f2; color: #386549; }
-.validation-title span { color: #7c8796; }
-.empty { padding: 28px; color: #909399; text-align: center; }
-.workbench-table :deep(.el-input) { min-width: 155px; }
-.workbench-table :deep(.el-select) { width: 112px; }
+.technical-data-workbench { display: flex; flex-direction: column; max-width: 1420px; height: calc(100vh - 120px); min-height: 480px; margin: 0 auto; background: #fff; border: 1px solid #dfe5ee; border-radius: 8px; color: #354256; overflow: hidden; }
+.technical-data-workbench.embedded { height: auto; max-height: calc(100vh - 48px); min-height: 300px; border: 0; margin: 0; }
+.editor-header { display: flex; justify-content: space-between; align-items: flex-start; padding: 20px 24px 15px; border-bottom: 1px solid #e5eaf0; }
+.editor-eyebrow { display: flex; gap: 12px; align-items: center; color: #748298; font-size: 12px; }
+h2 { margin: 10px 0 8px; font-size: 19px; font-weight: 600; } h2 span { font-weight: 400; } h3 { margin: 12px 0; }
+.editor-header p { margin: 0; color: #78859a; font-size: 12px; line-height: 1.7; }
+.editor-header > .el-button { font-size: 24px; padding: 6px; }
+.guide-progress { display: flex; flex-wrap: wrap; gap: 8px 24px; padding: 12px 24px; background: #f1f7fe; color: #577594; font-size: 12px; border-bottom: 1px solid #e0eafa; }
+.guide-progress b { color: #287fc9; }
+.editor-body { flex: 1; min-height: 0; overflow: auto; padding: 18px 24px; }
+.task-context { margin-bottom: 16px; font-size: 12px; color: #77869b; }
+summary { cursor: pointer; padding: 8px 0; } .task-context summary span { margin-left: 14px; color: #54789b; }
+.source-info { margin-top: 8px; } .person-scope { display: flex; align-items: center; gap: 12px; margin: 12px 0; } .person-scope .el-select { width: 260px; }
+.reason { margin: 0 0 16px; color: #76849a; font-size: 13px; line-height: 1.7; }
+.validation-panel { margin: 12px 0 20px; color: #b47824; } .validation-panel .el-table { margin-top: 12px; }
+.module-directory { border-top: 1px solid #edf0f5; margin-top: 24px; color: #6a7d94; font-size: 12px; }
+.module-nav { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; padding: 8px 0; }
+.module-nav button { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 12px; border: 1px solid #e3e8ef; border-radius: 5px; background: #fff; color: #52647b; text-align: left; cursor: pointer; }
+.module-nav button.active { background: #f1f7ff; border-color: #409eff; } .module-nav small { width: 100%; color: #8490a1; }
+.module-nav button:disabled { cursor: default; background: #fafbfc; color: #8490a1; }
+.editor-footer { flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 15px 24px; background: #fafbfd; border-top: 1px solid #e3e8ef; }
+.save-status { color: #8190a4; font-size: 12px; } .footer-actions { display: flex; align-items: center; gap: 10px; } .footer-actions .el-button { margin: 0; }
+.approval-details { margin-top: 12px; } .guide-complete { text-align: center; padding: 30px 10px; } .guide-complete h3 { color: #28945e; font-size: 19px; } .guide-complete p { color: #748197; line-height: 1.8; font-size: 14px; } .complete-mark { color: #28945e; font-size: 30px; }
+@media(max-width: 760px) { .editor-header, .editor-body, .editor-footer { padding: 14px; } .editor-footer { flex-wrap: wrap; } .footer-actions { margin-left: auto; } .task-context summary span { display: block; margin: 6px 0 0; } }
 </style>

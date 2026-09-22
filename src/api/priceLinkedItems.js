@@ -49,12 +49,16 @@ export const previewLinkedItemsExcel = (file, pricingMonth, options = {}) =>
   request('/api/v1/price-linked/items/import-excel/preview', {
     method: 'POST',
     body: buildLinkedItemsExcelForm(file, pricingMonth, options),
+    suppressErrorToast: true,
   })
 
 const buildLinkedItemsExcelForm = (file, pricingMonth, options = {}) => {
   const form = new FormData()
   form.append('file', file)
   form.append('pricingMonth', pricingMonth)
+  if (options.technicalContext) {
+    for (const key of ['technicalVersionId', 'oaNo', 'oaFormItemId']) form.append(key, options.technicalContext[key])
+  }
   if (options.businessUnitType) {
     form.append('businessUnitType', options.businessUnitType)
   }

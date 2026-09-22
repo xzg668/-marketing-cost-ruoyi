@@ -9,7 +9,7 @@
         <el-button
           type="primary"
           :loading="batchSubmitting"
-          :disabled="batchRun?.active"
+          :disabled="batchRun?.active || detail.oaWorkflow?.canCost === false"
           @click="submitWholeQuoteCosting"
         >
           {{ batchRun?.active ? '整单核算中' : '整单一键核算' }}
@@ -40,6 +40,13 @@
       />
     </div>
 
+    <el-alert v-if="detail.oaWorkflow" :closable="false" show-icon
+      :type="detail.oaWorkflow.syncError ? 'warning' : 'info'"
+      :title="'OA流程：' + detail.oaWorkflow.label"
+      :description="detail.oaWorkflow.syncError || detail.oaWorkflow.reason || undefined" />
+
+    <QuoteFinalSubmissionPanel v-if="detail.oaNo" v-hasPermi="['ingest:quote:cost-run:execute']" :oa-no="detail.oaNo" :refresh-key="detail" />
+
     <el-descriptions class="quote-summary" :column="3" border>
       <el-descriptions-item label="报价单号">{{ detail.oaNo || '-' }}</el-descriptions-item>
       <el-descriptions-item label="来源">{{ statusLabel('sourceType', detail.sourceType) }}</el-descriptions-item>
@@ -63,10 +70,10 @@
 
     <el-tabs v-model="activeTab" class="detail-tabs">
       <el-tab-pane label="产品明细" name="items">
-        <el-alert type="info" :closable="false" show-icon class="guide-alert">
-          <template #title>技术资料补录已切换到新工作台</template>
-          OA 待办只发布新技术资料任务；本页直接展示BOM、价格与核算工作区状态，并继续提供报价核算入口。
-        </el-alert>
+        <div class="guide-alert">
+          <el-button v-hasPermi="['ingest:quote:cost-run:execute', 'technical:data:admin:operate']" :disabled="!selectedProducts.length || detail.oaWorkflow?.canArrange === false" @click="dispatchVisible = true">检查并分派补录</el-button>
+          <span>勾选已核算检查的产品，核实剩余资料缺口后分派。</span>
+        </div>
         <el-table
           ref="itemsTableRef"
           :data="detail.items || []"
@@ -74,7 +81,9 @@
           row-key="id"
           class="items-table"
           :row-class-name="rowClassName"
+          @selection-change="selectedProducts = $event"
         >
+          <el-table-column type="selection" width="46" fixed="left" />
           <el-table-column label="序号" width="64" align="center" fixed="left">
             <template #default="{ row }">
               <span class="product-seq">{{ row.seq || '-' }}</span>
@@ -118,6 +127,15 @@
               </el-tag>
             </template>
           </el-table-column>
+          <el-table-column label="辅料归类" min-width="160">
+            <template #default="{ row }">
+              <el-button v-if="['PENDING','CLASSIFIED'].includes(auxiliaryStatuses[row.id]?.status)" link type="primary" @click="openCostingWorkbench(row, { auxiliaryClassification: '1' })">
+                {{ auxiliaryStatuses[row.id].message }}
+              </el-button>
+              <span v-else-if="auxiliaryStatusError" class="state-message">归类状态读取失败</span>
+              <span v-else>—</span>
+            </template>
+          </el-table-column>
           <el-table-column label="处理人" min-width="120">
             <template #default="{ row }">{{ row.workflow?.assigneeName || row.technicianName || '-' }}</template>
           </el-table-column>
@@ -138,6 +156,7 @@
                   v-if="row.workflow?.actionEnabled"
                   link
                   :type="operationType(row.workflow?.nextAction)"
+                  :disabled="['START_COSTING', 'RESTART_COSTING'].includes(row.workflow?.nextAction) && detail.oaWorkflow?.canCost === false"
                   :loading="actionLoadingId === rowActionKey(row)"
                   @click="handleRowAction(row)"
                 >
@@ -171,6 +190,8 @@
         </el-descriptions>
       </el-tab-pane>
     </el-tabs>
+
+    <TechnicalDataDispatchDialog v-model="dispatchVisible" :rows="selectedProducts" :oa-no="oaNo" @dispatched="refreshQuoteState(false)" />
 
     <el-dialog
       v-model="costResultDialog.visible"
@@ -303,10 +324,13 @@
 </template>
 
 <script setup>
+import { fetchAuxiliaryClassifications } from '../api/auxiliaryClassification'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
+import TechnicalDataDispatchDialog from '../components/technical-data/TechnicalDataDispatchDialog.vue'
+import QuoteFinalSubmissionPanel from '../components/quotation/QuoteFinalSubmissionPanel.vue'
 import {
   confirmQuoteRequestClassification,
   fetchQuoteCostResultHistory,
@@ -337,6 +361,8 @@ const actionLoadingId = ref('')
 const activeTab = ref('items')
 const detail = ref({})
 const itemsTableRef = ref()
+const selectedProducts = ref([])
+const dispatchVisible = ref(false)
 const costResultDialog = reactive({
   visible: false,
   loading: false,
@@ -349,6 +375,19 @@ const costResultDialog = reactive({
 })
 const confirmDialog = reactive({ visible: false, form: { quoteScenario: '', businessUnitType: 'COMMERCIAL' } })
 let electronicDrawingContinuationHandled = false
+
+const auxiliaryStatuses = ref({})
+const auxiliaryStatusError = ref(false)
+let auxiliaryStatusGeneration = 0
+watch(() => detail.value, async value => {
+  const current = ++auxiliaryStatusGeneration
+  auxiliaryStatuses.value = {}; auxiliaryStatusError.value = false
+  if (!value.oaNo) return
+  try {
+    const statuses = await fetchAuxiliaryClassifications(value.oaNo)
+    if (current === auxiliaryStatusGeneration) auxiliaryStatuses.value = Object.fromEntries(statuses.map(row => [row.oaFormItemId,row]))
+  } catch { if (current === auxiliaryStatusGeneration) auxiliaryStatusError.value = true }
+})
 
 async function loadDetail() {
   if (!oaNo.value) return
@@ -494,6 +533,7 @@ function openElectronicDrawingResolution(row) {
   if (!taskId) return ElMessage.warning('电子图库处理记录尚未准备好，请重新检查后再试')
   router.push({
     path: `/ingest/quote-requests/${encodeURIComponent(oaNo.value)}/items/${encodeURIComponent(row.id)}/electronic-drawing/${encodeURIComponent(taskId)}/material-resolution`,
+    query: { accountingMonth: row.electronicDrawingAccountingMonth },
   })
 }
 function hasHistoricalCostResult(row) {

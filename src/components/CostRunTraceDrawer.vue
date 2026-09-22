@@ -71,7 +71,7 @@
               </div>
               <div>
                 <span>{{ selectedDetail.traceType === 'PART_PRICE' ? 'BOM 用量' : '费率' }}</span>
-                <strong>{{ selectedDetail.traceType === 'PART_PRICE' ? formatMoney(selectedDetail.quantity) : formatRate(selectedDetail.rate) }}</strong>
+                <strong>{{ selectedDetail.traceType === 'PART_PRICE' ? formatMoney(selectedDetail.quantity) : formatRate(selectedDetail.rate, selectedDetail.costCode) }}</strong>
               </div>
               <div>
                 <span>本次金额</span>
@@ -168,7 +168,7 @@
                   <template #default="{ row }">{{ formatValue(row.baseAmount) }}</template>
                 </el-table-column>
                 <el-table-column label="费率" width="100">
-                  <template #default="{ row }">{{ formatRate(row.rate) }}</template>
+                  <template #default="{ row }">{{ formatRate(row.rate, row.costCode) }}</template>
                 </el-table-column>
                 <el-table-column label="金额" width="120">
                   <template #default="{ row }">{{ formatValue(row.amount) }}</template>
@@ -214,6 +214,7 @@ import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { fetchCostRunTraceDetail, fetchCostRunTraces } from '../api/costRunDetail'
 import { rangeFactorDisplayName, rangeTraceExplanation } from './costRunTraceDrawerUtils'
+import { netLossPercent } from '../utils/netLossRate'
 
 const props = defineProps({
   modelValue: {
@@ -507,7 +508,11 @@ function formatValue(value) {
   return JSON.stringify(value)
 }
 
-function formatRate(value) {
+function formatRate(value, costCode) {
+  if (costCode === 'LOSS') {
+    const percent = netLossPercent(value)
+    return percent === '' ? '-' : `${percent}%`
+  }
   const number = Number(value)
   if (!Number.isFinite(number)) return '-'
   return `${(number * 100).toFixed(2)}%`

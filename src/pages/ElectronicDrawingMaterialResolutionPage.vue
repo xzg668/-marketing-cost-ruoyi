@@ -9,7 +9,8 @@
       <el-button :loading="loading" @click="loadState">刷新</el-button>
     </header>
 
-    <el-alert class="ready-summary" type="success" :closable="false" show-icon>
+    <el-alert v-if="loadError" :title="loadError" type="error" :closable="false" show-icon />
+    <el-alert v-else-if="state.sourceVersionId" class="ready-summary" type="success" :closable="false" show-icon>
       <template #title>电子图库 BOM 已读取，只处理系统无法唯一匹配的物料</template>
       共 {{ state.totalCount || 0 }} 个物料，{{ state.autoMatchedCount || 0 }} 个已自动匹配，
       {{ state.manuallySelectedCount || 0 }} 个已保存；还剩 {{ pendingItems.length }} 个需要选择。
@@ -140,26 +141,29 @@
     </div>
 
     <el-result
-      v-else-if="!loading"
+      v-else-if="!loading && !loadError && state.complete"
       icon="success"
-      title="电子图库物料已全部准备完成"
-      sub-title="系统正在继续生成报价物料并进入后续核算步骤。"
+      title="U9 料号已全部确认"
+      :sub-title="completionMessage"
     >
-      <template #extra><el-button type="primary" @click="returnToQuote()">返回报价单</el-button></template>
+      <template #extra>
+        <el-button v-if="!state.bomComposed" :loading="saving" @click="saveSelections(true)">重新检查 BOM</el-button>
+        <el-button type="primary" @click="returnToQuote()">返回报价单</el-button>
+      </template>
     </el-result>
 
     <footer v-if="pendingItems.length" class="save-bar">
       <div>
         <strong>已选择 {{ selectedCount }} 个</strong>
         <span v-if="selectedCount < pendingItems.length">可以先保存已选项，稍后继续处理剩余物料。</span>
-        <span v-else>保存后系统会自动生成有效 BOM，并继续价格检查与核算。</span>
+        <span v-else>保存后检查下级 BOM；补录资料完成审批和报价确认后才能核算。</span>
       </div>
       <el-button
         type="primary"
         size="large"
         :loading="saving"
         :disabled="!selectedCount"
-        @click="saveSelections"
+        @click="saveSelections()"
       >
         {{ saveButtonText }}
       </el-button>
@@ -192,9 +196,11 @@ const oaNo = computed(() => String(route.params.oaNo || ''))
 const itemId = computed(() => String(route.params.itemId || ''))
 const taskId = computed(() => String(route.params.taskId || ''))
 const loading = ref(false)
+const loadError = ref('')
 const searching = ref(false)
 const saving = ref(false)
 const state = ref({ items: [] })
+const accountingMonth = computed(() => state.value.accountingMonth || String(route.query.accountingMonth || ''))
 const activeNodeId = ref('')
 const selectionDraft = reactive({})
 const searchType = ref('DRAWING_NO')
@@ -211,21 +217,29 @@ const selectedCount = computed(() => pendingItems.value.filter(
   (item) => selectionDraft[item.sourceNodeId]?.materialCode,
 ).length)
 const saveButtonText = computed(() => selectedCount.value === pendingItems.value.length
-  ? `保存 ${selectedCount.value} 项并继续核算`
+  ? `保存 ${selectedCount.value} 项并检查 BOM`
   : `保存已选 ${selectedCount.value} 项`)
 const searchPlaceholder = computed(() => ({
   DRAWING_NO: '输入电子图库图号',
   MATERIAL_CODE: '输入 U9 料号',
   MATERIAL_NAME: '输入物料名称',
 })[searchType.value])
+const completionMessage = computed(() => state.value.bomPublished
+  ? 'BOM 已就绪，可返回报价单继续检查和核算。'
+  : state.value.bomComposed ? 'BOM 已组好，仍须完成补录审批及报价确认。'
+    : '料号已确认，下级 BOM 尚未就绪，请在补录工作台查看需要继续补齐的资料。')
 
 async function loadState() {
   loading.value = true
+  loadError.value = ''
   try {
-    const response = await fetchElectronicDrawingMaterialResolution(taskId.value)
+    const response = await fetchElectronicDrawingMaterialResolution(taskId.value, String(route.query.accountingMonth || ''))
     state.value = response || { items: [] }
-    if (state.value.complete) {
-      ElMessage.success('电子图库物料已准备完成，系统已继续核算')
+    if (state.value.accountingMonth && route.query.accountingMonth !== state.value.accountingMonth) {
+      await router.replace({ query: { ...route.query, accountingMonth: state.value.accountingMonth } })
+    }
+    if (state.value.bomPublished) {
+      ElMessage.success('BOM 已就绪，可继续核算')
       returnToQuote('resolved')
       return
     }
@@ -234,7 +248,9 @@ async function loadState() {
     )
     selectItem(stillActive || pendingItems.value[0])
   } catch (error) {
-    ElMessage.error(error?.message || '电子图库物料状态加载失败')
+    loadError.value = error?.message || '电子图库物料状态加载失败，请刷新重试'
+    state.value = { items: [] }
+    ElMessage.error(loadError.value)
   } finally {
     loading.value = false
   }
@@ -264,6 +280,7 @@ async function searchOptions() {
   try {
     const response = await searchElectronicDrawingMaterialOptions(taskId.value, {
       sourceVersionId: state.value.sourceVersionId,
+      accountingMonth: accountingMonth.value,
       searchType: searchType.value,
       keyword: query,
       limit: 30,
@@ -288,17 +305,19 @@ function chooseOption(option) {
   if (next && String(next.sourceNodeId) !== String(activeItem.value.sourceNodeId)) selectItem(next)
 }
 
-async function saveSelections() {
+async function saveSelections(recheck = false) {
   const request = buildElectronicDrawingResolutionRequest(state.value, selectionDraft)
-  if (!request.selections.length) return ElMessage.warning('请至少选择一个 U9 料号')
+  if (!request.selections.length && !(recheck && state.value.complete)) {
+    return ElMessage.warning('请至少选择一个 U9 料号')
+  }
   saving.value = true
   try {
-    const response = await saveElectronicDrawingMaterialResolutions(taskId.value, request)
+    const response = await saveElectronicDrawingMaterialResolutions(taskId.value, request, accountingMonth.value)
     request.selections.forEach((item) => delete selectionDraft[item.sourceNodeId])
     state.value = response || { items: [] }
     if (state.value.complete) {
-      ElMessage.success('物料已全部保存，系统已生成有效 BOM 并继续核算')
-      returnToQuote('resolved')
+      ElMessage.success(completionMessage.value)
+      if (state.value.bomPublished) returnToQuote('resolved')
       return
     }
     ElMessage.success(`已保存 ${request.selections.length} 项，还剩 ${pendingItems.value.length} 项`)

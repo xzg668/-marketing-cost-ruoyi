@@ -98,8 +98,8 @@ export const parseQualityLossRateWorkbook = (workbook, XLSX) => {
       skippedRows += 1
       continue
     }
-    if (!Number.isFinite(rate) || rate < 0 || rate >= 1) {
-      throw new Error(`Excel第${rowNo}行净损失率格式不正确`)
+    if (!Number.isFinite(rate) || rate <= 0 || rate >= 1) {
+      throw new Error(`Excel第${rowNo}行公共净损失率必须大于0且小于100%`)
     }
     if (seenCodes.has(bareProductCode)) {
       throw new Error(`Excel第${rowNo}行裸品料号重复：${bareProductCode}`)

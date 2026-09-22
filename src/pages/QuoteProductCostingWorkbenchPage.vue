@@ -124,6 +124,8 @@
       </el-table>
     </section>
 
+    <AuxiliaryClassificationPanel v-if="!historyViewMode" :oa-no="oaNo" :item-id="itemId" :month="displayedPeriodMonth" :readonly="historyViewMode" :revision="classificationRevision" @classified="refreshWorkbench" />
+
     <section class="workspace-band section-block">
       <div class="workspace-meta">
         <span><small>核算月份</small><strong>{{ displayedPeriodMonth }}</strong></span>
@@ -223,7 +225,7 @@
             <div class="bom-tree-panel" v-loading="effectiveBomLoading">
               <div v-if="!hasProductIdentity" class="empty-tip">当前产品行无料号、型号和图号</div>
               <div v-else-if="effectiveBomTreeData.length === 0 && !effectiveBomLoading" class="empty-tip">
-                {{ effectiveBomBlocked ? '当前存在数据问题，暂时无法生成计价 BOM' : '暂无本次计价 BOM' }}
+                {{ effectiveBom.state === 'NOT_PREPARED' ? '本产品尚未生成本次计价 BOM，可先处理待办资料，再点击上方发起核算' : effectiveBomBlocked ? '当前存在数据问题，暂时无法生成计价 BOM' : '暂无本次计价 BOM' }}
               </div>
               <el-tree
                 v-else
@@ -529,6 +531,17 @@
               </div>
             </div>
 
+            <section v-if="technicalPriceCorrection?.items?.length" class="technical-price-correction">
+              <el-alert type="warning" :closable="false" :title="`本产品有 ${technicalPriceCorrection.items.length} 项自行公式尚未形成可用价格，请下载修正后导入。`" />
+              <el-table :data="technicalPriceCorrection.items" border>
+                <el-table-column prop="materialNo" label="料号" width="220" />
+                <el-table-column prop="message" label="待处理原因" />
+              </el-table>
+              <div class="toolbar-actions">
+                <el-button :disabled="historyViewMode || !technicalPriceCorrection.canDownload" :loading="correctionDownloading" @click="downloadTechnicalFormulas">下载待修正公式</el-button>
+                <el-button v-hasPermi="['price:linked-item:import']" type="primary" :disabled="historyViewMode" @click="openTechnicalPriceImport">导入修正结果</el-button>
+              </div>
+            </section>
             <div class="source-gap-cards">
               <div class="source-gap-card">
                 <span>待补价格源</span>
@@ -1063,6 +1076,7 @@
 </template>
 
 <script setup>
+import AuxiliaryClassificationPanel from '../components/technical-data/AuxiliaryClassificationPanel.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -1090,6 +1104,7 @@ import {
   selectQuoteBomAlternative,
   submitQuoteProductCostRun,
 } from '../api/quoteRequests'
+import { downloadAuthenticatedBlob } from '../utils/auxiliaryClassification'
 import { confirmPricePrepareNoScrap } from '../api/pricePrepare'
 import {
   alternativeErrorMessage,
@@ -1112,6 +1127,7 @@ import {
   emptyQuoteEffectiveBom,
   normalizeQuoteEffectiveBom,
   workbenchCanLoadPriceType,
+  isEffectiveBomNotPreparedError,
 } from '../utils/quoteEffectiveBom'
 import { formatDateTime, statusLabel, statusTagType } from '../utils/quoteRequestWorkbench'
 import {
@@ -1140,6 +1156,7 @@ const historyViewMode = computed(() => route.query.historyResult === 'quote' && 
 const historyResultLabel = computed(() => (
   route.query.historyResultKind === 'recalculation' ? '报价重新核算结果' : '原报价结果'
 ))
+const classificationRevision = ref(0)
 const loading = ref(false)
 const refreshingTabs = ref(false)
 const activeTab = ref('PRODUCT_DETAIL')
@@ -1559,12 +1576,18 @@ function applyStoredBomGap() {
 }
 
 async function refreshWorkbench() {
+  classificationRevision.value++
   autoPriceSourceCheckedKey.value = ''
   await loadWorkbench({ resetTab: false, loadChildren: true })
   if (!historyViewMode.value) await ensurePriceSourceChecked()
 }
 
 async function refreshAllTabData() {
+  if (effectiveBom.value.state === 'NOT_PREPARED') {
+    resetCurrentInputTabs()
+    await Promise.allSettled([loadCostRun(false), loadActiveRepriceLock()])
+    return
+  }
   refreshingTabs.value = true
   await loadAlternativeFeatureStatus(false)
   await Promise.allSettled([
@@ -1955,9 +1978,13 @@ async function loadEffectiveBom(showError = true) {
   effectiveBomLoading.value = true
   try {
     effectiveBom.value = normalizeQuoteEffectiveBom(
-      await fetchQuoteEffectiveBom(oaNo.value, itemId.value),
+      await fetchQuoteEffectiveBom(oaNo.value, itemId.value, { suppressErrorToast: true }),
     )
   } catch (error) {
+    if (isEffectiveBomNotPreparedError(error)) {
+      clearEffectiveBom('NOT_PREPARED')
+      return
+    }
     const message = error?.message || '查询最终有效 BOM 失败'
     effectiveBom.value = normalizeQuoteEffectiveBom({
       state: 'ERROR',
@@ -2183,6 +2210,28 @@ async function refreshPriceSourceFromReturn() {
   }
 }
 
+const technicalPriceCorrection = computed(() => pricePrepare.value.technicalPriceCorrection)
+const correctionDownloading = ref(false)
+async function downloadTechnicalFormulas() {
+  const correction = technicalPriceCorrection.value
+  if (!correction?.canDownload || correctionDownloading.value) return
+  correctionDownloading.value = true
+  try {
+    const params = new URLSearchParams({ periodMonth: correction.periodMonth, technicalVersionId: correction.technicalVersionId })
+    await downloadAuthenticatedBlob(`/api/v1/quote-requests/${encodeURIComponent(oaNo.value)}/items/${itemId.value}/price-prepare/technical-formulas/export?${params}`, '待修正联动公式.xlsx')
+  } catch (error) { ElMessage.error(error.message || '下载待修正公式失败') }
+  finally { correctionDownloading.value = false }
+}
+function openTechnicalPriceImport() {
+  const correction = technicalPriceCorrection.value
+  if (!correction || historyViewMode.value) return
+  router.push({ path: '/price/linked/result', query: {
+    oaNo: correction.oaNo, oaFormItemId: String(correction.oaFormItemId),
+    pricingMonth: correction.periodMonth, businessUnitType: correction.businessUnitType,
+    technicalVersionId: String(correction.technicalVersionId), returnTo: priceSourceReturnTo(),
+  } })
+}
+
 function openPriceSource(row) {
   const kind = priceSourceGapKind(row)
   if (kind === 'SCRAP_MAPPING') {
@@ -2212,6 +2261,7 @@ function openPriceSource(row) {
       oaNo: oaNo.value,
       oaFormItemId: itemId.value,
       productCode: costingProductCode.value,
+      businessUnitType: priceSourceBusinessUnitType(row),
       returnTo: priceSourceReturnTo(),
     },
   }).catch(() => {

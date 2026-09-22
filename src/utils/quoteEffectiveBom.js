@@ -1,5 +1,6 @@
 const STATE_META = Object.freeze({
   DRAFT: { label: '已就绪', type: 'success' },
+  NOT_PREPARED: { label: '待发起核算', type: 'info' },
   BLOCKED: { label: '需处理', type: 'danger' },
   ERROR: { label: '加载失败', type: 'danger' },
 })
@@ -218,4 +219,9 @@ export function effectiveBomExclusionItems(summary) {
 
 function normalizeCode(value) {
   return String(value || '').trim().toUpperCase()
+}
+
+/** 尚未发起核算是正常入口状态；来源错误和查询失败仍须明确报错。 */
+export function isEffectiveBomNotPreparedError(error) {
+  return /^EFFECTIVE_BOM_NOT_FOUND:/.test(String(error?.message || ''))
 }

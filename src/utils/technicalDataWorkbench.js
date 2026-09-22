@@ -1,58 +1,29 @@
-export const TECHNICAL_DATA_COLUMNS = Object.freeze([
-  '选择',
-  '层级',
-  '产品料号',
-  '产品名称',
-  '产品型号',
-  '产品规格',
-  '产品属性',
-  '关联报价单',
-  '新品',
-  '包装组件',
-  '辅料信息',
-  '工资信息',
+export const TECHNICAL_DATA_MODULES = Object.freeze([
+  { code: 'PROFILE', label: '产品资料' },
+  { code: 'DRAWING_BOM', label: '电子图库明细表' },
+  { code: 'MANUFACTURING', label: '制造件原材料' },
+  { code: 'PACKAGE', label: '包装' },
+  { code: 'AUXILIARY', label: '辅料' },
+  { code: 'SOLDER', label: '焊料' },
+  { code: 'SALARY', label: '工资' },
+  { code: 'NET_LOSS', label: '净损失率' },
+  { code: 'PRICE', label: '价格' },
 ])
 
 export const PRODUCT_PROPERTY_OPTIONS = Object.freeze(['标准品', '非标品'])
-export const NEW_PRODUCT_OPTIONS = Object.freeze([
-  { label: '是', value: true },
-  { label: '否', value: false },
-])
-
-export const PACKAGE_UNIT_OPTIONS = Object.freeze(['只', '套', '片', '张', '个', '箱', '米', 'kg'])
-export const PACKAGE_PRICE_BASIS_OPTIONS = Object.freeze([
-  { label: '历史价格', value: 'HISTORICAL_PRICE' },
-  { label: '供应商报价', value: 'SUPPLIER_QUOTE' },
-  { label: '待询价', value: 'PENDING_INQUIRY' },
-])
-
-export const AUXILIARY_PRICING_METHOD_OPTIONS = Object.freeze([
-  { label: '按用量计价', value: 'UNIT_PRICE' },
-  { label: '固定每件', value: 'FIXED_AMOUNT' },
-])
-export const AUXILIARY_UNIT_OPTIONS = Object.freeze(['kg', 'g', '件'])
-export const AUXILIARY_PRICE_UNIT_OPTIONS = Object.freeze(['元/kg', '元/g', '元/件'])
-
-export const SALARY_LABOR_TYPE_OPTIONS = Object.freeze([
-  { label: '直接人工', value: 'DIRECT' },
-  { label: '间接人工', value: 'INDIRECT' },
-])
-export const SALARY_TIME_UNIT_OPTIONS = Object.freeze(['小时/件', '分钟/件'])
-export const SALARY_RATE_UNIT_OPTIONS = Object.freeze(['元/小时', '元/分钟'])
-
-const AUXILIARY_COMPATIBLE_UNITS = new Set([
-  'kg|元/kg', 'g|元/kg', 'g|元/g', 'kg|元/g', '件|元/件',
-])
 
 export function validateTechnicalDataProfile(profile) {
-  if (!String(profile?.productModel || '').trim()) return '产品型号不能为空'
-  if (!PRODUCT_PROPERTY_OPTIONS.includes(profile?.productProperty)) {
-    return '产品属性只能为标准品或非标品'
+  if (!PRODUCT_PROPERTY_OPTIONS.includes(profile?.productProperty)) return '请选择产品属性'
+  if (typeof profile?.hasAdditionalFees !== 'boolean') return '请选择是否含新增工装模具认证费'
+  for (const [field, label] of [['unitMouldFee', '模具费'], ['unitToolingFee', '工装费'], ['unitCertificationFee', '认证费']]) {
+    const text = String(profile?.[field] ?? '').trim()
+    if (text === '/' || (!text && !profile.hasAdditionalFees)) continue
+    if (!text) return `${label}请填写单件金额或 /`
+    if (!/^[0-9]{1,12}(\.[0-9]{1,6})?$/.test(text) || Number(text) <= 0) {
+      return `${label}须为正金额或 /，最多 12 位整数、6 位小数`
+    }
   }
-  if (typeof profile?.newProduct !== 'boolean') return '新品只能为是或否'
-  if (!Number.isInteger(profile?.expectedVersion) || profile.expectedVersion < 0) {
-    return '当前数据版本无效，请刷新后重试'
-  }
+  if (!Number.isInteger(profile?.expectedVersion) || profile.expectedVersion < 0) return '当前数据版本无效，请刷新后重试'
   return ''
 }
 
@@ -60,108 +31,82 @@ export function findModule(product, moduleType) {
   return product?.modules?.find((module) => module.moduleType === moduleType) || null
 }
 
+export function moduleName(code) {
+  return TECHNICAL_DATA_MODULES.find(module => module.code === code)?.label || code
+}
+
+// 公共来源已满足本项时只展示结论；已填草稿和审批资料仍可进入查看。
+export function isTechnicalModuleStatusOnly(product, code) {
+  const module = findModule(product, code)
+  return module?.moduleStatus === 'NOT_REQUIRED' && module.sourceAvailability === 'AVAILABLE'
+}
+
 export function modulePresentation(product, moduleType) {
   const module = findModule(product, moduleType)
-  if (!module || module.moduleStatus === 'PENDING') {
-    return { label: '待补充', type: 'warning' }
+  if (!module) return { label: '待检查', type: 'warning' }
+  const states = {
+    FROZEN: { label: '提交待确认', type: 'warning' },
+    SUBMITTED: { label: '审批中', type: 'warning' },
+    APPROVED: { label: '已通过', type: 'success' },
+    RETURNED: { label: '已退回', type: 'danger' },
   }
-  if (module.moduleStatus === 'NOT_REQUIRED') {
-    return { label: '无需补充', type: 'info' }
+  if (states[module.moduleStatus]) return states[module.moduleStatus]
+  if (module.sourceAvailability === 'ERROR') return { label: '检查失败', type: 'danger' }
+  if (module.sourceAvailability === 'UNCONFIRMED') return { label: '待检查', type: 'warning' }
+  if (module.moduleStatus === 'NOT_REQUIRED') return {
+    label: module.sourceAvailability === 'AVAILABLE' && module.requirementReasonCode !== 'U9_ORIGINAL_AVAILABLE' ? '已有资料' : '无需补录', type: 'info',
   }
-  if (module.entryMode === 'REFERENCE') {
-    return { label: `已参照 ${Number(module.itemCount || 0)}项`, type: 'success' }
-  }
-  if (['READY', 'EDITING', 'RETURNED'].includes(module.moduleStatus)) {
-    return {
-      label: `已录入 ${Number(module.itemCount || 0)}项`,
-      type: module.moduleStatus === 'RETURNED' ? 'danger' : 'success',
-    }
-  }
-  if (['SUBMITTED', 'APPROVED'].includes(module.moduleStatus)) {
-    return { label: module.moduleStatus === 'APPROVED' ? '已通过' : '已提交', type: 'success' }
-  }
-  return { label: module.moduleStatus, type: 'info' }
+  if (module.moduleStatus === 'READY') return { label: '已填完整', type: 'success' }
+  if (module.moduleStatus === 'EDITING') return { label: '草稿', type: 'warning' }
+  return { label: '待补录', type: 'warning' }
 }
 
-export function validatePackageRows(rows) {
-  const values = (rows || []).filter((row) => Object.values(row || {}).some((value) => String(value ?? '').trim()))
-  if (!values.length) return '请至少录入一条包装明细'
-  const materialNos = new Set()
-  for (let index = 0; index < values.length; index += 1) {
-    const row = values[index]
-    const line = index + 1
-    if (!String(row.componentMaterialNo || '').trim()) return `第${line}行包装组件料号不能为空`
-    if (!String(row.componentName || '').trim()) return `第${line}行名称不能为空`
-    if (!(Number(row.quantity) > 0)) return `第${line}行用量必须大于0`
-    if (!PACKAGE_UNIT_OPTIONS.includes(row.unit)) return `第${line}行单位无效`
-    if (!PACKAGE_PRICE_BASIS_OPTIONS.some((option) => option.value === row.priceBasisType)) {
-      return `第${line}行价格依据无效`
-    }
-    const key = String(row.componentMaterialNo).trim().toUpperCase()
-    if (materialNos.has(key)) return `包装组件料号重复：${String(row.componentMaterialNo).trim()}`
-    materialNos.add(key)
-  }
-  return ''
+export function technicalModuleSummary(product, code) {
+  const module = findModule(product, code)
+  if (!module) return '尚未检查本项资料'
+  if (module.sourceAvailability === 'ERROR') return module.requirementReason || '查询失败，请核实后重查'
+  if (module.sourceAvailability === 'UNCONFIRMED') return module.requirementReason || '资料来源待确认'
+  if (!module.required) return ({
+    U9_ORIGINAL_AVAILABLE: 'U9 已有 BOM，本次无需补录',
+    MANUFACTURING_U9_SOURCE: '沿用已有原材料关系',
+    SALARY_SOURCE_AVAILABLE: '沿用 CMS 工资',
+    PACKAGE_SOURCE_AVAILABLE: '沿用已有包装',
+    NET_LOSS_SOURCE_AVAILABLE: '沿用已有净损失率',
+    PRICE_SOURCE_AVAILABLE: '已有可用价格',
+  })[module.requirementReasonCode] || '本次无需补录'
+  const count = module.itemCount > 0 ? ` ${module.itemCount} 项` : ''
+  return ({ PROFILE: '产品属性与单件费用', DRAWING_BOM: '取得有效图库明细',
+    MANUFACTURING: `制造件${count} · 原材料、净长、毛重`, PACKAGE: `包装子件${count} · 母子用量`,
+    AUXILIARY: `辅料明细${count} · 参考 / 上传`, SOLDER: `焊料${count} · 单件用量`,
+    SALARY: '直接人工 / 辅助人员工资', NET_LOSS: '参考产品 / 填写费率', PRICE: `价格${count} · 公式 / 固定价` })[code] || moduleName(code)
 }
 
-export function validateAuxiliaryRows(rows) {
-  const values = (rows || []).filter((row) => Object.values(row || {})
-    .some((value) => String(value ?? '').trim()))
-  if (!values.length) return '请至少录入一条辅料明细'
-  const materialNos = new Set()
-  for (let index = 0; index < values.length; index += 1) {
-    const row = values[index]
-    const line = index + 1
-    if (!String(row.subjectCode || '').trim()) return `第${line}行辅料科目不能为空`
-    if (!String(row.auxiliaryMaterialNo || '').trim()) return `第${line}行辅料料号不能为空`
-    if (!String(row.auxiliaryName || '').trim()) return `第${line}行辅料名称不能为空`
-    if (!AUXILIARY_PRICING_METHOD_OPTIONS.some((option) => option.value === row.pricingMethod)) {
-      return `第${line}行计价方式无效`
-    }
-    if (!(Number(row.quantity) > 0)) return `第${line}行用量必须大于0`
-    if (!(Number(row.referenceUnitPrice) > 0)) return `第${line}行参考单价必须大于0`
-    if (!AUXILIARY_COMPATIBLE_UNITS.has(`${row.unit}|${row.priceUnit}`)) {
-      return `第${line}行用量单位与计价单位不兼容`
-    }
-    if (Number(row.lossRate || 0) < 0 || Number(row.lossRate || 0) > 1) {
-      return `第${line}行损耗率必须在0到1之间`
-    }
-    const key = String(row.auxiliaryMaterialNo).trim().toUpperCase()
-    if (materialNos.has(key)) return `辅料料号重复：${String(row.auxiliaryMaterialNo).trim()}`
-    materialNos.add(key)
-  }
-  return ''
+export function technicalEntryProgress(product, scope) {
+  const modules = TECHNICAL_DATA_MODULES.map(({ code }) => findModule(product, code))
+    .filter(module => module?.required && scope.includes(module.moduleType))
+  const complete = modules.filter(module => ['READY', 'APPROVED', 'SUBMITTED', 'FROZEN'].includes(module.moduleStatus)).length
+  return { total: modules.length, complete, remaining: modules.length - complete }
 }
 
-export function validateSalaryRows(rows) {
-  const values = (rows || []).filter((row) => Object.values(row || {})
-    .some((value) => String(value ?? '').trim()))
-  if (!values.length) return '请至少录入一条工资明细'
-  const processKeys = new Set()
-  for (let index = 0; index < values.length; index += 1) {
-    const row = values[index]
-    const line = index + 1
-    if (!String(row.processCode || '').trim()) return `第${line}行工序编码不能为空`
-    if (!String(row.processName || '').trim()) return `第${line}行工序名称不能为空`
-    if (!SALARY_LABOR_TYPE_OPTIONS.some((option) => option.value === row.laborType)) {
-      return `第${line}行人工类型无效`
-    }
-    if (!(Number(row.workingHours) > 0)) return `第${line}行标准工时必须大于0`
-    if (!SALARY_TIME_UNIT_OPTIONS.includes(row.timeUnit)) return `第${line}行工时单位无效`
-    if (!(Number(row.wageRate) > 0)) return `第${line}行工资率必须大于0`
-    if (!SALARY_RATE_UNIT_OPTIONS.includes(row.rateUnit)) return `第${line}行计价单位无效`
-    if (!(Number(row.personCoefficient) > 0)) return `第${line}行人数/系数必须大于0`
-    const key = `${String(row.processCode).trim().toUpperCase()}|${row.laborType}`
-    if (processKeys.has(key)) return `工序和人工类型重复：${String(row.processCode).trim()}`
-    processKeys.add(key)
-  }
-  return ''
+// 顺序只来自九模块定义；本人权限和本次实际缺口均由服务端返回。
+export function nextTechnicalModule(product, workflow, currentCode = null, scope = workflow?.editableModules || []) {
+  const candidates = TECHNICAL_DATA_MODULES.filter(({ code }) => {
+    const module = findModule(product, code)
+    return module?.required && scope.includes(code)
+      && canEditTechnicalModule(workflow, code, module.moduleStatus)
+      && ['PENDING', 'EDITING', 'RETURNED'].includes(module.moduleStatus)
+  })
+  const currentIndex = TECHNICAL_DATA_MODULES.findIndex(module => module.code === currentCode)
+  return candidates.find(module => TECHNICAL_DATA_MODULES.indexOf(module) > currentIndex)?.code
+    || candidates.find(module => module.code !== currentCode)?.code || null
 }
 
 export function taskStatusLabel(status) {
   return ({
+    UNASSIGNED: '待分派',
     PENDING: '待处理',
     IN_PROGRESS: '处理中',
+    PREPARED: '待发送审批',
     SUBMITTED: '已提交',
     PARTIALLY_RETURNED: '部分退回',
     APPROVED: '已通过',
@@ -175,4 +120,31 @@ export function taskStatusType(status) {
   if (status === 'CANCELLED') return 'info'
   if (status === 'IN_PROGRESS') return 'primary'
   return 'warning'
+}
+
+// 使用服务端当前人员权限，并再次约束已冻结模块的页面操作。
+export function canEditTechnicalModule(workflow, moduleType, moduleStatus) {
+  return Boolean(workflow?.editableModules?.includes(moduleType)
+    && ['PENDING', 'EDITING', 'READY', 'RETURNED'].includes(moduleStatus))
+}
+
+// 未分派行只有报价产品身份；不能把它作为技术任务 ID 打开或提交。
+export function workbenchRowKey(row) {
+  return row.taskId ? `task:${row.taskId}` : `quote:${row.product.oaFormItemId}:${row.accountingMonth}`
+}
+
+export function canDispatchWorkbenchRow(row) {
+  return Boolean(row && row.taskStatus === 'UNASSIGNED'
+    && row.product.modules.some(module => module.required)
+    && !row.sourceCheck?.sharedModules?.length)
+}
+
+export function firstRequiredTechnicalModule(product) {
+  return TECHNICAL_DATA_MODULES.find(({ code }) => findModule(product, code)?.required)?.code || null
+}
+
+export function workbenchDispatchRow(row) {
+  return { id: row.product.oaFormItemId, oaNo: row.oaNo, materialNo: row.product.materialNo,
+    productName: row.product.productName, sunlModel: row.product.sourceModel,
+    costingWorkspace: { periodMonth: row.accountingMonth } }
 }
