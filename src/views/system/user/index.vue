@@ -29,6 +29,7 @@
     <el-table v-loading="loading" :data="userList" border stripe>
       <el-table-column prop="userId" label="ID" width="70" />
       <el-table-column prop="userName" label="用户名" width="120" />
+      <el-table-column prop="employeeNo" label="工号" min-width="140" show-overflow-tooltip />
       <el-table-column prop="nickName" label="昵称" width="120" />
       <el-table-column prop="phone" label="手机号" width="130" />
       <el-table-column prop="businessUnitType" label="业务单元" width="110">
@@ -85,6 +86,9 @@
         </el-form-item>
         <el-form-item label="昵称" prop="nickName">
           <el-input v-model="form.nickName" placeholder="请输入昵称" />
+        </el-form-item>
+        <el-form-item label="工号" prop="employeeNo">
+          <el-input v-model.trim="form.employeeNo" placeholder="请输入工号（选填）" maxlength="64" clearable />
         </el-form-item>
         <el-form-item label="手机号" prop="phone">
           <el-input v-model="form.phone" placeholder="请输入手机号" />
@@ -193,6 +197,7 @@ const form = reactive({
   userId: null,
   userName: '',
   password: '',
+  employeeNo: '',
   nickName: '',
   phone: '',
   sex: '',
@@ -250,6 +255,7 @@ function resetForm() {
   form.userId = null
   form.userName = ''
   form.password = ''
+  form.employeeNo = ''
   form.nickName = ''
   form.phone = ''
   form.sex = ''
@@ -285,6 +291,7 @@ async function handleAdd() {
 async function handleEdit(row) {
   resetForm()
   form.userId = row.userId
+  form.employeeNo = row.employeeNo ?? ''
   form.nickName = row.nickName || ''
   form.phone = row.phone || ''
   form.sex = row.sex || ''
@@ -307,6 +314,7 @@ async function handleSubmit() {
   try {
     if (form.userId) {
       await updateUser(form.userId, {
+        employeeNo: form.employeeNo,
         nickName: form.nickName,
         phone: form.phone,
         sex: form.sex,
@@ -320,6 +328,7 @@ async function handleSubmit() {
     } else {
       await createUser({
         userName: form.userName,
+        employeeNo: form.employeeNo,
         password: form.password,
         nickName: form.nickName,
         phone: form.phone,

@@ -56,6 +56,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useUserStore } from '../../store/modules/user'
 import { checkTechnicalDataSources, publishTechnicalDataTasks } from '../../api/technicalDataTasks'
 import { TECHNICAL_DATA_MODULES } from '../../utils/technicalDataWorkbench'
 import TechnicalDataPersonSelect from './TechnicalDataPersonSelect.vue'
@@ -63,7 +64,9 @@ import TechnicalDataPersonSelect from './TechnicalDataPersonSelect.vue'
 const props = defineProps({ modelValue: Boolean, rows: { type: Array, default: () => [] }, oaNo: String, defaultAssignee: Number, defaultAssigneePerson: Object })
 const emit = defineEmits(['update:modelValue', 'dispatched'])
 const previews = ref([]), assignee = ref(null), overrides = ref({})
+const selectedRows = ref([])
 const checking = ref(false), busy = ref(false), error = ref('')
+const user = useUserStore()
 let generation = 0
 const missingModules = row => row.check?.modules?.filter(module => module.required) || []
 const dispatchRows = computed(() => previews.value.filter(row => !row.error && missingModules(row).length && !row.check?.sharedModules?.length))
@@ -75,6 +78,7 @@ const sharedTaskUrl = source => `/collaboration/technical-data/tasks/${encodeURI
 watch(() => props.modelValue, async open => {
   const current = ++generation
   if (!open) { checking.value = false; return }
+  selectedRows.value = [...props.rows]
   checking.value = true; error.value = ''; previews.value = []
   assignee.value = props.defaultAssignee ?? null; overrides.value = {}
   try {
@@ -88,7 +92,7 @@ watch(() => props.modelValue, async open => {
 async function refresh() {
   const current = ++generation
   checking.value = true; error.value = ''
-  const rows = await Promise.all(props.rows.map(async row => {
+  const rows = await Promise.all(selectedRows.value.map(async row => {
     const month = row.costingWorkspace?.periodMonth
     if (!month) return { ...row, error: '请先发起本产品核算，再检查补录资料' }
     try { return { ...row, check: await checkTechnicalDataSources(row.id, month) } }
@@ -97,6 +101,7 @@ async function refresh() {
   if (current !== generation) return
   previews.value = rows; checking.value = false
   if (rows.some(row => row.error)) error.value = '部分产品未完成检查，请按提示处理后重新检查。'
+  else if (new Set(rows.map(row => row.oaNo || props.oaNo)).size > 1) error.value = '请选择同一张 OA 单据的产品分派。'
   else if (new Set(rows.map(row => row.check.accountingMonth)).size > 1) error.value = '所选产品核算月份不同，请按月份分别分派。'
 }
 
@@ -105,21 +110,36 @@ function openCosting(row) {
 }
 
 async function publish() {
+  if (busy.value || checking.value || !dispatchRows.value.length) return
   busy.value = true
   try {
     const rows = dispatchRows.value
-    const result = await publishTechnicalDataTasks({
-      requestId: globalThis.crypto.randomUUID(), oaFormItemIds: rows.map(row => row.id),
+    const command = {
+      oaFormItemIds: rows.map(row => row.id).sort((a, b) => a - b),
       accountingMonth: rows[0].check.accountingMonth, assigneeUserId: assignee.value,
       moduleAssignees: Object.fromEntries(requiredTypes.value.filter(module => overrides.value[module.code]).map(module => [module.code, overrides.value[module.code]])),
       checkFingerprints: Object.fromEntries(rows.map(row => [row.id, row.check.fingerprint])),
-    })
-    ElMessage.success(result.items.every(item => item.task.externalTaskStatus === 'PUBLISHED') ? '分派已确认，可进入补录工作台办理' : '已提交分派，等待 OA 确认待办')
-    emit('update:modelValue', false); emit('dispatched')
-  } catch (cause) {
-    error.value = cause.message || '分派未成功，请重新检查后重试'
-  } finally { busy.value = false }
+    }
+    const key = `technical-dispatch:${user.userId}:${command.accountingMonth}:${command.oaFormItemIds.join(',')}`
+    const signature = JSON.stringify(command)
+    let pending
+    try { pending = JSON.parse(sessionStorage.getItem(key) || 'null') } catch { pending = null }
+    if (!pending || pending.signature !== signature) pending = { signature, requestId: globalThis.crypto.randomUUID() }
+    sessionStorage.setItem(key, JSON.stringify(pending))
+    const result = await publishTechnicalDataTasks({ ...command, requestId: pending.requestId })
+    if (result.oaResult?.status === 'SUCCESS') {
+      sessionStorage.removeItem(key)
+      ElMessage.success('OA 分派已确认，技术员可进入补录工作台办理')
+      emit('update:modelValue', false)
+    } else {
+      if (['REJECTED', 'NOT_SENT'].includes(result.oaResult?.status)) sessionStorage.removeItem(key)
+      error.value = result.oaResult?.message || 'OA 分派结果尚未确认，请核实原流程。'
+    }
+    emit('dispatched')
+  } catch (cause) { error.value = cause.message || '分派结果未确认，请核实后重试原请求' }
+  finally { busy.value = false }
 }
+
 </script>
 
 <style scoped>

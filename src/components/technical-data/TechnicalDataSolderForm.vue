@@ -58,7 +58,7 @@ import { fetchTechnicalDataSolder, fetchTechnicalDataSolderReferences, fetchTech
 import { emptySolder, solderRow, solderPayload, solderQuantityText } from '../../utils/technicalDataSolder'
 import { showErrorOnce } from '../../utils/errorHandler'
 
-const props = defineProps({ productId: { type: Number, required: true }, editable: Boolean })
+const props = defineProps({ productId: { type: Number, required: true }, editable: Boolean, versionId: Number })
 const emit = defineEmits(['dirty', 'busy', 'saved'])
 const workspace = ref(null), mode = ref('REFERENCE'), loading = ref(false), searching = ref(false), saving = ref(false)
 const keyword = ref(''), searched = ref(false), references = ref([])
@@ -99,7 +99,7 @@ function restore(data, initial = false) {
 watch(() => props.productId, async () => {
   const generation = ++loadGeneration
   loading.value = true
-  try { const data = await fetchTechnicalDataSolder(props.productId); if (!disposed && generation === loadGeneration) restore(data, true) }
+  try { const data = await fetchTechnicalDataSolder(props.productId, props.versionId); if (!disposed && generation === loadGeneration) restore(data, true) }
   catch (error) { if (!disposed && generation === loadGeneration) showErrorOnce(error, '焊料资料加载失败') }
   finally { if (!disposed && generation === loadGeneration) loading.value = false }
 }, { immediate: true })

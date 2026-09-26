@@ -70,7 +70,7 @@ import { fetchTechnicalDataPrice, fetchTechnicalDataPriceReferences, saveTechnic
 import { PRICE_MODES, priceDraft, pricePayload, switchPriceDraft } from '../../utils/technicalDataPrice'
 import { showErrorOnce } from '../../utils/errorHandler'
 
-const props = defineProps({ productId: { type: Number, required: true }, editable: Boolean })
+const props = defineProps({ productId: { type: Number, required: true }, editable: Boolean, versionId: Number })
 const emit = defineEmits(['dirty', 'busy', 'saved'])
 const workspace = ref(null), drafts = ref({}), selectedKey = ref(''), original = ref('')
 const modeDrafts = ref({})
@@ -106,7 +106,7 @@ watch(() => props.productId, async id => {
   const current = ++generation
   loading.value = true
   workspace.value = null; referenceOpen.value = false; references.value = []; searching.value = false
-  try { const data = await fetchTechnicalDataPrice(id); if (!disposed && generation === current) restore(data) }
+  try { const data = await fetchTechnicalDataPrice(id, props.versionId); if (!disposed && generation === current) restore(data) }
   catch (error) { if (!disposed && generation === current) showErrorOnce(error, '价格资料加载失败') }
   finally { if (!disposed && generation === current) loading.value = false }
 }, { immediate: true })

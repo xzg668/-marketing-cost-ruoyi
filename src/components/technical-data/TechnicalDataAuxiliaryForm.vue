@@ -74,7 +74,7 @@ import { fetchTechnicalDataAuxiliary, fetchTechnicalDataAuxiliaryReferences, pre
 import { emptyAuxiliary, auxiliaryAmountText, auxiliaryFromCms, auxiliaryFromUpload, auxiliaryPayload, auxiliaryTotal } from '../../utils/technicalDataAuxiliary'
 import { showErrorOnce } from '../../utils/errorHandler'
 
-const props = defineProps({ productId: { type: Number, required: true }, editable: Boolean })
+const props = defineProps({ productId: { type: Number, required: true }, editable: Boolean, versionId: Number })
 const emit = defineEmits(['dirty', 'busy', 'saved'])
 const workspace = ref(null), mode = ref('REFERENCE'), loading = ref(false), saving = ref(false), searching = ref(false), uploading = ref(false)
 const keyword = ref(''), searched = ref(false), references = ref([]), fileInput = ref(null), uploadIssues = ref([])
@@ -103,7 +103,7 @@ function restore(data, initial = false) {
 }
 watch(() => props.productId, async () => {
   loading.value = true
-  try { restore(await fetchTechnicalDataAuxiliary(props.productId), true) }
+  try { restore(await fetchTechnicalDataAuxiliary(props.productId, props.versionId), true) }
   catch (error) { showErrorOnce(error, '辅料资料加载失败') }
   finally { loading.value = false }
 }, { immediate: true })

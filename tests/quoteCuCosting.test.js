@@ -82,7 +82,7 @@ describe('FCQ-11 页面与接口契约', () => {
 
   it('页面禁用锁定期试算且同步接口在后端再次强制校验', () => {
     assert.match(pageSource, /fetchMonthlyRepriceActiveLock/)
-    assert.match(pageSource, /:disabled="costRunRepriceLocked"/)
+    assert.match(pageSource, /:disabled="[^"\n]*\bcostRunRepriceLocked\b[^"\n]*"/)
     assert.match(pageSource, /submitProductCosting\('USER_REQUEST'\)/)
     assert.match(pageSource, /costRunRepriceLocked/)
     assert.match(pageSource, /当前业务单元正在月度调价，暂不能发起成本核算/)

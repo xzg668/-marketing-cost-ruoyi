@@ -9,10 +9,10 @@
         <el-button
           type="primary"
           :loading="batchSubmitting"
-          :disabled="batchRun?.active || detail.oaWorkflow?.canCost === false"
+          :disabled="batchRun?.active || materialDisabled || detail.oaWorkflow?.canCost === false"
           @click="submitWholeQuoteCosting"
         >
-          {{ batchRun?.active ? '整单核算中' : '整单一键核算' }}
+          {{ batchRun?.active ? '整单核算中' : wholeLabel }}
         </el-button>
       </div>
     </div>
@@ -42,10 +42,11 @@
 
     <el-alert v-if="detail.oaWorkflow" :closable="false" show-icon
       :type="detail.oaWorkflow.syncError ? 'warning' : 'info'"
-      :title="'OA流程：' + detail.oaWorkflow.label"
+      :title="materialState?.status === 'SUCCESS' && detail.oaWorkflow.state === 'MATERIAL_REVIEW' ? '资料已提交成功，等待 OA 节点通知更新' : 'OA流程：' + detail.oaWorkflow.label"
       :description="detail.oaWorkflow.syncError || detail.oaWorkflow.reason || undefined" />
 
-    <QuoteFinalSubmissionPanel v-if="detail.oaNo" v-hasPermi="['ingest:quote:cost-run:execute']" :oa-no="detail.oaNo" :refresh-key="detail" />
+    <QuoteMaterialConfirmationPanel :oa-no="oaNo" :state="materialState" :checks="materialChecks" :error="materialError" @refresh="materials.refresh" />
+
 
     <el-descriptions class="quote-summary" :column="3" border>
       <el-descriptions-item label="报价单号">{{ detail.oaNo || '-' }}</el-descriptions-item>
@@ -70,10 +71,6 @@
 
     <el-tabs v-model="activeTab" class="detail-tabs">
       <el-tab-pane label="产品明细" name="items">
-        <div class="guide-alert">
-          <el-button v-hasPermi="['ingest:quote:cost-run:execute', 'technical:data:admin:operate']" :disabled="!selectedProducts.length || detail.oaWorkflow?.canArrange === false" @click="dispatchVisible = true">检查并分派补录</el-button>
-          <span>勾选已核算检查的产品，核实剩余资料缺口后分派。</span>
-        </div>
         <el-table
           ref="itemsTableRef"
           :data="detail.items || []"
@@ -81,9 +78,7 @@
           row-key="id"
           class="items-table"
           :row-class-name="rowClassName"
-          @selection-change="selectedProducts = $event"
         >
-          <el-table-column type="selection" width="46" fixed="left" />
           <el-table-column label="序号" width="64" align="center" fixed="left">
             <template #default="{ row }">
               <span class="product-seq">{{ row.seq || '-' }}</span>
@@ -141,29 +136,44 @@
           </el-table-column>
           <el-table-column label="当前状态" min-width="160">
             <template #default="{ row }">
-              <el-tag :type="workflowStatusTagType(row.workflow?.currentStatus)" effect="plain">
-                {{ row.workflow?.currentStatusLabel || '待检查' }}
+              <el-tag :type="needsCostRecalculation(row) ? 'warning' : workflowStatusTagType(row.workflow?.currentStatus)" effect="plain">
+                {{ needsCostRecalculation(row) ? '待重新核算' : row.workflow?.currentStatusLabel || '待检查' }}
               </el-tag>
-              <div v-if="row.workflow?.message" class="state-message" :title="row.workflow.message">
+              <div v-if="row.workflow?.message && !needsCostRecalculation(row)" class="state-message" :title="row.workflow.message">
                 {{ row.workflow.message }}
               </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="核算成本（元/只）" width="170" align="right" fixed="right">
+            <template #header>
+              <span>核算成本（元/只）</span>
+              <div class="state-message">不含税、不含运费</div>
+            </template>
+            <template #default="{ row }">
+              <span>{{ finalCosts.get(String(row.id))?.totalCost ?? '—' }}</span>
+              <div v-if="finalCosts.get(String(row.id))?.status === 'STALE'" class="state-message">待重新核算</div>
             </template>
           </el-table-column>
           <el-table-column label="操作" width="210" fixed="right">
             <template #default="{ row }">
               <div class="row-actions">
+                <el-button v-if="needsCostRecalculation(row)" link type="primary"
+                  :disabled="materialDisabled || detail.oaWorkflow?.canCost === false"
+                  :loading="actionLoadingId === rowActionKey(row)" @click="submitSingleProductCosting(row, 'INPUT_CHANGED')">
+                  {{ needsConfirmation ? materials.productLabel.value : '重新核算本产品' }}
+                </el-button>
                 <el-button
-                  v-if="row.workflow?.actionEnabled"
+                  v-else-if="row.workflow?.actionEnabled"
                   link
                   :type="operationType(row.workflow?.nextAction)"
-                  :disabled="['START_COSTING', 'RESTART_COSTING'].includes(row.workflow?.nextAction) && detail.oaWorkflow?.canCost === false"
+                  :disabled="['START_COSTING', 'RESTART_COSTING'].includes(row.workflow?.nextAction) && (materialDisabled || detail.oaWorkflow?.canCost === false)"
                   :loading="actionLoadingId === rowActionKey(row)"
                   @click="handleRowAction(row)"
                 >
-                  {{ row.workflow?.nextActionLabel }}
+                  {{ needsConfirmation && ['START_COSTING', 'RESTART_COSTING'].includes(row.workflow?.nextAction) ? materials.productLabel.value : row.workflow?.nextActionLabel }}
                 </el-button>
                 <el-button
-                  v-if="hasHistoricalCostResult(row) && row.workflow?.nextAction !== 'VIEW_COSTING_RESULT'"
+                  v-if="hasHistoricalCostResult(row) && (needsCostRecalculation(row) || row.workflow?.nextAction !== 'VIEW_COSTING_RESULT')"
                   link
                   type="primary"
                   :loading="costResultDialog.loading && costResultDialog.itemId === row.id"
@@ -191,7 +201,10 @@
       </el-tab-pane>
     </el-tabs>
 
-    <TechnicalDataDispatchDialog v-model="dispatchVisible" :rows="selectedProducts" :oa-no="oaNo" @dispatched="refreshQuoteState(false)" />
+    <QuoteFinalSubmissionPanel v-if="detail.oaNo && activeTab === 'items'" v-hasPermi="['ingest:quote:cost-run:execute']"
+      :state="finalState" :total-products="detail.items?.length || 0" :loading="finalLoading"
+      :sending="finalSending" :error="finalError" :can-submit="canSubmitFinal" @submit="submitFinalCosts" />
+
 
     <el-dialog
       v-model="costResultDialog.visible"
@@ -324,22 +337,26 @@
 </template>
 
 <script setup>
+import { fetchQuoteMaterialConfirmation, confirmQuoteMaterialsAndCost } from '../api/quoteRequests'
 import { fetchAuxiliaryClassifications } from '../api/auxiliaryClassification'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
-import TechnicalDataDispatchDialog from '../components/technical-data/TechnicalDataDispatchDialog.vue'
 import QuoteFinalSubmissionPanel from '../components/quotation/QuoteFinalSubmissionPanel.vue'
 import {
   confirmQuoteRequestClassification,
+  fetchQuoteFinalSubmission,
+  confirmQuoteFinalSubmission,
   fetchQuoteCostResultHistory,
   fetchQuoteMonthlyCostResultDetail,
   fetchCurrentQuoteBatchCostRun,
   fetchQuoteRequestDetail,
   submitQuoteProductCostRun,
-  submitQuoteBatchCostRun,
 } from '../api/quoteRequests'
+import QuoteMaterialConfirmationPanel from '../components/quotation/QuoteMaterialConfirmationPanel.vue'
+import { useQuoteFinalSubmission } from '../composables/useQuoteFinalSubmission'
+import { useQuoteMaterialConfirmation } from '../composables/useQuoteMaterialConfirmation'
 import { useQuoteBatchCosting } from '../composables/useQuoteBatchCosting'
 import { withQuoteItemWorkflow } from '../utils/quoteItemWorkflow'
 import { workflowStatusTagType } from '../utils/workflowStatus'
@@ -354,6 +371,10 @@ import {
 const route = useRoute()
 const router = useRouter()
 const oaNo = computed(() => String(route.params.oaNo || ''))
+const materials = useQuoteMaterialConfirmation(oaNo, {
+  fetch: fetchQuoteMaterialConfirmation, submit: confirmQuoteMaterialsAndCost,
+})
+const { state: materialState, checks: materialChecks, error: materialError, disabled: materialDisabled, wholeLabel, needsConfirmation } = materials
 const loading = ref(false)
 const checking = ref(false)
 const confirming = ref(false)
@@ -361,8 +382,21 @@ const actionLoadingId = ref('')
 const activeTab = ref('items')
 const detail = ref({})
 const itemsTableRef = ref()
-const selectedProducts = ref([])
-const dispatchVisible = ref(false)
+const finalSubmission = useQuoteFinalSubmission(oaNo, { fetch: fetchQuoteFinalSubmission, submit: confirmQuoteFinalSubmission })
+const { state: finalState, loading: finalLoading, sending: finalSending, error: finalError, canSubmit: canSubmitFinal, costsByItem: finalCosts } = finalSubmission
+function needsCostRecalculation(row) { return finalCosts.value.get(String(row.id))?.status === 'STALE' }
+watch(detail, () => { if (detail.value.oaNo) finalSubmission.refresh() })
+async function submitFinalCosts() {
+  try {
+    const state = await finalSubmission.submit()
+    if (!state) return
+    if (state.status === 'SUBMITTED') ElMessage.success('成本已提交 OA，等待审批')
+    else if (state.status === 'UNKNOWN' || state.status === 'PENDING') ElMessage.warning('OA 提交结果待确认，请核实原流程')
+    else if (state.status === 'REJECTED' || state.status === 'NOT_SENT') ElMessage.warning(state.error || '提交未成功，请核对后重试')
+    await loadDetail()
+  } catch (error) { ElMessage.error(error?.message || '提交未完成，请刷新核实') }
+}
+
 const costResultDialog = reactive({
   visible: false,
   loading: false,
@@ -401,6 +435,7 @@ async function loadDetail() {
     loading.value = false
     await locateReturnRow()
     if (!scope.isCurrent()) return
+    await materials.refresh()
     await loadBatchProgress()
     if (scope.isCurrent()) await continueElectronicDrawingCosting()
   } catch (error) {
@@ -441,10 +476,21 @@ async function continueElectronicDrawingCosting() {
 const { batchRun, batchSubmitting, loadBatchProgress, submitWholeQuoteCosting, captureScope } =
   useQuoteBatchCosting(oaNo, {
     fetchProgress: fetchCurrentQuoteBatchCostRun,
-    submitBatch: submitQuoteBatchCostRun,
+    submitBatch: async () => {
+      const outcome = await materials.submit()
+      if (!outcome) return null
+      if (!outcome.batch) {
+        ElMessage.warning(outcome.confirmation.message)
+        const base = await fetchQuoteRequestDetail(oaNo.value)
+        detail.value = withQuoteItemWorkflow(base)
+      }
+      return outcome.batch
+    },
     refreshDetail: async (scope) => {
       const base = await fetchQuoteRequestDetail(scope.oaNo)
-      if (scope.isCurrent()) detail.value = withQuoteItemWorkflow(base)
+      if (!scope.isCurrent()) return
+      detail.value = withQuoteItemWorkflow(base)
+      await materials.refresh()
     },
     onSubmitted: (next) => ElMessage.success(`整单核算已提交，共 ${next?.totalCount || 0} 个产品`),
     onError: (error) => ElMessage.error(error?.message || '整单核算提交失败'),
@@ -491,6 +537,7 @@ async function refreshQuoteState(showMessage = true) {
     const base = await fetchQuoteRequestDetail(scope.oaNo)
     if (!scope.isCurrent()) return
     detail.value = withQuoteItemWorkflow(base)
+    await materials.refresh()
     await loadBatchProgress()
     if (scope.isCurrent() && showMessage) ElMessage.success('报价、技术资料与成本状态已刷新')
   } catch (error) {
@@ -625,9 +672,16 @@ async function submitSingleProductCosting(row, reason) {
   const scope = captureScope()
   actionLoadingId.value = rowActionKey(row)
   try {
-    const result = await submitQuoteProductCostRun(scope.oaNo, row.id, {
-      reason,
-    })
+    // 电子图库自动接续只检查资料，不能代替报价员确认整单。
+    const outcome = reason === 'ELECTRONIC_DRAWING_RESOLVED' ? null : await materials.submit({ itemId: row.id })
+    if (reason !== 'ELECTRONIC_DRAWING_RESOLVED' && !outcome) return
+    const result = reason === 'ELECTRONIC_DRAWING_RESOLVED'
+      ? await submitQuoteProductCostRun(scope.oaNo, row.id, { reason }) : outcome?.product
+    if (outcome && !result) {
+      ElMessage.warning(outcome.confirmation.message)
+      await loadDetail()
+      return
+    }
     if (!scope.isCurrent()) return
     if (result?.pipelineStatus === 'SUCCESS') {
       ElMessage.success(result.reusedSuccess ? '当前结果已是最新，无需重复核算' : '本产品核算完成')
@@ -803,11 +857,6 @@ onMounted(loadDetail)
   height: 3px;
   border-radius: 3px 3px 0 0;
   background: #2f7dcc;
-}
-
-.guide-alert {
-  margin-bottom: 14px;
-  border-radius: 8px;
 }
 
 .state-message,

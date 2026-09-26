@@ -9,13 +9,6 @@ export const publishTechnicalDataTasks = ({ requestId, oaFormItemIds, accounting
     suppressErrorToast: true,
   })
 
-export const prepareTechnicalDataTask = ({ requestId, oaFormItemId, accountingMonth, checkFingerprint }) =>
-  request('/api/v2/technical-data/tasks/prepare-from-quote', {
-    method: 'POST',
-    body: { requestId, oaFormItemId, accountingMonth, checkFingerprint },
-    suppressErrorToast: true,
-  })
-
 export const checkTechnicalDataSources = (itemId, accountingMonth) =>
   request(`/api/v2/technical-data/quote-items/${id(itemId)}/check`, {
     method: 'POST', params: { accountingMonth }, suppressErrorToast: true,
@@ -30,8 +23,9 @@ export const fetchTechnicalDataProducts = ({
   taskStatus,
   accountingMonth,
   keyword,
+  oaNo,
 } = {}) => request('/api/v2/technical-data/products', {
-  params: { current, size, taskStatus, accountingMonth, keyword },
+  params: { current, size, taskStatus, accountingMonth, keyword, oaNo },
   suppressErrorToast: true,
 })
 
@@ -66,30 +60,25 @@ export const saveTechnicalDataManufacturing = (productId, body) =>
 export const fetchTechnicalDataWorkflow = (taskId) =>
   request(`/api/v2/technical-data/tasks/${id(taskId)}/workflow`, { suppressErrorToast: true })
 
-export const confirmTechnicalDataFinance = (taskId, approvalFingerprint) =>
-  request(`/api/v2/technical-data/tasks/${id(taskId)}/finance/confirm`, {
-    method: 'POST', body: { approvalFingerprint }, suppressErrorToast: true,
-  })
+export const previewTechnicalDataReturn = taskIds =>
+  request('/api/v2/technical-data/returns/preview', { method: 'POST', body: { taskIds }, suppressErrorToast: true })
+export const submitTechnicalDataReturn = body =>
+  request('/api/v2/technical-data/returns', { method: 'POST', body, suppressErrorToast: true })
+export const fetchTechnicalDataReturn = batchId =>
+  request(`/api/v2/technical-data/returns/${id(batchId)}`, { suppressErrorToast: true })
 
-export const returnTechnicalDataPerson = (taskId, body) =>
-  request(`/api/v2/technical-data/tasks/${id(taskId)}/finance/return`, {
+export const validateTechnicalDataTask = taskId =>
+  request(`/api/v2/technical-data/tasks/${id(taskId)}/validate`, { method: 'POST', suppressErrorToast: true })
+
+export const fetchTechnicalDataDocument = (formId, submissionId) =>
+  request(submissionId
+    ? `/api/v2/technical-data/forms/${id(formId)}/submissions/${id(submissionId)}`
+    : `/api/v2/technical-data/forms/${id(formId)}/workbench`, { suppressErrorToast: true })
+
+export const submitTechnicalDataDocument = (formId, body) =>
+  request(`/api/v2/technical-data/forms/${id(formId)}/submit`, {
     method: 'POST', body, suppressErrorToast: true,
   })
-
-export const validateTechnicalDataTask = (taskId, assigneeUserId) =>
-  request(`/api/v2/technical-data/tasks/${id(taskId)}/validate`, {
-    params: { assigneeUserId },
-    method: 'POST',
-    suppressErrorToast: true,
-  })
-
-export const submitTechnicalDataTask = (
-  taskId, expectedTaskVersion, expectedVersion, idempotencyKey, assigneeUserId,
-) => request(`/api/v2/technical-data/tasks/${id(taskId)}/submit`, {
-  method: 'POST',
-  body: { expectedTaskVersion, expectedVersion, idempotencyKey, assigneeUserId },
-  suppressErrorToast: true,
-})
 
 export const exchangeTechnicalDataAccessTicket = (taskId, code) =>
   request('/api/v2/technical-data/access-tickets/exchange', {
@@ -97,31 +86,6 @@ export const exchangeTechnicalDataAccessTicket = (taskId, code) =>
     body: { taskId, code },
     skipAuth: true,
     suppressErrorToast: true,
-  })
-
-export const reassignTechnicalDataTask = (taskId, body) =>
-  request(`/api/v2/technical-data/tasks/${id(taskId)}/admin/reassign`, {
-    method: 'POST', body, suppressErrorToast: true,
-  })
-
-export const startTechnicalDataProxyEntry = (taskId, body) =>
-  request(`/api/v2/technical-data/tasks/${id(taskId)}/admin/proxy-entry`, {
-    method: 'POST', body, suppressErrorToast: true,
-  })
-
-export const unlockTechnicalDataDraft = (taskId, body) =>
-  request(`/api/v2/technical-data/tasks/${id(taskId)}/admin/unlock-draft`, {
-    method: 'POST', body, suppressErrorToast: true,
-  })
-
-export const voidTechnicalDataTask = (taskId, body) =>
-  request(`/api/v2/technical-data/tasks/${id(taskId)}/admin/void`, {
-    method: 'POST', body, suppressErrorToast: true,
-  })
-
-export const retryTechnicalDataExternalTask = (taskId, body) =>
-  request(`/api/v2/technical-data/tasks/${id(taskId)}/external-task/retry`, {
-    method: 'POST', body, suppressErrorToast: true,
   })
 
 export const saveTechnicalDataProfile = (productId, profile) =>
@@ -265,11 +229,6 @@ export const previewTechnicalDataSalaryUpload = (productId, file) => {
     method: 'POST', body, suppressErrorToast: true,
   })
 }
-
-export const retryTechnicalDataWorkflow = (taskId, recipientId) =>
-  request(`/api/v2/technical-data/tasks/${id(taskId)}/workflow/retry`, {
-    method: 'POST', body: { recipientId }, suppressErrorToast: true,
-  })
 
 export const fetchTechnicalDataPrice = productId =>
   request(`/api/v2/technical-data/products/${id(productId)}/price`, { suppressErrorToast: true })

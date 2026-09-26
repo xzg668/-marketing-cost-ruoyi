@@ -87,7 +87,7 @@ import { fetchTechnicalDataPackage, fetchTechnicalDataPackageReferences, fetchTe
 import { emptyPackage, packagePayload, packageRow, packageSourceRow } from '../../utils/technicalDataPackage'
 import { showErrorOnce } from '../../utils/errorHandler'
 
-const props = defineProps({ productId: { type: Number, required: true }, editable: Boolean })
+const props = defineProps({ productId: { type: Number, required: true }, editable: Boolean, versionId: Number })
 const emit = defineEmits(['dirty', 'busy', 'saved'])
 const workspace = ref(null), loading = ref(false), saving = ref(false), searching = ref(false)
 const mode = ref('MANUAL'), buffers = reactive({ MANUAL: emptyPackage(), REFERENCE: emptyPackage() })
@@ -115,7 +115,7 @@ function restore(data, initial = false) {
 }
 watch(() => props.productId, async () => {
   loading.value = true
-  try { restore(await fetchTechnicalDataPackage(props.productId), true) }
+  try { restore(await fetchTechnicalDataPackage(props.productId, props.versionId), true) }
   catch (error) { showErrorOnce(error, '包装资料加载失败') }
   finally { loading.value = false }
 }, { immediate: true })

@@ -76,7 +76,7 @@ import { fetchTechnicalDataSalary, fetchTechnicalDataSalaryReferences, saveTechn
 import { salaryAmountText, salaryReferencePayload, salaryUploadPayload, salaryTotal } from '../../utils/technicalDataSalary'
 import { showErrorOnce } from '../../utils/errorHandler'
 
-const props = defineProps({ productId: { type: Number, required: true }, editable: Boolean })
+const props = defineProps({ productId: { type: Number, required: true }, editable: Boolean, versionId: Number })
 const emit = defineEmits(['dirty', 'busy', 'saved'])
 const workspace = ref(null), mode = ref('REFERENCE'), originalKey = ref(''), keyword = ref(''), references = ref([])
 const loading = ref(false), saving = ref(false), searching = ref(false), uploading = ref(false), downloading = ref(false)
@@ -116,7 +116,7 @@ function restore(data) {
 watch(() => props.productId, async productId => {
   const request = ++generation
   loading.value = true; workspace.value = null; references.value = []; keyword.value = ''
-  try { const data = await fetchTechnicalDataSalary(productId); if (request === generation) restore(data) }
+  try { const data = await fetchTechnicalDataSalary(productId, props.versionId); if (request === generation) restore(data) }
   catch (error) { if (request === generation) showErrorOnce(error, '工资资料加载失败') }
   finally { loading.value = false }
 }, { immediate: true })

@@ -9,6 +9,10 @@ const API_DIR = path.resolve(import.meta.dirname, '../src/api')
 const apiFiles = fs.readdirSync(API_DIR)
   .filter(f => f.endsWith('.js') && f !== 'http.js')
 
+const API_VERSION_BY_FILE = Object.freeze({
+  'technicalDataTasks.js': 'v2',
+})
+
 describe('API 版本前缀检查', () => {
 
   it('API 目录下存在 auth.js 认证模块', () => {
@@ -21,7 +25,8 @@ describe('API 版本前缀检查', () => {
   })
 
   for (const file of apiFiles) {
-    it(`${file} — 所有路径使用 /api/v1/ 前缀`, () => {
+    const expectedVersion = API_VERSION_BY_FILE[file] || 'v1'
+    it(`${file} — 所有路径使用 /api/${expectedVersion}/ 前缀`, () => {
       const content = fs.readFileSync(path.join(API_DIR, file), 'utf-8')
 
       // 查找所有 '/api/ 开头的路径（单引号和反引号）
@@ -30,7 +35,11 @@ describe('API 版本前缀检查', () => {
       const allPaths = [...singleQuotePaths, ...templatePaths]
 
       for (const p of allPaths) {
-        assert.match(p, /\/api\/v1\//, `${file} 中发现未加 v1 前缀的路径: ${p}`)
+        assert.match(
+          p,
+          new RegExp(`/api/${expectedVersion}/`),
+          `${file} 中发现未加 ${expectedVersion} 前缀的路径: ${p}`,
+        )
       }
     })
   }

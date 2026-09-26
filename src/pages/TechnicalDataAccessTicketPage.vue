@@ -13,9 +13,7 @@
         title="待办链接不可用"
         :sub-title="message"
       >
-        <template #extra>
-          <el-button type="primary" @click="goLogin">返回系统登录</el-button>
-        </template>
+
       </el-result>
     </el-card>
   </main>
@@ -51,7 +49,7 @@ onMounted(async () => {
       return
     }
     state.value = 'error'
-    message.value = '请从 OA 待办验证身份，或登录报价系统后打开此任务。'
+    message.value = '请关闭此页，从 OA 待办链接重新进入。'
     return
   }
   sessionStorage.removeItem('technicalDataAccessToken')
@@ -67,11 +65,6 @@ onMounted(async () => {
   }
 })
 
-function goLogin() {
-  sessionStorage.removeItem('technicalDataAccessToken')
-  sessionStorage.removeItem('technicalDataAccessTaskId')
-  router.replace('/login')
-}
 </script>
 
 <style scoped>

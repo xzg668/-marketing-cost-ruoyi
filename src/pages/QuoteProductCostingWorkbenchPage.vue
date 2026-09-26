@@ -10,7 +10,7 @@
           v-if="!historyViewMode"
           type="primary"
           :loading="costRunActionLoading"
-          :disabled="costRunRepriceLocked"
+          :disabled="costRunRepriceLocked || materialDisabled"
           @click="submitProductCosting('USER_REQUEST')"
         >
           {{ productCostingActionLabel }}
@@ -22,6 +22,8 @@
         <el-button :icon="Refresh" :loading="loading || refreshingTabs" @click="refreshWorkbench">刷新</el-button>
       </div>
     </div>
+
+    <QuoteMaterialConfirmationPanel v-if="!historyViewMode" :oa-no="oaNo" :state="materialState" :checks="materialChecks" :error="materialError" @refresh="materials.refresh" />
 
     <el-alert
       v-if="historyViewMode"
@@ -856,7 +858,7 @@
                   v-if="!historyViewMode"
                   type="primary"
                   :loading="costRunActionLoading"
-                  :disabled="costRunRepriceLocked"
+                  :disabled="costRunRepriceLocked || materialDisabled"
                   @click="submitProductCosting('USER_REQUEST')"
                 >
                   {{ productCostingActionLabel }}
@@ -1076,6 +1078,9 @@
 </template>
 
 <script setup>
+import { fetchQuoteMaterialConfirmation, confirmQuoteMaterialsAndCost } from '../api/quoteRequests'
+import QuoteMaterialConfirmationPanel from '../components/quotation/QuoteMaterialConfirmationPanel.vue'
+import { useQuoteMaterialConfirmation } from '../composables/useQuoteMaterialConfirmation'
 import AuxiliaryClassificationPanel from '../components/technical-data/AuxiliaryClassificationPanel.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -1146,6 +1151,10 @@ const router = useRouter()
 const userStore = useUserStore()
 
 const oaNo = computed(() => String(route.params.oaNo || ''))
+const materials = useQuoteMaterialConfirmation(oaNo, {
+  fetch: fetchQuoteMaterialConfirmation, submit: confirmQuoteMaterialsAndCost,
+})
+const { state: materialState, checks: materialChecks, error: materialError, disabled: materialDisabled, needsConfirmation } = materials
 const itemId = computed(() => String(route.params.itemId || ''))
 const historyVersionId = computed(() => {
   const value = Number(route.query.versionId)
@@ -1441,7 +1450,7 @@ const currentSuccessVersion = computed(() =>
   || null
 )
 const productCostingActionLabel = computed(() => (
-  currentSuccessVersion.value?.id ? '重新核算本产品' : '核算本产品'
+  needsConfirmation.value ? materials.productLabel.value : currentSuccessVersion.value?.id ? '重新核算本产品' : '核算本产品'
 ))
 const hasStaleCostVersion = computed(() => costRunVersions.value.some((row) => row?.stale))
 const costRunWorkbenchStatusText = computed(() => {
@@ -1520,6 +1529,7 @@ const inputGapGuideText = computed(() => {
 })
 
 async function loadWorkbench(options = {}) {
+  await materials.refresh()
   const { resetTab = false, loadChildren = true } = options
   if (!oaNo.value || !itemId.value) return
   loading.value = true
@@ -2509,10 +2519,15 @@ async function submitProductCosting(reason = 'USER_REQUEST') {
   costRunActionLoading.value = true
   costRunError.value = ''
   try {
-    const result = await submitQuoteProductCostRun(oaNo.value, itemId.value, {
-      periodMonth: workbench.value.periodMonth,
-      reason,
-    })
+    const outcome = reason === 'USER_REQUEST'
+      ? await materials.submit({ itemId: Number(itemId.value), periodMonth: workbench.value.periodMonth }) : null
+    if (reason === 'USER_REQUEST' && !outcome) return
+    const result = reason === 'USER_REQUEST' ? outcome?.product
+      : await submitQuoteProductCostRun(oaNo.value, itemId.value, { periodMonth: workbench.value.periodMonth, reason })
+    if (outcome && !result) {
+      ElMessage.warning(outcome.confirmation.message)
+      return
+    }
     await loadWorkbench({ resetTab: false, loadChildren: true })
     if (result?.pipelineStatus === 'SUCCESS') {
       localWorkflowGuideText.value = ''

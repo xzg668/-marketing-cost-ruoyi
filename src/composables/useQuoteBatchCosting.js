@@ -104,7 +104,7 @@ export function useQuoteBatchCosting(oaNo, {
     batchSubmitting.value = true
     try {
       const next = await submitBatch(scope.oaNo, { mode: 'ALL' })
-      if (!isCurrent()) return
+      if (!isCurrent() || !next) return
       onSubmitted(next)
       await acceptProgress(next, scope, isCurrent, true)
     } catch (error) {

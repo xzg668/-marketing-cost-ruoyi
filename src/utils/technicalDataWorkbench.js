@@ -108,7 +108,8 @@ export function taskStatusLabel(status) {
     IN_PROGRESS: '处理中',
     PREPARED: '待发送审批',
     SUBMITTED: '已提交',
-    PARTIALLY_RETURNED: '部分退回',
+    RETURN_PENDING: '退回待确认',
+    PARTIALLY_RETURNED: '待修改',
     APPROVED: '已通过',
     CANCELLED: '已作废',
   })[status] || status || '-'

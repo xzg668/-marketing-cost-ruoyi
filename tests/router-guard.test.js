@@ -58,7 +58,7 @@ describe('路由配置检查', () => {
       /path:\s*['"]\/['"][\s\S]{0,100}redirect:\s*['"]\/ingest\/quote-requests['"]/
     )
     assert.match(routerContent, /if \(to\.path === '\/'\)/)
-    assert.match(routerContent, /resolveLandingPath\(userStore\)/)
+    assert.match(routerContent, /resolveLandingPath\(\)/)
     assert.match(routerContent, /QUOTE_REQUEST_LIST_PATH/)
     assert.match(routerContent, /TECHNICAL_TASK_LIST_PATH/)
   })

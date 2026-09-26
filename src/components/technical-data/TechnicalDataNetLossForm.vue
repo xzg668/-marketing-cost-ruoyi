@@ -55,7 +55,7 @@ import { fetchTechnicalDataNetLoss, fetchTechnicalDataNetLossReferences, saveTec
 import { netLossPercent, netLossPayload } from '../../utils/technicalDataNetLoss'
 import { showErrorOnce } from '../../utils/errorHandler'
 
-const props = defineProps({ productId: { type: Number, required: true }, editable: Boolean })
+const props = defineProps({ productId: { type: Number, required: true }, editable: Boolean, versionId: Number })
 const emit = defineEmits(['dirty', 'busy', 'saved'])
 const workspace = ref(null), mode = ref('REFERENCE'), percent = ref(''), reference = ref(null)
 const searchBy = ref('CODE'), keyword = ref(''), references = ref([]), searched = ref(false), referenceIssue = ref('')
@@ -82,7 +82,7 @@ function restore(data) {
 watch(() => props.productId, async productId => {
   const current = ++generation
   loading.value = true
-  try { const result = await fetchTechnicalDataNetLoss(productId); if (!disposed && current === generation) restore(result) }
+  try { const result = await fetchTechnicalDataNetLoss(productId, props.versionId); if (!disposed && current === generation) restore(result) }
   catch (error) { if (!disposed && current === generation) showErrorOnce(error, '净损失率加载失败') }
   finally { if (!disposed && current === generation) loading.value = false }
 }, { immediate: true })

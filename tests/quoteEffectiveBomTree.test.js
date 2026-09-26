@@ -73,6 +73,8 @@ describe('QEB-14 最终有效 BOM 树', () => {
     assert.match(pageContent, /\.el-tree-node__children > \.el-tree-node::before/)
     assert.match(pageContent, /\{\{ data\.children\.length \}\} 个子项/)
     assert.match(pageContent, /effectiveAlternativeGroupKeys/)
+    assert.doesNotMatch(pageContent, /electronicDrawingTreeEvidenceText/)
+    assert.doesNotMatch(pageContent, /电子图库制造部品累计用量/)
   })
 
   it('烧结基座委外排除只进入摘要，不进入主树', () => {

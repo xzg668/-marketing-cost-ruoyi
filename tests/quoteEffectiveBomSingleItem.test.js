@@ -11,7 +11,7 @@ const pageContent = fs.readFileSync(PAGE_FILE, 'utf-8')
 describe('QEB-14 OA 多产品隔离', () => {
   it('所有最终树动作都使用路由中的当前 itemId', () => {
     assert.match(pageContent, /const itemId = computed\(\(\) => String\(route\.params\.itemId/)
-    assert.match(pageContent, /fetchQuoteEffectiveBom\(oaNo\.value, itemId\.value\)/)
+    assert.match(pageContent, /fetchQuoteEffectiveBom\(oaNo\.value, itemId\.value(?:,\s*\{[^}]*\})?\)/)
     assert.match(pageContent, /prepareQuoteEffectiveBomCosting\(oaNo\.value, itemId\.value\)/)
     assert.match(pageContent, /selectQuoteBomAlternative\(\s*oaNo\.value,\s*itemId\.value/)
   })

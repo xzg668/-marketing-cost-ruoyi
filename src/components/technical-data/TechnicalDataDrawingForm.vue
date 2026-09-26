@@ -46,7 +46,7 @@ import { useRouter } from 'vue-router'
 import { fetchTechnicalDataDrawing, recheckTechnicalDataDrawing } from '../../api/technicalDataTasks'
 import { showErrorOnce } from '../../utils/errorHandler'
 
-const props = defineProps({ productId: { type: Number, required: true }, editable: Boolean, oaNo: String })
+const props = defineProps({ productId: { type: Number, required: true }, editable: Boolean, versionId: Number, oaNo: String })
 const emit = defineEmits(['dirty', 'busy', 'saved'])
 const router = useRouter()
 const loading = ref(false)
@@ -66,7 +66,7 @@ async function load() {
   const request = ++generation
   loading.value = true
   try {
-    const result = await fetchTechnicalDataDrawing(props.productId)
+    const result = await fetchTechnicalDataDrawing(props.productId, props.versionId)
     if (request !== generation) return
     state.value = result
     const selected = result.drawing?.evidence?.drawingNo

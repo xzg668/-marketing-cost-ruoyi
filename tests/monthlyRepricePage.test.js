@@ -101,7 +101,7 @@ describe('T11 月度调价页面契约', () => {
   it('唯一核算工作台接入月度调价锁定提示并置灰核算按钮', () => {
     assert.match(costRunContent, /fetchMonthlyRepriceActiveLock/)
     assert.match(costRunContent, /costRunRepriceLocked/)
-    assert.match(costRunContent, /:disabled="costRunRepriceLocked"/)
+    assert.match(costRunContent, /:disabled="[^"\n]*\bcostRunRepriceLocked\b[^"\n]*"/)
     assert.match(costRunContent, /当前业务单元正在月度调价/)
   })
 

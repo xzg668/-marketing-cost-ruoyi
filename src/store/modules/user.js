@@ -25,8 +25,8 @@ export const useUserStore = defineStore('user', () => {
     return data
   }
 
-  async function getInfo() {
-    const info = await fetchCurrentUser()
+  async function getInfo(options) {
+    const info = await fetchCurrentUser(options)
     userId.value = info.userId ?? null
     username.value = info.username || username.value
     nickName.value = info.nickName || ''

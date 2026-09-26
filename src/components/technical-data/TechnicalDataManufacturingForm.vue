@@ -69,7 +69,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { fetchTechnicalDataManufacturing, fetchTechnicalDataRawMaterial, saveTechnicalDataManufacturing } from '../../api/technicalDataTasks'
 
-const props = defineProps({ productId: { type: Number, required: true }, editable: Boolean })
+const props = defineProps({ productId: { type: Number, required: true }, editable: Boolean, versionId: Number })
 const emit = defineEmits(['dirty', 'busy', 'saved'])
 const state = ref(null)
 const loading = ref(false)
@@ -112,7 +112,7 @@ function clear(row) {
 async function load() {
   loading.value = true
   emit('busy', true)
-  try { install(await fetchTechnicalDataManufacturing(props.productId)) }
+  try { install(await fetchTechnicalDataManufacturing(props.productId, props.versionId)) }
   catch (exception) { error.value = exception?.message || '制造件资料读取失败，请刷新重试' }
   finally { loading.value = false; emit('busy', false) }
 }

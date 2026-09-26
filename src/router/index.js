@@ -35,9 +35,28 @@ const staticRoutes = [
   },
   {
     path: '/technical-data-access/tasks/:taskId',
-    name: 'technical-data-access-workbench',
-    component: () => import('../pages/TechnicalDataWorkbenchPage.vue'),
-    meta: { title: '补录工作台', public: true, technicalDataShortSession: true },
+    component: () => import('../layout/TechnicalDataEntryLayout.vue'),
+    meta: { title: '补录工作台', public: true, technicalDataEntry: true, technicalDataShortSession: true },
+    children: [{ path: '', name: 'technical-data-access-workbench', component: () => import('../views/technical-data/tasks/index.vue') }],
+  },
+  {
+    path: '/collaboration/technical-data',
+    component: () => import('../layout/TechnicalDataEntryLayout.vue'),
+    meta: { public: true, technicalDataEntry: true },
+    children: [
+      {
+        path: 'forms/:formId',
+        name: 'technical-data-document-workbench',
+        component: () => import('../views/technical-data/tasks/index.vue'),
+        meta: { title: '补录工作台' },
+      },
+      {
+        path: 'tasks/:taskId',
+        name: 'technical-data-workbench',
+        component: () => import('../views/technical-data/tasks/index.vue'),
+        meta: { title: '补录工作台' },
+      },
+    ],
   },
   {
     path: '/',
@@ -72,12 +91,6 @@ const staticRoutes = [
         name: 'ingest-quote-product-costing',
         component: () => import('../pages/QuoteProductCostingWorkbenchPage.vue'),
         meta: { title: '单产品核算工作台', activeMenu: '/ingest/quote-requests' },
-      },
-      {
-        path: '/collaboration/technical-data/tasks/:taskId',
-        name: 'technical-data-workbench',
-        component: () => import('../pages/TechnicalDataWorkbenchPage.vue'),
-        meta: { title: '补录工作台', activeMenu: '/collaboration/tasks' },
       },
       {
         path: '/price/linked',
@@ -161,7 +174,7 @@ router.beforeEach(async (to, from, next) => {
     const shortToken = sessionStorage.getItem('technicalDataAccessToken')
     const scopedTaskId = sessionStorage.getItem('technicalDataAccessTaskId')
     if (!shortToken || String(to.params.taskId) !== scopedTaskId) {
-      return next({ path: '/login', replace: true })
+      return next({ name: 'technical-data-ticket-entry', query: { taskId: to.params.taskId }, replace: true })
     }
   }
 

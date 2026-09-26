@@ -148,7 +148,15 @@ export const confirmQuoteRequestClassification = (oaNo, body) =>
 export const fetchQuoteFinalSubmission = (oaNo) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}/final-submission`, { suppressErrorToast: true })
 
-export const confirmQuoteFinalSubmission = (oaNo, fingerprint) =>
+export const confirmQuoteFinalSubmission = (oaNo, body) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}/final-submission`, {
-    method: 'POST', body: { fingerprint }, suppressErrorToast: true,
+    method: 'POST', body, suppressErrorToast: true,
+  })
+
+export const fetchQuoteMaterialConfirmation = (oaNo) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/material-confirmation`, { suppressErrorToast: true })
+
+export const confirmQuoteMaterialsAndCost = (oaNo, body) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/material-confirmation`, {
+    method: 'POST', body, suppressErrorToast: true,
   })

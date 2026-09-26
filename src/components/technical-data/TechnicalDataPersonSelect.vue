@@ -123,7 +123,7 @@ function selectPerson(value) {
 }
 
 function onVisibleChange(open) {
-  if (open) search('')
+  if (open) search(keyword.value)
   else { generation++; loading.value = false }
 }
 onBeforeUnmount(() => { generation++ })

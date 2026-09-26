@@ -2,14 +2,13 @@
   <div class="workbench-list">
     <header class="heading">
       <div>
-        <h2>{{ canViewSupplementOverview ? '补录工作台' : '技术员补录工作台' }}</h2>
+        <h2>补录工作台</h2>
         <p class="viewer">当前查看：{{ user.nickName || user.username }}</p>
-        <p>{{ canViewSupplementOverview ? '核算发现的资料缺口在此集中补录和分派，已有资料无需操作。' : '补齐本人负责的资料，提交给本人部门领导审批。' }}</p>
+        <p>{{ canViewSupplementOverview ? (isEntry ? '查看本单技术员已提交的资料。' : '分派资料缺口，查看技术员已提交的内容和任务进度，需要调整时退回原负责人。') : '补齐本人负责的资料，提交给本人部门领导审批。' }}</p>
       </div>
       <div class="actions">
-        <el-button :loading="loading" @click="load">刷新</el-button>
-        <el-button v-if="canViewSupplementOverview" :disabled="!selected.length" @click="startDispatch(selected)">补录分派</el-button>
-        <el-button v-else type="primary" :loading="submitting" :disabled="!selected.length || loading" @click="submitSelected">提交补录审批（{{ selected.length }}）</el-button>
+        <el-button :loading="loading" :disabled="submissionBusy" @click="load">刷新</el-button>
+        <el-button v-if="canManage" type="danger" plain :disabled="!returnSelection.length" @click="startReturn(returnSelection)">退回选中资料</el-button>
       </div>
     </header>
 
@@ -20,27 +19,30 @@
       <div><span>本任务已通过</span><b>{{ summary.approved }}</b></div>
     </div>
 
-    <div class="filters">
-      <el-select v-model="filters.taskStatus" clearable placeholder="全部状态" aria-label="处理状态" @change="search">
+    <el-alert v-if="scopedOaNo" :title="`当前仅查看报价单：${scopedOaNo}`" type="info" :closable="false">
+      <el-button v-if="canManage" link type="primary" @click="router.push({ name: 'ingest-quote-request-detail', params: { oaNo: scopedOaNo } })">返回本单核算</el-button>
+    </el-alert>
+    <el-alert v-if="fixedSubmission" title="本次已提交资料，只读查看。" type="info" :closable="false" />
+    <div v-if="!fixedSubmission && !shortSession" class="filters">
+      <el-select v-model="filters.taskStatus" :disabled="submissionBusy" clearable placeholder="全部状态" aria-label="处理状态" @change="search">
         <el-option v-for="status in statuses" :key="status" :label="taskStatusLabel(status)" :value="status" />
       </el-select>
-      <el-date-picker v-model="filters.accountingMonth" type="month" value-format="YYYY-MM" placeholder="核算月份" @change="search" />
-      <el-input v-model="filters.keyword" clearable placeholder="任务号 / 产品 / 报价单" @keyup.enter="search" @clear="search" />
-      <el-button type="primary" @click="search">查询</el-button>
-      <el-button @click="reset">重置</el-button>
+      <el-date-picker v-model="filters.accountingMonth" :disabled="submissionBusy" type="month" value-format="YYYY-MM" placeholder="核算月份" @change="search" />
+      <el-input v-model="filters.keyword" :disabled="submissionBusy" clearable placeholder="任务号 / 产品 / 报价单" @keyup.enter="search" @clear="search" />
+      <el-button type="primary" :disabled="submissionBusy" @click="search">查询</el-button>
+      <el-button :disabled="submissionBusy" @click="reset">重置</el-button>
     </div>
 
-    <div v-if="canViewSupplementOverview" class="batch-assignment-bar">
+    <div v-if="canManage" class="batch-assignment-bar">
       <span class="assignment-count">已选 <b>{{ selected.length }}</b> 个产品</span>
       <label>分派给</label>
       <TechnicalDataPersonSelect v-model="defaultAssignee" :selected-person="selectedAssigneePerson" aria-label="批量分派技术员" @change-person="selectedAssigneePerson = $event" />
-      <el-button type="primary" :disabled="!selected.length" @click="startDispatch(selected)">提交分派（{{ selected.length }} 个产品）</el-button>
+      <el-button type="primary" :disabled="!dispatchSelection.length" @click="startDispatch(dispatchSelection)">检查并分派（{{ dispatchSelection.length }} 个产品）</el-button>
       <small>默认由一名技术员负责全部缺口；需要时可在确认框按模块分工</small>
     </div>
-    <el-alert v-if="submissionMessage" :title="submissionMessage" type="warning" :closable="true" @close="submissionMessage = ''" />
     <el-result v-if="accessDenied" icon="warning" title="当前账号无权查看此范围的补录任务" />
     <el-table v-else v-loading="loading" :data="records" :row-key="workbenchRowKey" border class="workbench-table" @selection-change="selected = $event">
-      <el-table-column type="selection" width="44" fixed="left" :selectable="selectable" />
+      <el-table-column v-if="canManage" type="selection" width="44" fixed="left" :selectable="selectable" />
       <el-table-column label="产品与本次任务" width="240" fixed="left">
         <template #default="{ row }">
           <div class="product-cell">
@@ -48,42 +50,52 @@
             <span>{{ row.product.productName || '来源未提供名称' }}</span>
             <small v-if="row.product.sourceModel">{{ row.product.sourceModel }}</small>
             <small>{{ row.oaNo }} · {{ row.accountingMonth }}</small>
-            <el-button v-if="row.taskNo" link type="primary" @click="open(row)">{{ row.taskNo }}</el-button>
-            <small class="scope">{{ row.taskId ? scopeLabel(row) : '核算发现资料缺口，确认后补录或分派' }}</small>
-            <el-button :type="row.editableModules.length || !row.taskId ? 'primary' : ''" size="small"
-              :loading="preparingKey === workbenchRowKey(row)" @click="open(row)">
-              {{ preparingKey === workbenchRowKey(row) ? '正在进入…' : productAction(row) }}
+            <el-button v-if="row.taskNo && !isUnassigned(row)" link type="primary" @click="open(row)">{{ row.taskNo }}</el-button>
+            <small v-else-if="row.taskNo">{{ row.taskNo }}</small>
+            <small class="scope">{{ isUnassigned(row) ? (canManage ? '勾选产品后，在上方统一分派' : '等待分派') : scopeLabel(row) }}</small>
+            <el-button v-if="!isUnassigned(row)" :type="row.editableModules.length ? 'primary' : ''" size="small"
+              @click="open(row)">
+              {{ productAction(row) }}
             </el-button>
           </div>
         </template>
       </el-table-column>
       <el-table-column v-for="module in TECHNICAL_DATA_MODULES" :key="module.code" :label="module.code === 'MANUFACTURING' ? '电子图库制造件明细' : module.label" :min-width="module.code === 'MANUFACTURING' ? 155 : 122">
         <template #default="{ row }">
-          <el-tooltip :content="moduleReason(row, module.code)" placement="top" :show-after="250">
-            <button type="button" class="module-button" :disabled="isTechnicalModuleStatusOnly(row.product, module.code)" :class="{ owned: row.assignedModules.includes(module.code), muted: !findModule(row.product, module.code)?.required }" @click="open(row, module.code)">
+          <span v-if="!canViewSupplementOverview && !row.assignedModules.includes(module.code)" class="not-assigned">—</span>
+          <el-tooltip v-else :content="moduleReason(row, module.code)" placement="top" :show-after="250">
+            <button type="button" class="module-button" :disabled="!moduleAction(row, module.code)" :class="{ owned: row.assignedModules.includes(module.code), muted: !findModule(row.product, module.code)?.required }" @click="open(row, module.code)">
               <el-tag :type="modulePresentation(row.product, module.code).type" size="small">{{ modulePresentation(row.product, module.code).label }}</el-tag>
               <b v-if="!isTechnicalModuleStatusOnly(row.product, module.code)">{{ technicalModuleSummary(row.product, module.code) }}</b>
               <small v-if="findModule(row.product, module.code)?.assigneeName">{{ findModule(row.product, module.code).assigneeName }}负责</small>
-              <span v-if="!isTechnicalModuleStatusOnly(row.product, module.code)" class="module-action">{{ moduleAction(row, module.code) }}</span>
+              <span v-if="moduleAction(row, module.code)" class="module-action">{{ moduleAction(row, module.code) }}</span>
             </button>
           </el-tooltip>
         </template>
       </el-table-column>
       <el-table-column label="状态" width="140" fixed="right">
         <template #default="{ row }">
-          <el-button link @click="open(row)"><el-tag :type="taskStatusType(row.taskStatus)">{{ taskStatusLabel(row.taskStatus) }}</el-tag></el-button>
+          <el-tag v-if="isUnassigned(row)" :type="taskStatusType(row.taskStatus)">{{ taskStatusLabel(row.taskStatus) }}</el-tag>
+          <el-button v-else link @click="open(row)"><el-tag :type="taskStatusType(row.taskStatus)">{{ taskStatusLabel(row.taskStatus) }}</el-tag></el-button>
           <small v-if="row.sourceCheck?.sharedModules?.length">已有办理资料，需核实复用</small>
-          <el-button v-if="canDispatchWorkbenchRow(row)" link type="primary" class="row-dispatch" @click="startDispatch([row])">分派补录</el-button>
+          <el-button v-if="canManage && canReturnRow(row)" link type="danger" @click="startReturn([row])">退回资料</el-button>
         </template>
       </el-table-column>
       <template #empty><el-empty description="当前范围没有补录产品"><p class="empty-hint">核算发现符合补录条件的资料缺口后，产品会显示在这里。</p></el-empty></template>
     </el-table>
-    <div class="footer"><span>共 {{ total }} 个产品</span><el-pagination v-model:current-page="filters.current" :page-size="20" :total="total" layout="prev, pager, next" @current-change="load" /></div>
+    <div v-if="!fixedSubmission && !shortSession" class="footer"><span>共 {{ total }} 个产品</span><el-pagination v-model:current-page="filters.current" :disabled="submissionBusy" :page-size="20" :total="total" layout="prev, pager, next" @current-change="load" /></div>
 
-    <el-dialog :model-value="!!route.query.supplement" title="补录资料" :width="`${panelWidth}px`" top="24px" class="technical-entry-dialog"
+    <el-alert v-if="documentError" :title="documentError" type="warning" :closable="false" />
+    <template v-if="!canViewSupplementOverview && !fixedSubmission && !shortSession">
+      <TechnicalDataDocumentSubmit v-for="document in personalDocuments" :key="document.formId" :document="document"
+        :refresh="load" :disabled="loading || submissionBusy || !!editorTaskId" @busy="submissionBusy = $event" @open-document="openDocument" />
+    </template>
+
+    <el-dialog :model-value="!!editorTaskId" title="补录资料" width="1200px" top="24px" class="technical-entry-dialog"
       :show-close="false" :close-on-click-modal="false" :before-close="closePanel" destroy-on-close>
-      <TechnicalDataWorkbenchPage v-if="route.query.supplement" :task-id="String(route.query.supplement)" embedded @close="closePanel" @changed="load" @width="panelWidth = $event" />
+      <TechnicalDataProductEditor v-if="editorTaskId" :task-id="editorTaskId" :submission-id="fixedSubmission || undefined" @close="closePanel" @changed="load" />
     </el-dialog>
+    <TechnicalDataReturnDialog v-model="returnVisible" :task-ids="returnTaskIds" @changed="load" />
     <TechnicalDataDispatchDialog v-model="dispatchVisible" :rows="dispatchRows" :default-assignee="defaultAssignee" :default-assignee-person="selectedAssigneePerson" @dispatched="load" />
     <el-dialog :model-value="!!inspectRow" title="本产品资料检查" width="900px" @close="inspectRow = null">
       <template v-if="inspectRow">
@@ -95,82 +107,139 @@
         </el-table>
         <p v-for="source in inspectRow.sourceCheck?.sharedModules || []" :key="source.moduleType">{{ moduleName(source.moduleType) }}：{{ source.message }} <el-link v-if="source.sourceTaskId" :href="`/collaboration/technical-data/tasks/${source.sourceTaskId}?module=${source.moduleType}`" target="_blank" type="primary">查看原资料</el-link></p>
       </template>
-      <template #footer>
+      <template v-if="canManage" #footer>
         <el-button :loading="rechecking" @click="recheck(inspectRow)">重新检查资料</el-button>
         <el-button @click="openCosting(inspectRow)">进入产品核算</el-button>
-        <el-button v-if="inspectRow?.product?.modules?.some(module => module.required)" type="primary" :loading="preparingKey === workbenchRowKey(inspectRow)" @click="open(inspectRow)">开始补录</el-button>
-        <el-button v-if="canDispatchWorkbenchRow(inspectRow)" type="primary" plain @click="startDispatch([inspectRow])">分派补录</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '../../../store/modules/user'
-import { fetchTechnicalDataProducts, checkTechnicalDataSources, prepareTechnicalDataTask, fetchTechnicalDataTask, fetchTechnicalDataWorkflow, validateTechnicalDataTask, submitTechnicalDataTask } from '../../../api/technicalDataTasks'
-import TechnicalDataWorkbenchPage from '../../../pages/TechnicalDataWorkbenchPage.vue'
+import { fetchTechnicalDataProducts, checkTechnicalDataSources, fetchTechnicalDataTask, fetchTechnicalDataWorkflow, fetchTechnicalDataDocument } from '../../../api/technicalDataTasks'
+import TechnicalDataProductEditor from '../../../components/technical-data/TechnicalDataProductEditor.vue'
+import TechnicalDataDocumentSubmit from '../../../components/technical-data/TechnicalDataDocumentSubmit.vue'
+import { submittedDocumentRows } from '../../../utils/technicalDataDocument'
 import TechnicalDataDispatchDialog from '../../../components/technical-data/TechnicalDataDispatchDialog.vue'
+import TechnicalDataReturnDialog from '../../../components/technical-data/TechnicalDataReturnDialog.vue'
 import TechnicalDataPersonSelect from '../../../components/technical-data/TechnicalDataPersonSelect.vue'
 import { showErrorOnce } from '../../../utils/errorHandler'
-import { TECHNICAL_DATA_MODULES, findModule, firstRequiredTechnicalModule, moduleName, modulePresentation, technicalModuleSummary, isTechnicalModuleStatusOnly, taskStatusLabel, taskStatusType, workbenchRowKey, canDispatchWorkbenchRow, workbenchDispatchRow } from '../../../utils/technicalDataWorkbench'
+import { TECHNICAL_DATA_MODULES, findModule, moduleName, modulePresentation, technicalModuleSummary, isTechnicalModuleStatusOnly, taskStatusLabel, taskStatusType, workbenchRowKey, canDispatchWorkbenchRow, workbenchDispatchRow } from '../../../utils/technicalDataWorkbench'
 
 const router = useRouter(), route = useRoute(), user = useUserStore()
-const panelWidth = ref(960)
+const resolvedOaNo = ref('')
+const scopedOaNo = computed(() => resolvedOaNo.value || String(route.query.oaNo || ''))
+const fixedSubmission = computed(() => String(route.query.submission || ''))
+const editorTaskId = computed(() => String(route.query.supplement || (route.query.module && route.params.taskId) || ''))
+const isEntry = computed(() => Boolean(route.meta.technicalDataEntry))
+const canManage = computed(() => canViewSupplementOverview.value && !fixedSubmission.value && !isEntry.value)
+const shortSession = computed(() => Boolean(route.meta.technicalDataShortSession))
+const personalDocuments = ref([]), documentError = ref(''), submissionBusy = ref(false)
 const storageKey = computed(() => `technical-data-product-workbench-state:${user.userId}:${user.businessUnitType}`)
 const filters = reactive({ taskStatus: '', accountingMonth: '', keyword: '', current: 1 })
-const statuses = computed(() => [...(canViewSupplementOverview.value ? ['UNASSIGNED'] : []), 'PENDING', 'IN_PROGRESS', 'PREPARED', 'SUBMITTED', 'PARTIALLY_RETURNED', 'APPROVED'])
+const statuses = computed(() => [...(canViewSupplementOverview.value ? ['UNASSIGNED'] : []), 'PENDING', 'IN_PROGRESS', 'PREPARED', 'SUBMITTED', 'RETURN_PENDING', 'PARTIALLY_RETURNED', 'APPROVED'])
 const records = ref([]), selected = ref([]), total = ref(0), loading = ref(false), accessDenied = ref(false), canViewSupplementOverview = ref(false)
 const emptySummary = () => ({ total: 0, pending: 0, approving: 0, approved: 0, unassigned: 0 })
 const summary = ref(emptySummary())
 const dispatchVisible = ref(false), dispatchRows = ref([]), defaultAssignee = ref(null), selectedAssigneePerson = ref(null)
-const inspectRow = ref(null), rechecking = ref(false), submitting = ref(false), submissionMessage = ref('')
-const preparingKey = ref('')
+const inspectRow = ref(null), rechecking = ref(false)
+const returnVisible = ref(false), returnTaskIds = ref([])
+const dispatchSelection = computed(() => selected.value.filter(canDispatchWorkbenchRow))
+const returnSelection = computed(() => selected.value.filter(canReturnRow))
 let generation = 0
 
 function persistState() { sessionStorage.setItem(storageKey.value, JSON.stringify(filters)) }
 async function load() {
   const request = ++generation
-  loading.value = true; accessDenied.value = false; persistState()
+  loading.value = true; accessDenied.value = false; documentError.value = ''; persistState()
   try {
-    const result = await fetchTechnicalDataProducts({ ...filters, keyword: filters.keyword.trim(), size: 20 })
+    let document = null
+    if (shortSession.value) {
+      const [task, workflow] = await Promise.all([fetchTechnicalDataTask(route.params.taskId), fetchTechnicalDataWorkflow(route.params.taskId)])
+      if (request !== generation) return
+      records.value = [{ ...task, taskId: task.id, product: task.products[0], assignedModules: workflow.assignedModules, editableModules: workflow.editableModules }]
+      resolvedOaNo.value = task.oaNo; total.value = 1
+      canViewSupplementOverview.value = workflow.canViewSupplementOverview
+      summary.value = { ...emptySummary(), total: 1 }
+      return
+    }
+    if (route.params.formId || route.params.taskId) {
+      const formId = route.params.formId || (await fetchTechnicalDataTask(route.params.taskId)).oaFormId
+      document = await fetchTechnicalDataDocument(formId, fixedSubmission.value || undefined)
+      if (request !== generation) return
+      resolvedOaNo.value = document.oaNo
+    }
+    if (fixedSubmission.value && document) {
+      records.value = submittedDocumentRows(document); total.value = records.value.length
+      summary.value = { ...emptySummary(), total: total.value, approving: total.value }
+      canViewSupplementOverview.value = true; personalDocuments.value = []; selected.value = []
+      return
+    }
+    const result = await fetchTechnicalDataProducts({ ...filters, oaNo: scopedOaNo.value || undefined, keyword: filters.keyword.trim(), size: 20 })
     if (request !== generation) return
     records.value = result.records; total.value = result.total; summary.value = result.summary
     canViewSupplementOverview.value = Boolean(result.canViewSupplementOverview)
     selected.value = []
+    if (result.canViewSupplementOverview) { personalDocuments.value = []; return }
+    // 列表可以跨单分页，提交始终读取该 OA 单据中本人的完整任务，不随列表筛选缩小。
+    const representatives = [...new Map(result.records.filter(row => row.taskId).map(row => [row.oaNo, row])).values()]
+    const documents = document ? [{ status: 'fulfilled', value: document }] : await Promise.allSettled(representatives.map(async row => {
+      const task = await fetchTechnicalDataTask(row.taskId)
+      return fetchTechnicalDataDocument(task.oaFormId)
+    }))
+    if (request !== generation) return
+    personalDocuments.value = documents.filter(item => item.status === 'fulfilled').map(item => item.value)
+    if (documents.some(item => item.status === 'rejected')) documentError.value = '部分单据的提交状态加载失败，请刷新后重试。'
   } catch (error) {
     if (request !== generation) return
-    records.value = []; total.value = 0; summary.value = emptySummary()
+    records.value = []; total.value = 0; summary.value = emptySummary(); personalDocuments.value = []
     if ([401, 403].includes(Number(error?.resultCode))) accessDenied.value = true
     else showErrorOnce(error, '补录工作台加载失败')
   } finally { if (request === generation) loading.value = false }
 }
-function search() { filters.current = 1; load() }
-function reset() { Object.assign(filters, { taskStatus: '', accountingMonth: '', keyword: '', current: 1 }); load() }
-function selectable(row) { return !submitting.value && (canViewSupplementOverview.value ? canDispatchWorkbenchRow(row) : row.assignedModules.some(code => row.editableModules.includes(code))) }
+function openDocument(formId) {
+  if (!submissionBusy.value) router.push({ name: 'technical-data-document-workbench', params: { formId } })
+}
+
+function search() { if (submissionBusy.value) return; filters.current = 1; load() }
+function reset() { if (submissionBusy.value) return; Object.assign(filters, { taskStatus: '', accountingMonth: '', keyword: '', current: 1 }); load() }
+function canReturnRow(row) {
+  return Boolean(row.taskId && (['RETURN_PENDING', 'PARTIALLY_RETURNED'].includes(row.taskStatus)
+    || row.product.modules.some(module => module.required && module.moduleStatus === 'APPROVED')))
+}
+function selectable(row) { return canManage.value && (canDispatchWorkbenchRow(row) || canReturnRow(row)) }
+function startReturn(rows) {
+  if (new Set(rows.map(row => row.oaNo)).size !== 1) return ElMessage.warning('请勾选同一张 OA 单据的产品进行退回')
+  returnTaskIds.value = rows.map(row => row.taskId)
+  returnVisible.value = true
+}
 function scopeLabel(row) {
   const modules = canViewSupplementOverview.value ? row.product.modules.filter(module => module.required).map(module => module.moduleType) : row.assignedModules
   return `${canViewSupplementOverview.value ? '本次' : '我负责'}：${modules.map(moduleName).join('、') || '无需补录'}`
 }
+function isUnassigned(row) { return !row.taskId || row.taskStatus === 'UNASSIGNED' }
 function moduleReason(row, code) { return findModule(row.product, code)?.requirementReason || '尚未取得本模块的检查结论' }
 function moduleAction(row, code) {
-  if (!row.taskId) return findModule(row.product, code)?.required ? '进入补录' : '查看来源'
+  if (!canViewSupplementOverview.value && !row.assignedModules.includes(code)) return ''
+  if (isTechnicalModuleStatusOnly(row.product, code)) return ''
+  if (isUnassigned(row)) return findModule(row.product, code)?.required ? '' : '查看来源'
   if (row.editableModules.includes(code)) return findModule(row.product, code)?.moduleStatus === 'READY' ? '查看 / 修改' : ({ DRAWING_BOM: '登记 / 检查', MANUFACTURING: '填写原材料', PACKAGE: '引用 / 新增', AUXILIARY: '参考 / 上传', SOLDER: '参考 / 新增', SALARY: '参考 / 上传', NET_LOSS: '参考 / 填写', PRICE: '补录价格' })[code] || '填写'
   return '查看'
 }
 function productAction(row) {
-  if (!row.taskId || row.taskStatus === 'UNASSIGNED') return '开始补录'
   if (row.taskStatus === 'PARTIALLY_RETURNED') return '查看并修改'
   if (row.editableModules.length) return '继续补录'
   return '查看资料'
 }
 async function open(row, module) {
-  if (module && isTechnicalModuleStatusOnly(row.product, module)) return
-  if (!row.taskId) {
-    if (module && !findModule(row.product, module)?.required) { inspectRow.value = row; return }
-    await prepareAndOpen(row, module)
+  if (submissionBusy.value) return
+  if (module && !moduleAction(row, module)) return
+  if (isUnassigned(row)) {
+    inspectRow.value = row
     return
   }
   persistState()
@@ -183,36 +252,9 @@ function closePanel() {
   const { supplement, module, ...query } = route.query
   return router.replace({ query })
 }
-async function prepareAndOpen(row, module) {
-  const key = workbenchRowKey(row)
-  if (preparingKey.value) return
-  preparingKey.value = key
-  try {
-    const target = module && findModule(row.product, module)?.required
-      ? module : firstRequiredTechnicalModule(row.product)
-    if (!target) {
-      inspectRow.value = null
-      await load()
-      ElMessage.info('当前产品已没有需要补录的模块')
-      return
-    }
-    if (!row.sourceCheck?.fingerprint) throw new Error('核算检查记录缺失，请重新发起核算')
-    const task = await prepareTechnicalDataTask({
-      requestId: globalThis.crypto.randomUUID(),
-      oaFormItemId: row.product.oaFormItemId,
-      accountingMonth: row.accountingMonth,
-      checkFingerprint: row.sourceCheck.fingerprint,
-    })
-    inspectRow.value = null
-    persistState()
-    await openPanel(task.id, target)
-  } catch (error) {
-    showErrorOnce(error, '进入补录页面失败')
-    await load()
-  } finally { preparingKey.value = '' }
-}
 function openCosting(row) { router.push(`/ingest/quote-requests/${encodeURIComponent(row.oaNo)}/items/${row.product.oaFormItemId}/costing`) }
 function startDispatch(rows) {
+  if (new Set(rows.map(row => row.oaNo)).size > 1) return ElMessage.warning('请勾选同一张 OA 单据的产品进行分派')
   if (new Set(rows.map(row => row.accountingMonth)).size > 1) return ElMessage.warning('请勾选同一核算月份的产品进行分派')
   dispatchRows.value = rows.map(workbenchDispatchRow)
   inspectRow.value = null; dispatchVisible.value = true
@@ -227,38 +269,13 @@ async function recheck(row) {
   } catch (error) { showErrorOnce(error, '资料检查失败') }
   finally { rechecking.value = false }
 }
-async function submitSelected() {
-  const rows = [...selected.value]
-  try { await ElMessageBox.confirm(`提交所选 ${rows.length} 个产品中本人负责的资料，分别交本人部门领导审批？`, '提交补录审批', { confirmButtonText: '确定提交', cancelButtonText: '取消', type: 'warning' }) }
-  catch { return }
-  submitting.value = true; submissionMessage.value = ''
-  const failures = []
-  let submitted = 0
-  for (const row of rows) {
-    try {
-      const [task, workflow] = await Promise.all([fetchTechnicalDataTask(row.taskId), fetchTechnicalDataWorkflow(row.taskId)])
-      const person = workflow.participants.find(item => item.assigneeUserId === user.userId)
-      if (!person?.canSubmit) throw new Error('当前本人资料不能提交，请进入任务查看状态')
-      const validation = await validateTechnicalDataTask(row.taskId, person.assigneeUserId)
-      if (!validation.valid) throw new Error(validation.issues.map(issue => `${moduleName(issue.moduleType)}：${issue.message}`).join('；'))
-      const product = task.products[0]
-      const keyName = `technical-data-submit-key:${task.id}:${person.assigneeUserId}:${task.taskVersion}:${product.rowVersion}`
-      const key = sessionStorage.getItem(keyName) || globalThis.crypto.randomUUID()
-      sessionStorage.setItem(keyName, key)
-      const result = await submitTechnicalDataTask(task.id, task.taskVersion, product.rowVersion, key, person.assigneeUserId)
-      if (!result.submissionId) throw new Error('资料未通过提交校验，请进入任务处理')
-      sessionStorage.removeItem(keyName); submitted++
-    } catch (error) { failures.push(`${row.product.materialNo || row.product.sourceModel}：${error.message}`) }
-  }
-  if (failures.length) submissionMessage.value = `已提交 ${submitted} 个产品；未提交：${failures.join('；')}`
-  else ElMessage.success(`已提交 ${submitted} 个产品，等待审批受理`)
-  await load(); submitting.value = false
-}
 onMounted(() => {
   try { const saved = JSON.parse(sessionStorage.getItem(storageKey.value) || '{}'); for (const key of Object.keys(filters)) if (key in saved) filters[key] = saved[key] }
   catch { sessionStorage.removeItem(storageKey.value) }
+  if (scopedOaNo.value || route.params.formId || route.params.taskId) Object.assign(filters, { taskStatus: '', accountingMonth: '', keyword: '', current: 1 })
   load()
 })
+watch(() => [route.query.oaNo, route.params.formId, route.params.taskId, fixedSubmission.value], () => { resolvedOaNo.value = ''; personalDocuments.value = []; reset() })
 onBeforeUnmount(() => { generation++; persistState() })
 </script>
 
@@ -302,7 +319,7 @@ p, small, .footer { color: #7d8999; }
 .module-button .module-action { color: #409eff; font-size: 12px; }
 .module-button small { font-size: 11px; }
 .module-button.owned b { color: #306eae; }
-.row-dispatch { display: block; margin: 10px 0 0; }
+.not-assigned { color: #a1aab8; }
 .empty-hint { font-size: 13px; }
 .footer { justify-content: space-between; margin-top: 16px; font-size: 13px; }
 @media (max-width: 1000px) { .heading { flex-wrap: wrap; } .task-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

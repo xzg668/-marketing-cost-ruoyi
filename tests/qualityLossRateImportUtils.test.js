@@ -14,6 +14,12 @@ const workbookWith = (sheets) => {
 }
 
 describe('qualityLossRateImportUtils', () => {
+  it('公共费率为零或超出范围时明确拒绝，不当作空值跳过', () => {
+    for (const value of [0, '0%', -0.001, '100%']) {
+      const workbook = workbookWith([['报价系统展示', [header, ['BARE', '', '', '', '', '', '', '', '', value]]]])
+      assert.throws(() => parseQualityLossRateWorkbook(workbook, XLSX), /公共净损失率必须大于0且小于100%/)
+    }
+  })
   it('完整多表文件只选择“报价系统展示”，不会误读第一张物料主档', () => {
     const workbook = workbookWith([
       ['物料主档', [['料号', '名称'], ['WRONG', '错误页']]],

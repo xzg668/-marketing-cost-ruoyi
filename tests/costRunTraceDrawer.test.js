@@ -37,7 +37,8 @@ describe('T10 成本一览表核算底稿抽屉', () => {
   it('完整成本表不展示也不导出运费', () => {
     assert.doesNotMatch(detailPageContent, /OTHER_EXP_FREIGHT/)
     assert.doesNotMatch(detailPageContent, />运费</)
-    assert.match(detailPageContent, /sheet\.spliceRows\(rowIndexAfterGap\(40\), 1\)/)
+    assert.match(detailPageContent, /setCellValue\(rowIndexFinal\(40\), 1, '工装费'\)/)
+    assert.match(detailPageContent, /getOtherExpenseValueByName\('工装费'\)/)
   })
 
   it('底稿抽屉按 costRunNo 拉列表和详情并展示通用 JSON 区块', () => {

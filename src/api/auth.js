@@ -5,8 +5,8 @@ export const login = (body) =>
   request('/api/v1/auth/login', { method: 'POST', body })
 
 // 获取当前登录用户信息
-export const fetchCurrentUser = () =>
-  request('/api/v1/auth/me')
+export const fetchCurrentUser = ({ suppressErrorToast = false } = {}) =>
+  request('/api/v1/auth/me', { suppressErrorToast })
 
 // 获取当前用户可见的路由树
 export const fetchRouters = () =>
