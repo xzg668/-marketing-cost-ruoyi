@@ -13,10 +13,14 @@
             <div class="product-heading"><h3>当前产品：{{ product.materialNo || product.sourceModel }}</h3><el-button link type="primary" :disabled="busy" @click="refresh">刷新资料</el-button></div>
             <el-alert v-for="person in workflow?.participants?.filter(person => person.returnReason && ['OPEN', 'RETURN_PENDING'].includes(person.status)) || []"
               :key="person.recipientId" :title="`${person.status === 'RETURN_PENDING' ? '退回待确认' : '修改要求'}：${person.returnReason}`" type="warning" :closable="false" show-icon />
-            <p class="scope">{{ readOnly ? '查看板块' : '需要补录' }}：{{ scope.map(moduleName).join('、') || '暂无可查看内容' }} · {{ task.accountingMonth }}</p>
-            <nav class="module-tabs" aria-label="补录模块">
-              <el-button v-for="code in scope" :key="code" :type="activeModule === code ? 'primary' : ''" @click="selectModule(code)">{{ moduleName(code) }} · {{ moduleStatus(code) }}</el-button>
-            </nav>
+            <p class="scope">{{ readOnly ? '查看板块' : '本次补录' }}：{{ (readOnly ? scope : editableScope).map(moduleName).join('、') || '暂无待补内容' }} · {{ task.accountingMonth }}</p>
+            <div class="module-heading">
+              <h3>{{ moduleName(activeModule) }} · {{ moduleStatus(activeModule) }}</h3>
+              <span v-if="editable">第 {{ activeStep + 1 }} / {{ editableScope.length }} 项</span>
+              <el-select v-else-if="scope.length > 1" :model-value="activeModule" aria-label="切换查看板块" @change="selectModule">
+                <el-option v-for="code in scope" :key="code" :value="code" :label="`${moduleName(code)} · ${moduleStatus(code)}`" />
+              </el-select>
+            </div>
             <el-table v-if="validation && !validation.valid" :data="validation.issues" size="small" border>
               <el-table-column label="板块" width="130"><template #default="{ row }">{{ moduleName(row.moduleType) }}</template></el-table-column>
               <el-table-column prop="lineNo" label="明细行" width="80" /><el-table-column prop="message" label="问题" />
@@ -27,8 +31,9 @@
             <details v-if="workflow && !submissionId" class="progress-details"><summary>查看办理进度</summary><TechnicalDataApprovalPanel :task="task" :workflow="workflow" @changed="load" /></details>
             <div v-if="editable" class="product-actions">
               <span>{{ dirty ? '当前修改尚未保存' : '草稿仅本人可见' }}</span>
+              <el-button v-if="activeStep > 0" :disabled="busy" @click="selectModule(editableScope[activeStep - 1])">上一步</el-button>
               <el-button :loading="busy" :disabled="!formRef?.canSave" @click="save(false)">保存草稿</el-button>
-              <el-button type="primary" :loading="busy" :disabled="!formRef?.canSave" @click="save(true)">保存并继续</el-button>
+              <el-button type="primary" :loading="busy" :disabled="!formRef?.canSave" @click="save(true)">{{ nextModule ? '保存并下一步' : '保存并返回列表' }}</el-button>
             </div>
           </template>
         </main>
@@ -41,7 +46,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { fetchTechnicalDataTask, fetchTechnicalDataWorkflow, fetchTechnicalDataDocument, validateTechnicalDataTask } from '../../api/technicalDataTasks'
-import { moduleName, findModule, canEditTechnicalModule } from '../../utils/technicalDataWorkbench'
+import { TECHNICAL_DATA_MODULES, moduleName, findModule, canEditTechnicalModule, nextTechnicalModule } from '../../utils/technicalDataWorkbench'
 import { showErrorOnce } from '../../utils/errorHandler'
 import TechnicalDataApprovalPanel from './TechnicalDataApprovalPanel.vue'
 import TechnicalDataProfileForm from './TechnicalDataProfileForm.vue'
@@ -63,8 +68,12 @@ const activeModule = ref(''), revision = ref(0), formRef = ref(null), validation
 let generation = 0
 const readOnly = computed(() => Boolean(props.submissionId || workflow.value?.canViewSupplementOverview))
 const product = computed(() => task.value?.products[0])
-const scope = computed(() => product.value?.modules.filter(module => module.required
-  && (readOnly.value || workflow.value?.assignedModules.includes(module.moduleType))).map(module => module.moduleType) || [])
+const scope = computed(() => TECHNICAL_DATA_MODULES.map(module => module.code).filter(code =>
+  findModule(product.value, code)?.required && (readOnly.value || workflow.value?.assignedModules.includes(code))))
+const editableScope = computed(() => readOnly.value ? [] : scope.value.filter(code =>
+  canEditTechnicalModule(workflow.value, code, findModule(product.value, code)?.moduleStatus)))
+const activeStep = computed(() => editableScope.value.indexOf(activeModule.value))
+const nextModule = computed(() => nextTechnicalModule(product.value, workflow.value, activeModule.value, editableScope.value))
 const activeState = computed(() => findModule(product.value, activeModule.value))
 const editable = computed(() => !readOnly.value && canEditTechnicalModule(workflow.value, activeModule.value, activeState.value?.moduleStatus))
 const showForm = computed(() => !!formComponent.value && !!activeState.value && (!readOnly.value || activeState.value.currentVersionId != null))
@@ -75,7 +84,7 @@ const formProps = computed(() => activeModule.value === 'PROFILE' ? { product: p
     versionId: readOnly.value ? activeState.value?.currentVersionId : undefined })
 const formKey = computed(() => `${props.taskId}:${activeModule.value}:${props.submissionId || ''}:${revision.value}`)
 
-function moduleStatus(code) { return ({ PENDING: '待处理', EDITING: '填写中', READY: '已补齐', FROZEN: '待确认', SUBMITTED: '已提交', APPROVED: '已通过', RETURNED: '待修改' })[findModule(product.value, code)?.moduleStatus] || '待处理' }
+function moduleStatus(code) { return ({ PENDING: '待处理', EDITING: '填写中', READY: '已补齐', FROZEN: '待确认', SUBMITTED: '已提交', APPROVED: '已提交', RETURNED: '待修改' })[findModule(product.value, code)?.moduleStatus] || '待处理' }
 async function load() {
   const current = ++generation
   loading.value = true
@@ -89,7 +98,10 @@ async function load() {
     }
     if (current !== generation) return
     task.value = visibleTask; workflow.value = state
-    if (!scope.value.includes(activeModule.value)) activeModule.value = scope.value.includes(route.query.module) ? route.query.module : scope.value[0]
+    if (!scope.value.includes(activeModule.value)) {
+      activeModule.value = scope.value.includes(route.query.module) ? route.query.module
+        : nextTechnicalModule(product.value, state, null, editableScope.value) || editableScope.value[0] || scope.value[0]
+    }
   } catch (cause) {
     if (current === generation) { task.value = null; workflow.value = null; showErrorOnce(cause, '任务加载失败') }
   } finally { if (current === generation) loading.value = false }
@@ -109,8 +121,7 @@ async function afterSave({ next = false } = {}) {
   dirty.value = false
   await load(); emit('changed')
   if (!next || !task.value) return
-  const incomplete = scope.value.find(code => !['READY', 'SUBMITTED', 'APPROVED'].includes(findModule(product.value, code)?.moduleStatus))
-  if (incomplete) { activeModule.value = incomplete; return }
+  if (nextModule.value) { activeModule.value = nextModule.value; return }
   try {
     validation.value = await validateTechnicalDataTask(task.value.id)
     if (!validation.value.valid) return
@@ -133,6 +144,7 @@ watch(() => [props.taskId, props.submissionId], () => { task.value = null; workf
 .workbench-header { padding:18px 24px; border-bottom:1px solid #e6eaf0; } h2,h3 { margin:0; } h2 { font-size:21px; } h3 { font-size:17px; }
 .workbench-header p,.scope { font-size:13px; color:#748196; margin:10px 0 0; }
 .product-editor { flex:1; min-height:0; overflow:auto; padding:24px; }
-.module-tabs { display:flex; flex-wrap:wrap; gap:8px; margin:20px 0; } .module-tabs .el-button { margin:0; }
+.module-heading { display:flex; align-items:center; gap:16px; margin:20px 0; }
+.module-heading > span { color:#748196; font-size:13px; } .module-heading .el-select { width:230px; margin-left:auto; }
 .product-actions { justify-content:flex-end; padding:20px 0 0; } .product-actions span { margin-right:auto; color:#7c899c; font-size:12px; }
 </style>

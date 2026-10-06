@@ -25,7 +25,6 @@ test('validation problems open the actual module form', () => {
 test('T9 keeps one idempotency key across retries and submits the current task version', () => {
   assert.match(submission, /technical-document-submit:/)
   assert.match(submission, /sessionStorage\.getItem\(keyName.value\)/)
-  assert.match(submission, /crypto\.randomUUID/)
   assert.match(submission, /submitTechnicalDataDocument\(props.document.formId, pendingRequest.value\)/)
   assert.match(submission, /if \(!pendingRequest.value\) pendingRequest.value/)
 })

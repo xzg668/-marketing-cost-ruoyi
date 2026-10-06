@@ -10,7 +10,13 @@ export function personalPendingProductCount(document, userId) {
 export function technicalSubmissionMessage(document, userId) {
   const result = document.lastSubmission
   if (!result) return document.canSubmit ? '本人资料已补齐，可以确认提交审批。' : '请先补齐本单中本人负责的全部资料。'
-  if (result.status === 'SUCCESS' && personalPendingProductCount(document, userId) > 0) return '部分资料需要修改，请按退回要求调整后重新确认提交。'
+  if (result.status === 'SUCCESS' && personalPendingProductCount(document, userId) > 0) {
+    const returned = document.tasks.some(task => task.products[0].modules.some(module => module.required
+      && String(module.assigneeUserId ?? task.assigneeUserId) === String(userId)
+      && module.moduleStatus === 'RETURNED'))
+    if (returned) return '部分资料需要修改，请按退回要求调整后重新确认提交。'
+    return document.canSubmit ? '本人本轮资料已补齐，可以确认提交审批。' : '请补齐本轮新增资料后确认提交。'
+  }
   return ({ SUCCESS: '本人资料已提交，等待 OA 审批。', OA_ACCEPTED: 'OA 已受理，正在确认本地提交状态。',
     SENDING: '本次提交正在等待 OA 结果，请勿重复发起。', UNKNOWN: 'OA 结果尚未确认，请核实原流程；资料暂为只读。',
     REJECTED: 'OA 未受理：' + (result.oaResult?.message || '请核实流程状态'),

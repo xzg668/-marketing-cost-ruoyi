@@ -46,8 +46,8 @@ export function modulePresentation(product, moduleType) {
   if (!module) return { label: '待检查', type: 'warning' }
   const states = {
     FROZEN: { label: '提交待确认', type: 'warning' },
-    SUBMITTED: { label: '审批中', type: 'warning' },
-    APPROVED: { label: '已通过', type: 'success' },
+    SUBMITTED: { label: '已提交', type: 'success' },
+    APPROVED: { label: '已提交', type: 'success' },
     RETURNED: { label: '已退回', type: 'danger' },
   }
   if (states[module.moduleStatus]) return states[module.moduleStatus]
@@ -106,17 +106,17 @@ export function taskStatusLabel(status) {
     UNASSIGNED: '待分派',
     PENDING: '待处理',
     IN_PROGRESS: '处理中',
-    PREPARED: '待发送审批',
+    PREPARED: '提交待确认',
     SUBMITTED: '已提交',
     RETURN_PENDING: '退回待确认',
     PARTIALLY_RETURNED: '待修改',
-    APPROVED: '已通过',
+    APPROVED: '已提交',
     CANCELLED: '已作废',
   })[status] || status || '-'
 }
 
 export function taskStatusType(status) {
-  if (status === 'APPROVED') return 'success'
+  if (['SUBMITTED', 'APPROVED'].includes(status)) return 'success'
   if (status === 'PARTIALLY_RETURNED') return 'danger'
   if (status === 'CANCELLED') return 'info'
   if (status === 'IN_PROGRESS') return 'primary'
@@ -135,9 +135,19 @@ export function workbenchRowKey(row) {
 }
 
 export function canDispatchWorkbenchRow(row) {
-  return Boolean(row && row.taskStatus === 'UNASSIGNED'
-    && row.product.modules.some(module => module.required)
-    && !row.sourceCheck?.sharedModules?.length)
+  if (!row || row.sourceCheck?.sharedModules?.length) return false
+  if (row.taskStatus === 'UNASSIGNED') return row.product.modules.some(module => module.required)
+  return ['PENDING', 'SUBMITTED', 'APPROVED'].includes(row.taskStatus)
+    && row.product.modules.some(isAdditionalDispatchModule)
+}
+
+const isAdditionalDispatchModule = module => module.required && module.assigneeUserId == null
+  && module.currentVersionId == null && module.moduleStatus === 'PENDING'
+  && module.sourceAvailability === 'MISSING'
+
+export function dispatchPreviewModules(row) {
+  return (row.check?.modules || []).filter(module => module.required
+    && (!row.dispatchModuleTypes || row.dispatchModuleTypes.includes(module.moduleType)))
 }
 
 export function firstRequiredTechnicalModule(product) {
@@ -147,5 +157,7 @@ export function firstRequiredTechnicalModule(product) {
 export function workbenchDispatchRow(row) {
   return { id: row.product.oaFormItemId, oaNo: row.oaNo, materialNo: row.product.materialNo,
     productName: row.product.productName, sunlModel: row.product.sourceModel,
+    dispatchModuleTypes: row.taskStatus === 'UNASSIGNED' ? null
+      : row.product.modules.filter(isAdditionalDispatchModule).map(module => module.moduleType),
     costingWorkspace: { periodMonth: row.accountingMonth } }
 }

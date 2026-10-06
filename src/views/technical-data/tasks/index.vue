@@ -15,15 +15,15 @@
     <div class="task-overview" aria-label="补录任务统计">
       <div><span>{{ canViewSupplementOverview ? '补录产品' : '本人的补录任务' }}</span><b>{{ summary.total }}</b></div>
       <div><span>待补录 / 待修改</span><b>{{ summary.pending }}</b></div>
-      <div><span>直属领导审批中</span><b>{{ summary.approving }}</b></div>
-      <div><span>本任务已通过</span><b>{{ summary.approved }}</b></div>
+      <div><span>提交待确认</span><b>{{ summary.submitting }}</b></div>
+      <div><span>已提交</span><b>{{ summary.submitted }}</b></div>
     </div>
 
     <el-alert v-if="scopedOaNo" :title="`当前仅查看报价单：${scopedOaNo}`" type="info" :closable="false">
       <el-button v-if="canManage" link type="primary" @click="router.push({ name: 'ingest-quote-request-detail', params: { oaNo: scopedOaNo } })">返回本单核算</el-button>
     </el-alert>
     <el-alert v-if="fixedSubmission" title="本次已提交资料，只读查看。" type="info" :closable="false" />
-    <div v-if="!fixedSubmission && !shortSession" class="filters">
+    <div v-if="!fixedSubmission" class="filters">
       <el-select v-model="filters.taskStatus" :disabled="submissionBusy" clearable placeholder="全部状态" aria-label="处理状态" @change="search">
         <el-option v-for="status in statuses" :key="status" :label="taskStatusLabel(status)" :value="status" />
       </el-select>
@@ -83,10 +83,10 @@
       </el-table-column>
       <template #empty><el-empty description="当前范围没有补录产品"><p class="empty-hint">核算发现符合补录条件的资料缺口后，产品会显示在这里。</p></el-empty></template>
     </el-table>
-    <div v-if="!fixedSubmission && !shortSession" class="footer"><span>共 {{ total }} 个产品</span><el-pagination v-model:current-page="filters.current" :disabled="submissionBusy" :page-size="20" :total="total" layout="prev, pager, next" @current-change="load" /></div>
+    <div v-if="!fixedSubmission" class="footer"><span>共 {{ total }} 个产品</span><el-pagination v-model:current-page="filters.current" :disabled="submissionBusy" :page-size="20" :total="total" layout="prev, pager, next" @current-change="load" /></div>
 
     <el-alert v-if="documentError" :title="documentError" type="warning" :closable="false" />
-    <template v-if="!canViewSupplementOverview && !fixedSubmission && !shortSession">
+    <template v-if="!canViewSupplementOverview && !fixedSubmission">
       <TechnicalDataDocumentSubmit v-for="document in personalDocuments" :key="document.formId" :document="document"
         :refresh="load" :disabled="loading || submissionBusy || !!editorTaskId" @busy="submissionBusy = $event" @open-document="openDocument" />
     </template>
@@ -119,7 +119,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
-import { useUserStore } from '../../../store/modules/user'
+import { useTechnicalDataIdentity } from '../../../composables/useTechnicalDataIdentity'
 import { fetchTechnicalDataProducts, checkTechnicalDataSources, fetchTechnicalDataTask, fetchTechnicalDataWorkflow, fetchTechnicalDataDocument } from '../../../api/technicalDataTasks'
 import TechnicalDataProductEditor from '../../../components/technical-data/TechnicalDataProductEditor.vue'
 import TechnicalDataDocumentSubmit from '../../../components/technical-data/TechnicalDataDocumentSubmit.vue'
@@ -130,20 +130,19 @@ import TechnicalDataPersonSelect from '../../../components/technical-data/Techni
 import { showErrorOnce } from '../../../utils/errorHandler'
 import { TECHNICAL_DATA_MODULES, findModule, moduleName, modulePresentation, technicalModuleSummary, isTechnicalModuleStatusOnly, taskStatusLabel, taskStatusType, workbenchRowKey, canDispatchWorkbenchRow, workbenchDispatchRow } from '../../../utils/technicalDataWorkbench'
 
-const router = useRouter(), route = useRoute(), user = useUserStore()
+const router = useRouter(), route = useRoute(), user = useTechnicalDataIdentity()
 const resolvedOaNo = ref('')
 const scopedOaNo = computed(() => resolvedOaNo.value || String(route.query.oaNo || ''))
 const fixedSubmission = computed(() => String(route.query.submission || ''))
 const editorTaskId = computed(() => String(route.query.supplement || (route.query.module && route.params.taskId) || ''))
 const isEntry = computed(() => Boolean(route.meta.technicalDataEntry))
 const canManage = computed(() => canViewSupplementOverview.value && !fixedSubmission.value && !isEntry.value)
-const shortSession = computed(() => Boolean(route.meta.technicalDataShortSession))
 const personalDocuments = ref([]), documentError = ref(''), submissionBusy = ref(false)
 const storageKey = computed(() => `technical-data-product-workbench-state:${user.userId}:${user.businessUnitType}`)
 const filters = reactive({ taskStatus: '', accountingMonth: '', keyword: '', current: 1 })
-const statuses = computed(() => [...(canViewSupplementOverview.value ? ['UNASSIGNED'] : []), 'PENDING', 'IN_PROGRESS', 'PREPARED', 'SUBMITTED', 'RETURN_PENDING', 'PARTIALLY_RETURNED', 'APPROVED'])
+const statuses = computed(() => [...(canViewSupplementOverview.value ? ['UNASSIGNED'] : []), 'PENDING', 'IN_PROGRESS', 'PREPARED', 'SUBMITTED', 'RETURN_PENDING', 'PARTIALLY_RETURNED'])
 const records = ref([]), selected = ref([]), total = ref(0), loading = ref(false), accessDenied = ref(false), canViewSupplementOverview = ref(false)
-const emptySummary = () => ({ total: 0, pending: 0, approving: 0, approved: 0, unassigned: 0 })
+const emptySummary = () => ({ total: 0, pending: 0, submitting: 0, submitted: 0, unassigned: 0 })
 const summary = ref(emptySummary())
 const dispatchVisible = ref(false), dispatchRows = ref([]), defaultAssignee = ref(null), selectedAssigneePerson = ref(null)
 const inspectRow = ref(null), rechecking = ref(false)
@@ -158,15 +157,6 @@ async function load() {
   loading.value = true; accessDenied.value = false; documentError.value = ''; persistState()
   try {
     let document = null
-    if (shortSession.value) {
-      const [task, workflow] = await Promise.all([fetchTechnicalDataTask(route.params.taskId), fetchTechnicalDataWorkflow(route.params.taskId)])
-      if (request !== generation) return
-      records.value = [{ ...task, taskId: task.id, product: task.products[0], assignedModules: workflow.assignedModules, editableModules: workflow.editableModules }]
-      resolvedOaNo.value = task.oaNo; total.value = 1
-      canViewSupplementOverview.value = workflow.canViewSupplementOverview
-      summary.value = { ...emptySummary(), total: 1 }
-      return
-    }
     if (route.params.formId || route.params.taskId) {
       const formId = route.params.formId || (await fetchTechnicalDataTask(route.params.taskId)).oaFormId
       document = await fetchTechnicalDataDocument(formId, fixedSubmission.value || undefined)
@@ -175,8 +165,27 @@ async function load() {
     }
     if (fixedSubmission.value && document) {
       records.value = submittedDocumentRows(document); total.value = records.value.length
-      summary.value = { ...emptySummary(), total: total.value, approving: total.value }
+      summary.value = { ...emptySummary(), total: total.value, submitted: total.value }
       canViewSupplementOverview.value = true; personalDocuments.value = []; selected.value = []
+      return
+    }
+    if (isEntry.value && document) {
+      const rows = await Promise.all(document.tasks.map(async task => {
+        const workflow = await fetchTechnicalDataWorkflow(task.id)
+        return { ...task, taskId: task.id, product: task.products[0], assignedModules: workflow.assignedModules,
+          editableModules: document.readOnly ? [] : workflow.editableModules }
+      }))
+      if (request !== generation) return
+      canViewSupplementOverview.value = document.readOnly
+      personalDocuments.value = document.readOnly ? [] : [document]
+      summary.value = { total: rows.length, pending: rows.filter(r => ['PENDING','IN_PROGRESS','PARTIALLY_RETURNED'].includes(r.taskStatus)).length,
+        submitting: rows.filter(r => r.taskStatus === 'PREPARED').length,
+        submitted: rows.filter(r => ['SUBMITTED', 'APPROVED'].includes(r.taskStatus)).length, unassigned: 0 }
+      const filtered = rows.filter(row => (!filters.taskStatus || row.taskStatus === filters.taskStatus)
+        && (!filters.accountingMonth || row.accountingMonth === filters.accountingMonth)
+        && (!filters.keyword.trim() || [row.taskNo, row.product.materialNo, row.product.productName].some(text => text?.includes(filters.keyword.trim()))))
+      total.value = filtered.length; records.value = filtered.slice((filters.current - 1) * 20, filters.current * 20)
+      selected.value = []
       return
     }
     const result = await fetchTechnicalDataProducts({ ...filters, oaNo: scopedOaNo.value || undefined, keyword: filters.keyword.trim(), size: 20 })
@@ -209,7 +218,7 @@ function search() { if (submissionBusy.value) return; filters.current = 1; load(
 function reset() { if (submissionBusy.value) return; Object.assign(filters, { taskStatus: '', accountingMonth: '', keyword: '', current: 1 }); load() }
 function canReturnRow(row) {
   return Boolean(row.taskId && (['RETURN_PENDING', 'PARTIALLY_RETURNED'].includes(row.taskStatus)
-    || row.product.modules.some(module => module.required && module.moduleStatus === 'APPROVED')))
+    || row.product.modules.some(module => module.required && ['SUBMITTED', 'APPROVED'].includes(module.moduleStatus))))
 }
 function selectable(row) { return canManage.value && (canDispatchWorkbenchRow(row) || canReturnRow(row)) }
 function startReturn(rows) {

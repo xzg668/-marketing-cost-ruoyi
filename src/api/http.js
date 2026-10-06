@@ -1,3 +1,4 @@
+import { isOaEntry, requestToken, OA_SESSION_KEY } from '../utils/oaSession'
 import axios from 'axios'
 import {
   handleHttpError,
@@ -18,12 +19,10 @@ const instance = axios.create({
 instance.interceptors.request.use((config) => {
   if (config.skipAuth) {
     delete config.headers.Authorization
-  } else if (window.location.pathname.startsWith('/technical-data-access')) {
-    const shortToken = sessionStorage.getItem('technicalDataAccessToken')
-    if (shortToken) config.headers.Authorization = `Bearer ${shortToken}`
   } else {
-    const token = localStorage.getItem('token')
+    const token = requestToken(window.location.pathname)
     if (token) config.headers.Authorization = `Bearer ${token}`
+    else delete config.headers.Authorization
   }
   // T35：把会话 traceId 透传给后端，后端 TraceIdFilter 会优先复用该值
   const traceId = getTraceId()
@@ -51,7 +50,10 @@ instance.interceptors.response.use(
     if (axios.isCancel(error)) {
       return Promise.reject(error)
     }
-    if (!error.config?.suppressErrorToast) handleHttpError(error)
+    if (error.response?.status === 401 && isOaEntry(window.location.pathname)) {
+      sessionStorage.removeItem(OA_SESSION_KEY)
+      window.dispatchEvent(new Event('oa-session-expired'))
+    } else if (!error.config?.suppressErrorToast) handleHttpError(error)
     return Promise.reject(error)
   }
 )
@@ -77,7 +79,7 @@ export const request = async (
 ) => {
   // GET request dedup: reuse in-flight promise for same URL
   const isGet = method === 'GET'
-  const cacheKey = dedupKey || `${path}?${JSON.stringify(params || {})}`
+  const cacheKey = `${requestToken(window.location.pathname)}:${dedupKey || `${path}?${JSON.stringify(params || {})}`}`
   if (isGet && pendingGets.has(cacheKey)) {
     return pendingGets.get(cacheKey)
   }

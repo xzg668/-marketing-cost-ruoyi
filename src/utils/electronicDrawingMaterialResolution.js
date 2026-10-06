@@ -17,7 +17,8 @@ export function sourceSearchKeyword(item, searchType) {
 
 export function buildElectronicDrawingResolutionRequest(state, selections) {
   const pendingIds = new Set(
-    pendingElectronicDrawingItems(state).map((item) => String(item.sourceNodeId)),
+    (state?.items || []).filter(item => item.requiresAction || item.canModify)
+      .map((item) => String(item.sourceNodeId)),
   )
   const values = Object.entries(selections || {})
     .filter(([sourceNodeId, option]) => pendingIds.has(String(sourceNodeId)) && option?.materialCode)

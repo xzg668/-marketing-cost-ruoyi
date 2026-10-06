@@ -58,7 +58,7 @@ import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '../../store/modules/user'
 import { checkTechnicalDataSources, publishTechnicalDataTasks } from '../../api/technicalDataTasks'
-import { TECHNICAL_DATA_MODULES } from '../../utils/technicalDataWorkbench'
+import { TECHNICAL_DATA_MODULES, dispatchPreviewModules } from '../../utils/technicalDataWorkbench'
 import TechnicalDataPersonSelect from './TechnicalDataPersonSelect.vue'
 
 const props = defineProps({ modelValue: Boolean, rows: { type: Array, default: () => [] }, oaNo: String, defaultAssignee: Number, defaultAssigneePerson: Object })
@@ -68,7 +68,7 @@ const selectedRows = ref([])
 const checking = ref(false), busy = ref(false), error = ref('')
 const user = useUserStore()
 let generation = 0
-const missingModules = row => row.check?.modules?.filter(module => module.required) || []
+const missingModules = dispatchPreviewModules
 const dispatchRows = computed(() => previews.value.filter(row => !row.error && missingModules(row).length && !row.check?.sharedModules?.length))
 const requiredTypes = computed(() => TECHNICAL_DATA_MODULES.filter(module => dispatchRows.value.some(row => missingModules(row).some(item => item.moduleType === module.code))))
 const moduleName = code => TECHNICAL_DATA_MODULES.find(module => module.code === code)?.label || code

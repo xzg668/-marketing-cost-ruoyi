@@ -42,10 +42,10 @@
 
     <el-alert v-if="detail.oaWorkflow" :closable="false" show-icon
       :type="detail.oaWorkflow.syncError ? 'warning' : 'info'"
-      :title="materialState?.status === 'SUCCESS' && detail.oaWorkflow.state === 'MATERIAL_REVIEW' ? '资料已提交成功，等待 OA 节点通知更新' : 'OA流程：' + detail.oaWorkflow.label"
+      :title="'OA流程：' + detail.oaWorkflow.label"
       :description="detail.oaWorkflow.syncError || detail.oaWorkflow.reason || undefined" />
 
-    <QuoteMaterialConfirmationPanel :oa-no="oaNo" :state="materialState" :checks="materialChecks" :error="materialError" @refresh="materials.refresh" />
+    <QuoteCostingPreparationPanel :oa-no="oaNo" :state="materialState" :checks="materialChecks" :error="materialError" @refresh="materials.refresh" />
 
 
     <el-descriptions class="quote-summary" :column="3" border>
@@ -158,19 +158,19 @@
             <template #default="{ row }">
               <div class="row-actions">
                 <el-button v-if="needsCostRecalculation(row)" link type="primary"
-                  :disabled="materialDisabled || detail.oaWorkflow?.canCost === false"
+                  :disabled="detail.oaWorkflow?.canCost === false"
                   :loading="actionLoadingId === rowActionKey(row)" @click="submitSingleProductCosting(row, 'INPUT_CHANGED')">
-                  {{ needsConfirmation ? materials.productLabel.value : '重新核算本产品' }}
+                  {{ '重新核算本产品' }}
                 </el-button>
                 <el-button
                   v-else-if="row.workflow?.actionEnabled"
                   link
                   :type="operationType(row.workflow?.nextAction)"
-                  :disabled="['START_COSTING', 'RESTART_COSTING'].includes(row.workflow?.nextAction) && (materialDisabled || detail.oaWorkflow?.canCost === false)"
+                  :disabled="['START_COSTING', 'RESTART_COSTING'].includes(row.workflow?.nextAction) && detail.oaWorkflow?.canCost === false"
                   :loading="actionLoadingId === rowActionKey(row)"
                   @click="handleRowAction(row)"
                 >
-                  {{ needsConfirmation && ['START_COSTING', 'RESTART_COSTING'].includes(row.workflow?.nextAction) ? materials.productLabel.value : row.workflow?.nextActionLabel }}
+                  {{ row.workflow?.nextActionLabel }}
                 </el-button>
                 <el-button
                   v-if="hasHistoricalCostResult(row) && (needsCostRecalculation(row) || row.workflow?.nextAction !== 'VIEW_COSTING_RESULT')"
@@ -337,7 +337,7 @@
 </template>
 
 <script setup>
-import { fetchQuoteMaterialConfirmation, confirmQuoteMaterialsAndCost } from '../api/quoteRequests'
+import { fetchQuoteCostingPreparation, prepareQuoteCosting } from '../api/quoteRequests'
 import { fetchAuxiliaryClassifications } from '../api/auxiliaryClassification'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -354,9 +354,9 @@ import {
   fetchQuoteRequestDetail,
   submitQuoteProductCostRun,
 } from '../api/quoteRequests'
-import QuoteMaterialConfirmationPanel from '../components/quotation/QuoteMaterialConfirmationPanel.vue'
+import QuoteCostingPreparationPanel from '../components/quotation/QuoteCostingPreparationPanel.vue'
 import { useQuoteFinalSubmission } from '../composables/useQuoteFinalSubmission'
-import { useQuoteMaterialConfirmation } from '../composables/useQuoteMaterialConfirmation'
+import { useQuoteCostingPreparation } from '../composables/useQuoteCostingPreparation'
 import { useQuoteBatchCosting } from '../composables/useQuoteBatchCosting'
 import { withQuoteItemWorkflow } from '../utils/quoteItemWorkflow'
 import { workflowStatusTagType } from '../utils/workflowStatus'
@@ -371,10 +371,10 @@ import {
 const route = useRoute()
 const router = useRouter()
 const oaNo = computed(() => String(route.params.oaNo || ''))
-const materials = useQuoteMaterialConfirmation(oaNo, {
-  fetch: fetchQuoteMaterialConfirmation, submit: confirmQuoteMaterialsAndCost,
+const materials = useQuoteCostingPreparation(oaNo, {
+  fetch: fetchQuoteCostingPreparation, submit: prepareQuoteCosting,
 })
-const { state: materialState, checks: materialChecks, error: materialError, disabled: materialDisabled, wholeLabel, needsConfirmation } = materials
+const { state: materialState, checks: materialChecks, error: materialError, disabled: materialDisabled, wholeLabel } = materials
 const loading = ref(false)
 const checking = ref(false)
 const confirming = ref(false)
@@ -480,7 +480,7 @@ const { batchRun, batchSubmitting, loadBatchProgress, submitWholeQuoteCosting, c
       const outcome = await materials.submit()
       if (!outcome) return null
       if (!outcome.batch) {
-        ElMessage.warning(outcome.confirmation.message)
+        ElMessage.warning(outcome.preparation.message)
         const base = await fetchQuoteRequestDetail(oaNo.value)
         detail.value = withQuoteItemWorkflow(base)
       }
@@ -672,13 +672,13 @@ async function submitSingleProductCosting(row, reason) {
   const scope = captureScope()
   actionLoadingId.value = rowActionKey(row)
   try {
-    // 电子图库自动接续只检查资料，不能代替报价员确认整单。
+    // 电子图库自动接续沿用已经采用的技术版本，不自动认可新补录内容。
     const outcome = reason === 'ELECTRONIC_DRAWING_RESOLVED' ? null : await materials.submit({ itemId: row.id })
     if (reason !== 'ELECTRONIC_DRAWING_RESOLVED' && !outcome) return
     const result = reason === 'ELECTRONIC_DRAWING_RESOLVED'
       ? await submitQuoteProductCostRun(scope.oaNo, row.id, { reason }) : outcome?.product
     if (outcome && !result) {
-      ElMessage.warning(outcome.confirmation.message)
+      ElMessage.warning(outcome.preparation.message)
       await loadDetail()
       return
     }

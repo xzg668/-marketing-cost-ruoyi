@@ -91,7 +91,7 @@ const signature = computed(() => JSON.stringify(drafts.value))
 let disposed = false, generation = 0
 watch(busy, value => emit('busy', value))
 watch(signature, value => emit('dirty', value !== original.value))
-const ownerLabel = row => row.status === 'RECORDED' ? '已提交资料' : owner(row) ? `${owner(row).assigneeName || '原技术员'}办理 · ${owner(row).moduleStatus === 'APPROVED' ? '已审批，待可用性检查' : '等待原资料完成'}` : '需要补价'
+const ownerLabel = row => row.status === 'RECORDED' ? '已提交资料' : owner(row) ? `${owner(row).assigneeName || '原技术员'}办理 · ${['SUBMITTED', 'APPROVED'].includes(owner(row).moduleStatus) ? '已提交，待可用性检查' : '等待原资料完成'}` : '需要补价'
 
 function restore(data) {
   workspace.value = data

@@ -2,7 +2,7 @@
   <section class="approval-panel">
     <div class="approval-heading">
       <b>补录办理情况</b>
-      <span>各自补齐后提交本人部门领导，全部通过后由报价员检查资料。</span>
+      <span>各自补齐后提交，审批进度请在 OA 查看。</span>
     </div>
     <el-table :data="workflow.participants || []" size="small" border>
       <el-table-column prop="assigneeName" label="补录人" width="100" />
@@ -19,7 +19,7 @@
     <el-alert v-for="issue in workflow.dependencyIssues || []" :key="`${issue.moduleType}:${issue.sourceModuleType}`"
       :title="issue.message" type="warning" :closable="false" show-icon />
     <div v-if="workflow.canFinanceReview && !route.meta.technicalDataEntry" class="finance-actions">
-      <span>检查已提交资料后，返回报价单确认整单资料并核算。</span>
+      <span>检查已提交资料后，返回报价单核算。</span>
       <el-button type="primary" @click="returnToQuote">返回报价单</el-button>
     </div>
   </section>
@@ -33,7 +33,7 @@ const props = defineProps({ task: { type: Object, required: true }, workflow: { 
 const router = useRouter()
 const route = useRoute()
 const moduleName = (type) => TECHNICAL_DATA_MODULES.find((module) => module.code === type)?.label || type
-const statusName = (status) => ({ OPEN: '待处理', PREPARED: '提交待 OA 确认', SUBMITTED: '部门领导审批中', DONE: '领导已通过', RETURN_PENDING: '退回待 OA 确认' })[status] || status
+const statusName = (status) => ({ OPEN: '待处理', PREPARED: '提交待 OA 确认', SUBMITTED: '已提交', DONE: '已提交', RETURN_PENDING: '退回待 OA 确认' })[status] || status
 
 function returnToQuote() {
   router.push({ name: 'ingest-quote-request-detail', params: { oaNo: props.task.oaNo } })

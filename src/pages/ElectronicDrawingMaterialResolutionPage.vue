@@ -11,7 +11,7 @@
 
     <el-alert v-if="loadError" :title="loadError" type="error" :closable="false" show-icon />
     <el-alert v-else-if="state.sourceVersionId" class="ready-summary" type="success" :closable="false" show-icon>
-      <template #title>电子图库 BOM 已读取，只处理系统无法唯一匹配的物料</template>
+      <template #title>图库已读取，按实际核算范围确认 U9 料号</template>
       共 {{ state.totalCount || 0 }} 个物料，{{ state.autoMatchedCount || 0 }} 个已自动匹配，
       {{ state.manuallySelectedCount || 0 }} 个已保存；还剩 {{ pendingItems.length }} 个需要选择。
     </el-alert>
@@ -143,14 +143,28 @@
     <el-result
       v-else-if="!loading && !loadError && state.complete"
       icon="success"
-      title="U9 料号已全部确认"
+      title="核算所需料号已确认"
       :sub-title="completionMessage"
     >
       <template #extra>
-        <el-button v-if="!state.bomComposed" :loading="saving" @click="saveSelections(true)">重新检查 BOM</el-button>
+        <el-button v-if="!state.bomPublished" :loading="saving" @click="saveSelections(true)">重新检查 BOM</el-button>
         <el-button type="primary" @click="returnToQuote()">返回报价单</el-button>
       </template>
     </el-result>
+
+    <el-collapse v-if="processedItems.length" class="processed-items">
+      <el-collapse-item title="查看已处理物料与 U9 料号" name="processed">
+        <el-table :data="processedItems" row-key="sourceNodeId" border size="small">
+          <el-table-column prop="sourceName" label="物料" min-width="140" />
+          <el-table-column prop="drawingCode" label="图库图号" min-width="150" />
+          <el-table-column label="U9 料号" min-width="145"><template #default="{ row }">{{ row.resolvedMaterialCode || '无 U9 料号' }}</template></el-table-column>
+          <el-table-column prop="processingMessage" label="处理结果" min-width="230" />
+          <el-table-column label="操作" width="110"><template #default="{ row }">
+            <el-button v-if="row.canModify && row.resolvedMaterialCode && row.processingState !== 'EXCLUDED'" link type="primary" @click="editMaterial(row)">修改料号</el-button>
+          </template></el-table-column>
+        </el-table>
+      </el-collapse-item>
+    </el-collapse>
 
     <footer v-if="pendingItems.length" class="save-bar">
       <div>
@@ -207,12 +221,24 @@ const searchType = ref('DRAWING_NO')
 const keyword = ref('')
 const options = ref([])
 const searchPerformed = ref(false)
+const editingNodeId = ref('')
 
-const pendingItems = computed(() => pendingElectronicDrawingItems(state.value))
+const pendingItems = computed(() => {
+  const items = pendingElectronicDrawingItems(state.value)
+  const editing = (state.value.items || []).find(item => String(item.sourceNodeId) === editingNodeId.value)
+  return editing && !items.some(item => sameNode(item, editing)) ? [...items, editing] : items
+})
+const processedItems = computed(() => (state.value.items || []).filter(item => !item.requiresAction))
 const activeItem = computed(() => pendingItems.value.find(
   (item) => String(item.sourceNodeId) === String(activeNodeId.value),
 ) || pendingItems.value[0] || null)
-const currentSelection = computed(() => selectionDraft[activeItem.value?.sourceNodeId] || null)
+const currentSelection = computed(() => selectionDraft[activeItem.value?.sourceNodeId] || (
+  activeItem.value?.resolvedMaterialCode ? {
+    materialCode: activeItem.value.resolvedMaterialCode,
+    materialName: activeItem.value.resolvedMaterialName,
+    materialSpec: activeItem.value.resolvedMaterialSpec,
+    materialModel: activeItem.value.resolvedMaterialModel,
+  } : null))
 const selectedCount = computed(() => pendingItems.value.filter(
   (item) => selectionDraft[item.sourceNodeId]?.materialCode,
 ).length)
@@ -265,6 +291,11 @@ function selectItem(item) {
   searchPerformed.value = false
 }
 
+function editMaterial(item) {
+  editingNodeId.value = String(item.sourceNodeId)
+  selectItem(item)
+}
+
 function handleSearchTypeChange(value) {
   keyword.value = sourceSearchKeyword(activeItem.value, value)
   options.value = []
@@ -314,6 +345,7 @@ async function saveSelections(recheck = false) {
   try {
     const response = await saveElectronicDrawingMaterialResolutions(taskId.value, request, accountingMonth.value)
     request.selections.forEach((item) => delete selectionDraft[item.sourceNodeId])
+    editingNodeId.value = ''
     state.value = response || { items: [] }
     if (state.value.complete) {
       ElMessage.success(completionMessage.value)

@@ -23,7 +23,7 @@
       </div>
     </div>
 
-    <QuoteMaterialConfirmationPanel v-if="!historyViewMode" :oa-no="oaNo" :state="materialState" :checks="materialChecks" :error="materialError" @refresh="materials.refresh" />
+    <QuoteCostingPreparationPanel v-if="!historyViewMode" :oa-no="oaNo" :state="materialState" :checks="materialChecks" :error="materialError" @refresh="materials.refresh" />
 
     <el-alert
       v-if="historyViewMode"
@@ -251,7 +251,7 @@
                     }"
                   >
                     <div class="effective-node-main">
-                      <span class="node-code">{{ data.materialCode }}</span>
+                      <span class="node-code">{{ materialIdentityLabel(data) }}</span>
                       <span class="node-name">{{ data.materialName || '' }}</span>
                       <span v-if="!isStructureRootNode(data) && data.qtyPerParent != null" class="node-qty">× {{ data.qtyPerParent }}</span>
                       <el-tag
@@ -474,7 +474,9 @@
               max-height="calc(100vh - 430px)"
               class="price-type-table"
             >
-              <el-table-column prop="materialCode" label="料号" min-width="220" fixed="left" show-overflow-tooltip />
+              <el-table-column prop="materialCode" label="料号 / 图号" min-width="220" fixed="left" show-overflow-tooltip>
+                <template #default="{ row }">{{ materialIdentityLabel(row) }}</template>
+              </el-table-column>
               <el-table-column prop="materialName" label="品名" min-width="180" fixed="left" show-overflow-tooltip>
                 <template #default="{ row }">{{ row.materialName || '-' }}</template>
               </el-table-column>
@@ -535,6 +537,7 @@
 
             <section v-if="technicalPriceCorrection?.items?.length" class="technical-price-correction">
               <el-alert type="warning" :closable="false" :title="`本产品有 ${technicalPriceCorrection.items.length} 项自行公式尚未形成可用价格，请下载修正后导入。`" />
+              <p class="technical-price-correction__help">下载技术员填写的公式后，报价员按联动价模板整理“联动价-部品6”和“影响因素10”两个业务 Sheet，核对公式与影响因素绑定，再预检、导入。请保留下载文件中的“补录说明”Sheet；只有导入后确认取价可用，才能继续核算。</p>
               <el-table :data="technicalPriceCorrection.items" border>
                 <el-table-column prop="materialNo" label="料号" width="220" />
                 <el-table-column prop="message" label="待处理原因" />
@@ -728,7 +731,9 @@
                   <span>prepare_no：{{ financePrepareBatch.prepareNo || '-' }}</span>
                 </div>
                 <el-table :data="financePricePrepareItems" border stripe scrollbar-always-on max-height="360" class="prepare-detail-table">
-                  <el-table-column prop="materialCode" label="料号" min-width="170" fixed="left" show-overflow-tooltip />
+                  <el-table-column prop="materialCode" label="料号 / 图号" min-width="170" fixed="left" show-overflow-tooltip>
+                    <template #default="{ row }">{{ materialIdentityLabel(row) }}</template>
+                  </el-table-column>
                   <el-table-column prop="materialName" label="品名" min-width="180" fixed="left" show-overflow-tooltip />
                   <el-table-column prop="itemType" label="类型" width="110" />
                   <el-table-column prop="quantity" label="数量" width="110" align="right" />
@@ -763,7 +768,9 @@
                   <span>prepare_no：{{ oaPrepareBatch.prepareNo || latestPrepare.prepareNo || '-' }}</span>
                 </div>
                 <el-table :data="oaPricePrepareItems" border stripe scrollbar-always-on max-height="360" class="prepare-detail-table">
-                  <el-table-column prop="materialCode" label="料号" min-width="170" fixed="left" show-overflow-tooltip />
+                  <el-table-column prop="materialCode" label="料号 / 图号" min-width="170" fixed="left" show-overflow-tooltip>
+                    <template #default="{ row }">{{ materialIdentityLabel(row) }}</template>
+                  </el-table-column>
                   <el-table-column prop="materialName" label="品名" min-width="180" fixed="left" show-overflow-tooltip />
                   <el-table-column prop="itemType" label="类型" width="110" />
                   <el-table-column prop="quantity" label="数量" width="110" align="right" />
@@ -798,7 +805,9 @@
                   <el-checkbox v-model="onlyDifferentPricePrepare">只看有差异</el-checkbox>
                 </div>
                 <el-table :data="visiblePricePrepareDifferences" border stripe scrollbar-always-on max-height="360" class="prepare-detail-table">
-                  <el-table-column prop="materialCode" label="料号" min-width="160" fixed="left" show-overflow-tooltip />
+                  <el-table-column prop="materialCode" label="料号 / 图号" min-width="160" fixed="left" show-overflow-tooltip>
+                    <template #default="{ row }">{{ materialIdentityLabel(row) }}</template>
+                  </el-table-column>
                   <el-table-column prop="materialName" label="品名" min-width="160" fixed="left" show-overflow-tooltip />
                   <el-table-column prop="quantity" label="数量" width="90" align="right" />
                   <el-table-column prop="financeUnitPrice" label="财务单价" width="120" align="right">
@@ -1078,9 +1087,9 @@
 </template>
 
 <script setup>
-import { fetchQuoteMaterialConfirmation, confirmQuoteMaterialsAndCost } from '../api/quoteRequests'
-import QuoteMaterialConfirmationPanel from '../components/quotation/QuoteMaterialConfirmationPanel.vue'
-import { useQuoteMaterialConfirmation } from '../composables/useQuoteMaterialConfirmation'
+import { fetchQuoteCostingPreparation, prepareQuoteCosting } from '../api/quoteRequests'
+import QuoteCostingPreparationPanel from '../components/quotation/QuoteCostingPreparationPanel.vue'
+import { useQuoteCostingPreparation } from '../composables/useQuoteCostingPreparation'
 import AuxiliaryClassificationPanel from '../components/technical-data/AuxiliaryClassificationPanel.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -1151,11 +1160,12 @@ const router = useRouter()
 const userStore = useUserStore()
 
 const oaNo = computed(() => String(route.params.oaNo || ''))
-const materials = useQuoteMaterialConfirmation(oaNo, {
-  fetch: fetchQuoteMaterialConfirmation, submit: confirmQuoteMaterialsAndCost,
-})
-const { state: materialState, checks: materialChecks, error: materialError, disabled: materialDisabled, needsConfirmation } = materials
 const itemId = computed(() => String(route.params.itemId || ''))
+const materials = useQuoteCostingPreparation(oaNo, {
+  fetch: (number) => fetchQuoteCostingPreparation(number, { itemId: Number(itemId.value) }),
+  submit: prepareQuoteCosting,
+}, computed(() => `${oaNo.value}:${itemId.value}`))
+const { state: materialState, checks: materialChecks, error: materialError, disabled: materialDisabled } = materials
 const historyVersionId = computed(() => {
   const value = Number(route.query.versionId)
   return Number.isInteger(value) && value > 0 ? value : null
@@ -1450,7 +1460,7 @@ const currentSuccessVersion = computed(() =>
   || null
 )
 const productCostingActionLabel = computed(() => (
-  needsConfirmation.value ? materials.productLabel.value : currentSuccessVersion.value?.id ? '重新核算本产品' : '核算本产品'
+  currentSuccessVersion.value?.id ? '重新核算本产品' : '核算本产品'
 ))
 const hasStaleCostVersion = computed(() => costRunVersions.value.some((row) => row?.stale))
 const costRunWorkbenchStatusText = computed(() => {
@@ -2044,6 +2054,14 @@ function openBomNodeDetail(node) {
   bomNodeDrawerVisible.value = true
 }
 
+function materialIdentityLabel(node) {
+  const code = String(node?.materialCode || '')
+  if (code.startsWith('DRAWING:') || code.startsWith('DRAWING#')) {
+    return `图号：${node.drawingNo || node.drawingCode || code.replace(/^DRAWING[:#]/, '')}`
+  }
+  return code || '-'
+}
+
 function expandBomTree() {
   setBomTreeExpanded(true)
 }
@@ -2525,7 +2543,7 @@ async function submitProductCosting(reason = 'USER_REQUEST') {
     const result = reason === 'USER_REQUEST' ? outcome?.product
       : await submitQuoteProductCostRun(oaNo.value, itemId.value, { periodMonth: workbench.value.periodMonth, reason })
     if (outcome && !result) {
-      ElMessage.warning(outcome.confirmation.message)
+      ElMessage.warning(outcome.preparation.message)
       return
     }
     await loadWorkbench({ resetTab: false, loadChildren: true })

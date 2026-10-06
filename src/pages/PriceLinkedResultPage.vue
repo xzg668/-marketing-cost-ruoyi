@@ -692,6 +692,13 @@
       width="960px"
     >
       <el-alert
+        v-if="correctionContext"
+        class="import-template-help"
+        type="warning"
+        :closable="false"
+        title="补录公式导入：请在“联动价-部品6”整理技术公式，并在“影响因素10”核对影响因素及绑定；保留下载文件的“补录说明”Sheet。预检通过并确认导入后，返回核算页重新检查价格。"
+      />
+      <el-alert
         class="import-template-help"
         type="info"
         :closable="false"

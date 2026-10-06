@@ -1,19 +1,15 @@
 import { computed, onScopeDispose, ref, watch } from 'vue'
 
-/** 详情与单产品工作台共用资料确认状态；只有显式操作才提交。防重以服务端 OA 待办为准。 */
-export function useQuoteMaterialConfirmation(oaNo, api) {
+/** 详情与单产品工作台共用本地资料检查；只有用户点击才发起核算。 */
+export function useQuoteCostingPreparation(oaNo, api, scope = oaNo) {
   const state = ref(null)
   const checks = ref([])
   const busy = ref(false)
   const error = ref('')
   let generation = 0
   let readId = 0
-  let requestKey = null
-  const needsConfirmation = computed(() => state.value?.needsConfirmation === true)
-  const disabled = computed(() => busy.value || !state.value || !state.value.canConfirm || Boolean(error.value))
-  const retry = computed(() => ['REJECTED', 'NOT_SENT'].includes(state.value?.status))
-  const wholeLabel = computed(() => retry.value ? '重试资料确认并整单核算' : '确认资料并整单核算')
-  const productLabel = computed(() => retry.value ? '重试资料确认并核算本产品' : '确认整单资料并核算本产品')
+  const disabled = computed(() => busy.value || !state.value || !state.value.canCost || Boolean(error.value))
+  const wholeLabel = '整单核算'
 
   async function refresh() {
     const scope = generation, id = ++readId, number = oaNo.value
@@ -33,14 +29,12 @@ export function useQuoteMaterialConfirmation(oaNo, api) {
     const scope = generation
     busy.value = true
     readId++
-    requestKey ||= globalThis.crypto.randomUUID()
     try {
-      const outcome = await api.submit(oaNo.value, { ...options, requestKey, retryRejected: retry.value })
+      const outcome = await api.submit(oaNo.value, options)
       if (scope !== generation) return null
-      state.value = outcome.confirmation
+      state.value = outcome.preparation
       checks.value = outcome.checks || []
       error.value = ''
-      requestKey = null
       return outcome
     } catch (failure) {
       if (scope !== generation) return null
@@ -51,11 +45,11 @@ export function useQuoteMaterialConfirmation(oaNo, api) {
     }
   }
 
-  watch(oaNo, () => {
-    generation++; readId++; requestKey = null
+  watch(scope, () => {
+    generation++; readId++
     state.value = null; checks.value = []; error.value = ''; busy.value = false
     refresh()
   }, { immediate: true, flush: 'sync' })
   onScopeDispose(() => { generation++; readId++ })
-  return { state, checks, busy, error, disabled, needsConfirmation, wholeLabel, productLabel, refresh, submit }
+  return { state, checks, busy, error, disabled, wholeLabel, refresh, submit }
 }

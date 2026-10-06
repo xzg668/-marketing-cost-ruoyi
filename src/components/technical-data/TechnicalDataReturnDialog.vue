@@ -13,7 +13,7 @@
                 {{ module.label }} · {{ module.assigneeName }}（{{ module.employeeNo }}）
               </el-checkbox>
             </el-checkbox-group>
-            <span v-if="!row.modules.length">当前没有可退回的已批准板块</span>
+            <span v-if="!row.modules.length">当前没有可退回的已提交板块</span>
           </template>
         </el-table-column>
         <el-table-column label="退回原因" min-width="260">
@@ -28,7 +28,9 @@
     <template #footer>
       <el-button :disabled="busy" @click="close">关闭</el-button>
       <el-button v-if="pending || pendingReturn(result)" :loading="busy" @click="refresh">刷新退回结果</el-button>
-      <el-button v-if="result?.status !== 'SUCCESS'" type="danger" :loading="busy" :disabled="loading || locked || !candidates.some(row => row.selectedModules.length)"
+      <el-button v-if="result?.canRetry" type="danger" :loading="busy" :disabled="loading" @click="retry">继续退回</el-button>
+      <el-button v-else-if="canConfirmPeople" type="danger" :loading="busy" :disabled="loading" @click="confirmPeople">核实OA后继续退回</el-button>
+      <el-button v-else-if="result?.status !== 'SUCCESS'" type="danger" :loading="busy" :disabled="loading || locked || !candidates.some(row => row.selectedModules.length)"
         @click="submit">{{ result && ['REJECTED', 'NOT_SENT'].includes(result.status) ? '重新确认退回' : '确认退回' }}</el-button>
     </template>
   </el-dialog>
@@ -36,9 +38,9 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '../../store/modules/user'
-import { previewTechnicalDataReturn, submitTechnicalDataReturn, fetchTechnicalDataReturn } from '../../api/technicalDataTasks'
+import { previewTechnicalDataReturn, submitTechnicalDataReturn, fetchTechnicalDataReturn, retryTechnicalDataReturn, confirmTechnicalDataReturnPeople } from '../../api/technicalDataTasks'
 import { buildReturnRequest, pendingReturn, returnMessage } from '../../utils/technicalDataReturn'
 import { showErrorOnce } from '../../utils/errorHandler'
 
@@ -48,6 +50,8 @@ const user = useUserStore()
 const candidates = ref([]), result = ref(null), pending = ref(null), busy = ref(false), loading = ref(false)
 const storageKey = computed(() => `technical-return:${user.userId}:${user.businessUnitType}:${[...props.taskIds].sort().join(',')}`)
 const locked = computed(() => Boolean(pending.value) || pendingReturn(result.value) || result.value?.status === 'SUCCESS')
+const canConfirmPeople = computed(() => result.value?.status === 'UNKNOWN' && result.value?.step === 'PEOPLE'
+  && Number(result.value?.actorId) === Number(user.userId))
 let generation = 0
 
 function storePending(value) {
@@ -63,7 +67,7 @@ async function load() {
     try { pending.value = JSON.parse(sessionStorage.getItem(storageKey.value) || 'null') } catch { sessionStorage.removeItem(storageKey.value) }
     const rows = await previewTechnicalDataReturn(props.taskIds)
     if (request !== generation) return
-    candidates.value = rows.map(row => ({ ...row, selectedModules: row.modules.map(module => module.moduleType), reason: '' }))
+    candidates.value = rows.map(row => ({ ...row, selectedModules: row.modules.map(module => module.moduleType), reason: row.returnReason || '' }))
     const unfinished = rows.find(row => pendingReturn(row.lastReturn))?.lastReturn
     if (unfinished) result.value = unfinished
     if (pending.value) {
@@ -124,7 +128,46 @@ async function refresh() {
   } catch (error) { if (current === generation) showErrorOnce(error, '退回结果查询失败') }
   finally { if (current === generation) busy.value = false }
 }
+async function retry() {
+  if (busy.value || !result.value?.canRetry) return
+  busy.value = true
+  const current = generation
+  const batch = result.value
+  try {
+    const value = await retryTechnicalDataReturn(batch.batchId, batch.attempt)
+    if (current === generation) await accept(value)
+  } catch (error) {
+    if (current === generation) {
+      // 回执丢失时先读取服务端进度，不能再根据旧页面判断仍可重试。
+      result.value = { ...batch, canRetry: false, status: 'UNKNOWN' }
+      showErrorOnce(error, '退回结果尚未确认，请刷新本次结果')
+    }
+  } finally { if (current === generation) busy.value = false }
+}
 function close() { if (!busy.value) { generation++; emit('update:modelValue', false) } }
+async function confirmPeople() {
+  if (busy.value || !canConfirmPeople.value) return
+  const current = generation, batch = result.value
+  let note
+  try {
+    const answer = await ElMessageBox.prompt('请先在OA核实本次指定技术员已更新成功。填写核实依据后，只发送流程退回这一步。未确认成功时请取消。',
+      '确认人员更新成功', { confirmButtonText: '已核实，继续退回', cancelButtonText: '取消',
+        inputPlaceholder: '填写核实依据', inputValidator: value => Boolean(value?.trim()) && value.trim().length <= 500 || '请填写1—500字核实依据' })
+    note = answer.value
+  } catch { return }
+  if (current !== generation || busy.value || !canConfirmPeople.value) return
+  busy.value = true
+  try {
+    const value = await confirmTechnicalDataReturnPeople(batch.batchId, batch.attempt, note)
+    if (current === generation) await accept(value)
+  } catch (error) {
+    if (current === generation) {
+      // 确认后的第二步也可能已发送，先刷新服务端进度，不能保留旧的人工确认入口。
+      result.value = { ...batch, status: 'SENDING', canRetry: false }
+      showErrorOnce(error, '请刷新本次退回结果')
+    }
+  } finally { if (current === generation) busy.value = false }
+}
 watch(() => [props.modelValue, storageKey.value], ([visible]) => { if (visible) load(); else generation++ })
 </script>
 

@@ -7,13 +7,13 @@
     <main class="entry-main">
       <header class="entry-header">
         <span>补录工作台</span>
-        <span v-if="identityReady && !shortSession">{{ user.nickName || user.username }}</span>
+        <span v-if="identityReady">{{ identity.nickName || identity.username }}</span>
       </header>
       <div class="entry-content">
         <el-skeleton v-if="verifying" :rows="6" animated />
         <router-view v-else-if="identityReady" />
         <el-result v-else icon="info" title="待办身份尚未确认" :sub-title="message">
-          <template #extra><el-button @click="verifyIdentity">重新验证</el-button></template>
+          <template #extra><el-button @click="beginLogin">重新验证</el-button></template>
         </el-result>
       </div>
     </main>
@@ -21,35 +21,51 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { useUserStore } from '../store/modules/user'
+import { useOaSessionStore } from '../store/modules/oaSession'
+import { startOaLogin } from '../api/oaOAuth'
+import { browserKey, OA_BROWSER_KEY, readOaSession } from '../utils/oaSession'
 
-const route = useRoute(), user = useUserStore()
+const route = useRoute(), identity = useOaSessionStore()
 const verifying = ref(false), identityReady = ref(false)
-const message = ref('请从 OA 待办链接进入补录工作台。')
-const shortSession = computed(() => Boolean(route.meta.technicalDataShortSession))
-const workbenchLink = computed(() => ({ path: route.path, query: route.query.submission ? { submission: route.query.submission } : {} }))
+const message = ref('请从 OA 链接进入补录工作台。')
+const workbenchLink = computed(() => ({ path: route.path }))
 
+async function beginLogin() {
+  if (verifying.value) return
+  identityReady.value = false; verifying.value = true; identity.clear()
+  try {
+    const key = browserKey()
+    sessionStorage.setItem(OA_BROWSER_KEY, key)
+    const result = await startOaLogin({
+      formId: route.params.formId ? Number(route.params.formId) : null,
+      taskId: route.params.formId ? null : Number(route.params.taskId),
+      submission: route.query.submission || null, browserKey: key,
+    })
+    window.location.assign(result.authorizeUrl)
+  } catch (error) { message.value = error.message || '暂时无法连接 OA，请稍后重新验证。' }
+  finally { verifying.value = false }
+}
 async function verifyIdentity() {
   if (verifying.value) return
   identityReady.value = false
-  if (shortSession.value) {
-    identityReady.value = Boolean(sessionStorage.getItem('technicalDataAccessToken')
-      && sessionStorage.getItem('technicalDataAccessTaskId') === String(route.params.taskId))
-    return
-  }
-  if (!user.token) return
-  // 链接只负责定位单据；已验证身份仍由后端确认，不根据链接参数指定办理人。
+  if (!readOaSession()?.accessToken || route.params.taskId) return beginLogin()
   verifying.value = true
   try {
-    await user.getInfo({ suppressErrorToast: true })
+    await identity.verify()
+    if (route.params.formId && String(identity.formId) !== String(route.params.formId)) {
+      verifying.value = false
+      return beginLogin()
+    }
     identityReady.value = true
-  } catch {
-    message.value = '暂时无法确认办理人，请从 OA 待办重新进入。'
-  } finally { verifying.value = false }
+  } catch (error) { message.value = error.message || '身份已过期，请重新验证。'; identity.clear() }
+  finally { verifying.value = false }
 }
-onMounted(verifyIdentity)
+function expired() { identityReady.value = false; identity.clear(); message.value = 'OA 会话已过期，请重新验证后继续。' }
+window.addEventListener('oa-session-expired', expired)
+onBeforeUnmount(() => window.removeEventListener('oa-session-expired', expired))
+watch([() => route.params.formId, () => route.params.taskId], verifyIdentity, { immediate: true })
 </script>
 
 <style scoped>

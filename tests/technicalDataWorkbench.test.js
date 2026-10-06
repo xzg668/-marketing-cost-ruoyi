@@ -8,7 +8,7 @@ test('source check errors display the business reason and retain a fallback for 
   assert.equal(technicalModuleSummary({ modules: [row] }, 'PROFILE'), row.requirementReason)
   assert.equal(technicalModuleSummary({ modules: [{ ...row, requirementReason: '' }] }, 'PROFILE'), '查询失败，请核实后重查')
 })
-import { workbenchRowKey, canDispatchWorkbenchRow, firstRequiredTechnicalModule, workbenchDispatchRow } from '../src/utils/technicalDataWorkbench.js'
+import { workbenchRowKey, canDispatchWorkbenchRow, firstRequiredTechnicalModule, workbenchDispatchRow, dispatchPreviewModules } from '../src/utils/technicalDataWorkbench.js'
 
 const taskList = readFileSync(new URL('../src/views/technical-data/tasks/index.vue', import.meta.url), 'utf8')
 
@@ -38,6 +38,23 @@ test('unassigned products identify missing modules without creating a task on en
   assert.equal(firstRequiredTechnicalModule({ modules: [] }), null)
   assert.doesNotMatch(taskList, /prepareTechnicalDataTask/)
   assert.doesNotMatch(taskList, /const check = await checkTechnicalDataSources[\s\S]*prepareTechnicalDataTask/)
+})
+
+test('a submitted product can dispatch a newly confirmed, unowned gap without dispatching old modules again', () => {
+  const old = { moduleType: 'SALARY', required: true, moduleStatus: 'SUBMITTED', currentVersionId: 10,
+    assigneeUserId: 101, sourceAvailability: 'MISSING' }
+  const added = { moduleType: 'PRICE', required: true, moduleStatus: 'PENDING', currentVersionId: null,
+    assigneeUserId: null, sourceAvailability: 'MISSING' }
+  const row = { taskId: 1, taskStatus: 'PENDING', product: { modules: [old, added] } }
+  assert.equal(canDispatchWorkbenchRow(row), true)
+  const preview = { ...workbenchDispatchRow(row), check: { modules: [old, added] } }
+  assert.deepEqual(dispatchPreviewModules(preview).map(module => module.moduleType), ['PRICE'])
+  assert.equal(canDispatchWorkbenchRow({ ...row, taskStatus: 'SUBMITTED' }), true)
+  assert.equal(canDispatchWorkbenchRow({ ...row, taskStatus: 'PREPARED' }), false)
+  for (const patch of [{ assigneeUserId: 101 }, { currentVersionId: 11 }, { sourceAvailability: 'UNCONFIRMED' },
+    { sourceAvailability: 'ERROR' }, { moduleStatus: 'SUBMITTED' }, { required: false }]) {
+    assert.equal(canDispatchWorkbenchRow({ ...row, product: { modules: [old, { ...added, ...patch }] } }), false)
+  }
 })
 
 const product = (states) => ({ modules: Object.entries(states).map(([moduleType, moduleStatus]) => ({ moduleType, moduleStatus, required: true, sourceAvailability: 'MISSING' })) })
@@ -70,7 +87,7 @@ test('returned modules reopen in order; other approved submissions are not re-en
   assert.equal(nextTechnicalModule(data, workflow), 'PROFILE')
   assert.equal(nextTechnicalModule(data, workflow, 'PROFILE'), 'PACKAGE')
   assert.deepEqual(modulePresentation(data, 'PROFILE'), { label: '已退回', type: 'danger' })
-  assert.deepEqual(modulePresentation(data, 'SALARY'), { label: '已通过', type: 'success' })
+  assert.deepEqual(modulePresentation(data, 'SALARY'), { label: '已提交', type: 'success' })
 })
 
 test('resolved, frozen and unavailable modules never become the next editable task', () => {

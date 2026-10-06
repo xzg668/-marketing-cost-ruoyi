@@ -1,3 +1,4 @@
+import { requestToken } from '../utils/oaSession'
 import { request } from './http'
 
 const id = (value) => encodeURIComponent(String(value))
@@ -66,6 +67,14 @@ export const submitTechnicalDataReturn = body =>
   request('/api/v2/technical-data/returns', { method: 'POST', body, suppressErrorToast: true })
 export const fetchTechnicalDataReturn = batchId =>
   request(`/api/v2/technical-data/returns/${id(batchId)}`, { suppressErrorToast: true })
+export const retryTechnicalDataReturn = (batchId, expectedAttempt) =>
+  request(`/api/v2/technical-data/returns/${id(batchId)}/retry`, {
+    method: 'POST', body: { expectedAttempt }, suppressErrorToast: true,
+  })
+export const confirmTechnicalDataReturnPeople = (batchId, expectedAttempt, note) =>
+  request(`/api/v2/technical-data/returns/${id(batchId)}/confirm-people`, {
+    method: 'POST', body: { expectedAttempt, note }, suppressErrorToast: true,
+  })
 
 export const validateTechnicalDataTask = taskId =>
   request(`/api/v2/technical-data/tasks/${id(taskId)}/validate`, { method: 'POST', suppressErrorToast: true })
@@ -78,14 +87,6 @@ export const fetchTechnicalDataDocument = (formId, submissionId) =>
 export const submitTechnicalDataDocument = (formId, body) =>
   request(`/api/v2/technical-data/forms/${id(formId)}/submit`, {
     method: 'POST', body, suppressErrorToast: true,
-  })
-
-export const exchangeTechnicalDataAccessTicket = (taskId, code) =>
-  request('/api/v2/technical-data/access-tickets/exchange', {
-    method: 'POST',
-    body: { taskId, code },
-    skipAuth: true,
-    suppressErrorToast: true,
   })
 
 export const saveTechnicalDataProfile = (productId, profile) =>
@@ -176,8 +177,7 @@ export const downloadTechnicalDataSalary = (productId, kind, fileName, versionId
 
 async function downloadTechnicalDataFile(productId, module, kind, fileName, versionId) {
   if (!['template', 'file'].includes(kind)) throw new Error('补录文件类型无效')
-  const token = window.location.pathname.startsWith('/technical-data-access')
-    ? sessionStorage.getItem('technicalDataAccessToken') : localStorage.getItem('token')
+  const token = requestToken(window.location.pathname)
   const params = versionId == null ? '' : `?versionId=${id(versionId)}`
   const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/v2/technical-data/products/${id(productId)}/${module}/${kind}${params}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},

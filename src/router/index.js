@@ -8,7 +8,7 @@ import { usePermissionStore } from '../store/modules/permission'
 
 /**
  * 静态路由只保留三类：
- *   1. 公共页：/login、/404、技术资料一次性短票入口
+ *   1. 公共页：/login、/404、OA 免登及补录入口
  *   2. 业务详情页（带路由参数，业务代码硬编码跳转依赖）：
  *      - /ingest/quote-requests/:oaNo/items/:itemId/costing/result
  *   3. 后台工具页：/system/dict/data
@@ -28,16 +28,9 @@ const staticRoutes = [
     meta: { title: '页面不存在', public: true },
   },
   {
-    path: '/technical-data-access',
-    name: 'technical-data-ticket-entry',
-    component: () => import('../pages/TechnicalDataAccessTicketPage.vue'),
-    meta: { title: '技术资料待办验证', public: true },
-  },
-  {
-    path: '/technical-data-access/tasks/:taskId',
-    component: () => import('../layout/TechnicalDataEntryLayout.vue'),
-    meta: { title: '补录工作台', public: true, technicalDataEntry: true, technicalDataShortSession: true },
-    children: [{ path: '', name: 'technical-data-access-workbench', component: () => import('../views/technical-data/tasks/index.vue') }],
+    path: '/oa-login',
+    component: () => import('../pages/OaLoginPage.vue'),
+    meta: { title: 'OA 免登', public: true },
   },
   {
     path: '/collaboration/technical-data',
@@ -169,14 +162,6 @@ router.beforeEach(async (to, from, next) => {
   const permissionStore = usePermissionStore()
   const token = userStore.token || localStorage.getItem('token')
   const isPublic = to.meta?.public
-
-  if (to.meta?.technicalDataShortSession) {
-    const shortToken = sessionStorage.getItem('technicalDataAccessToken')
-    const scopedTaskId = sessionStorage.getItem('technicalDataAccessTaskId')
-    if (!shortToken || String(to.params.taskId) !== scopedTaskId) {
-      return next({ name: 'technical-data-ticket-entry', query: { taskId: to.params.taskId }, replace: true })
-    }
-  }
 
   if (isPublic) {
     if (to.path === '/login' && token) return next('/')

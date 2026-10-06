@@ -20,6 +20,14 @@ test('无独立模块负责人时使用任务负责人，非补录板块不计�
   const document = { tasks: [task(1, [module(null, 'READY'), module(7, 'PENDING', false)]), task(2, [module(7, 'APPROVED')])] }
   assert.equal(personalPendingProductCount(document, 7), 1)
 })
+test('追加补录不能显示成退回修改，待填写和已补齐分别提示', () => {
+  const document = { lastSubmission: { status: 'SUCCESS' }, canSubmit: false,
+    tasks: [task(1, [module(7, 'SUBMITTED'), module(7, 'PENDING')])] }
+  assert.equal(technicalSubmissionMessage(document, 7), '请补齐本轮新增资料后确认提交。')
+  document.tasks[0].products[0].modules[1].moduleStatus = 'READY'
+  document.canSubmit = true
+  assert.equal(technicalSubmissionMessage(document, 7), '本人本轮资料已补齐，可以确认提交审批。')
+})
 test('固定提交版本只能生成只读列表，不改变原始提交数据', () => {
   const document = { tasks: [task(1, [module(7, 'SUBMITTED')])] }
   const rows = submittedDocumentRows(document)

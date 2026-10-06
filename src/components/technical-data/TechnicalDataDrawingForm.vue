@@ -4,7 +4,7 @@
       <div class="drawing-status" aria-label="图库处理状态">
         <el-tag :type="state.acquired ? 'success' : 'warning'">{{ state.acquired ? '明细已取得' : '明细待检查' }}</el-tag>
         <el-tag :type="state.materialsMatched ? 'success' : 'info'">{{ state.materialsMatched ? '物料已匹配' : '物料待财务确认' }}</el-tag>
-        <el-tag :type="state.bomPublished ? 'success' : 'info'">{{ state.bomPublished ? 'BOM 已就绪' : state.bomComposed ? 'BOM 已组好，待审批确认' : 'BOM 尚未就绪' }}</el-tag>
+        <el-tag :type="state.bomPublished ? 'success' : 'info'">{{ state.bomPublished ? 'BOM 已就绪' : state.bomComposed ? 'BOM 已组好' : 'BOM 尚未就绪' }}</el-tag>
       </div>
       <el-alert v-if="state.message" :title="state.message" :type="state.acquired ? 'success' : 'warning'" :closable="false" show-icon />
       <el-alert v-if="state.sourceChanged" title="当前图库来源已有变化。下表保留本次保存或提交的明细，重新检查后才能采用新来源。" type="warning" :closable="false" />
@@ -28,9 +28,9 @@
           <el-table-column prop="sourceMaterial" label="材质" width="90" />
           <el-table-column prop="quantityPerParent" label="母件用量" width="95" />
           <el-table-column label="图库重量" width="110"><template #default="{ row }">{{ row.sourceWeight == null ? '未提供' : `${row.sourceWeight} ${row.sourceWeightUnit || '单位未注明'}` }}</template></el-table-column>
-          <el-table-column label="U9 料号" min-width="160"><template #default="{ row }"><span v-if="row.currentMaterialNo">{{ row.currentMaterialNo }}</span><el-tag v-else type="warning" size="small">待财务确认</el-tag></template></el-table-column>
+          <el-table-column label="U9 料号" min-width="160"><template #default="{ row }"><span v-if="row.currentMaterialNo">{{ row.currentMaterialNo }}</span><el-tag v-else :type="row.processingState === 'DRAWING_READY' || row.processingState === 'EXCLUDED' ? 'info' : 'warning'" size="small">{{ row.processingState === 'DRAWING_READY' ? '沿图库下级处理' : row.processingState === 'EXCLUDED' ? '无需匹配' : '待财务确认' }}</el-tag></template></el-table-column>
         </el-table>
-        <p class="hint">图库重量保留来源单位；补录毛重为 kg，净长为毫米。未匹配的 U9 料号由财务确认，不影响技术完成本项。</p>
+        <p class="hint">图库重量保留来源单位；毛重填 kg，净长填毫米。可沿图库下级处理的节点无需匹配 U9；实际需要确认的料号由财务处理。</p>
         <el-button v-if="state.canResolveMaterials && !state.bomPublished && !state.sourceChanged" @click="resolveMaterials">{{ state.materialsMatched ? '查看 U9 料号与 BOM' : '财务确认 U9 料号' }}</el-button>
       </div>
       <el-empty v-else description="尚未保存本产品的有效图库明细" :image-size="60" />
@@ -59,7 +59,8 @@ const canEdit = computed(() => props.editable && state.value?.editable)
 const drawingOptions = computed(() => [...new Map((state.value?.drawingOptions || []).map(option => [option.drawingNo, option])).values()])
 const rows = computed(() => {
   const resolutions = new Map((state.value?.resolutions || []).map(row => [row.sourceNodeId, row]))
-  return (state.value?.drawing?.nodes || []).map(row => ({ ...row, currentMaterialNo: resolutions.get(row.sourceNodeId)?.materialNo || row.materialNo }))
+  return (state.value?.drawing?.nodes || []).map(row => ({ ...row, currentMaterialNo: resolutions.get(row.sourceNodeId)?.materialNo || row.materialNo,
+    processingState: resolutions.get(row.sourceNodeId)?.processingState }))
 })
 function changed() { emit('dirty', maintained.value || Boolean(drawingNo.value && drawingOptions.value.length > 1)) }
 async function load() {

@@ -153,10 +153,10 @@ export const confirmQuoteFinalSubmission = (oaNo, body) =>
     method: 'POST', body, suppressErrorToast: true,
   })
 
-export const fetchQuoteMaterialConfirmation = (oaNo) =>
-  request(`/api/v1/quote-requests/${encodePath(oaNo)}/material-confirmation`, { suppressErrorToast: true })
+export const fetchQuoteCostingPreparation = (oaNo, params = {}) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/costing-preparation`, { params, suppressErrorToast: true })
 
-export const confirmQuoteMaterialsAndCost = (oaNo, body) =>
-  request(`/api/v1/quote-requests/${encodePath(oaNo)}/material-confirmation`, {
+export const prepareQuoteCosting = (oaNo, body) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/costing-preparation`, {
     method: 'POST', body, suppressErrorToast: true,
   })

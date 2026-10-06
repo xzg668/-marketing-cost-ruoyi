@@ -18,14 +18,15 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { useUserStore } from '../../store/modules/user'
+import { browserKey } from '../../utils/oaSession'
+import { useTechnicalDataIdentity } from '../../composables/useTechnicalDataIdentity'
 import { submitTechnicalDataDocument } from '../../api/technicalDataTasks'
 import { personalPendingProductCount, technicalSubmissionMessage } from '../../utils/technicalDataDocument'
 import { showErrorOnce } from '../../utils/errorHandler'
 
 const props = defineProps({ document: { type: Object, required: true }, refresh: { type: Function, required: true }, disabled: Boolean })
 const emit = defineEmits(['busy', 'open-document'])
-const user = useUserStore(), busy = ref(false), pendingRequest = ref(null)
+const user = useTechnicalDataIdentity(), busy = ref(false), pendingRequest = ref(null)
 const keyName = computed(() => `technical-document-submit:${user.userId}:${props.document.formId}`)
 const message = computed(() => technicalSubmissionMessage(props.document, user.userId))
 const terminal = status => ['SUCCESS', 'REJECTED', 'NOT_SENT'].includes(status)
@@ -46,7 +47,7 @@ async function submit(replay) {
       try {
         await ElMessageBox.confirm(`将 ${props.document.oaNo} 中本人负责的 ${personalPendingProductCount(props.document, user.userId)} 个待提交产品统一提交审批？`, '确认提交', { confirmButtonText: '确认提交', cancelButtonText: '继续检查', closeOnClickModal: false })
       } catch { return }
-      if (!pendingRequest.value) pendingRequest.value = { idempotencyKey: globalThis.crypto.randomUUID(), fingerprint: props.document.fingerprint }
+      if (!pendingRequest.value) pendingRequest.value = { idempotencyKey: browserKey(), fingerprint: props.document.fingerprint }
       sessionStorage.setItem(keyName.value, JSON.stringify(pendingRequest.value))
     }
     if (!pendingRequest.value) return

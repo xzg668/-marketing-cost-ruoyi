@@ -15,7 +15,9 @@
         <el-table v-if="searched" :data="components" row-key="key" border class="package-components">
           <el-table-column prop="materialNo" label="包装组件码" min-width="160" />
           <el-table-column prop="name" label="名称" min-width="140" />
-          <el-table-column prop="model" label="型号／图号" min-width="150" />
+          <el-table-column label="型号／BOM 版本" min-width="170">
+            <template #default="{ row }">{{ row.model || '—' }} · {{ row.sources[0]?.evidence.bomVersion || '—' }}</template>
+          </el-table-column>
           <el-table-column prop="childCount" label="子件数" width="85" />
           <el-table-column label="操作" width="85"><template #default="{ row }"><el-button link type="primary" @click="selectComponent(row)">选择</el-button></template></el-table-column>
           <template #empty><el-empty description="没有找到适用包装，请更换查询条件" /></template>
