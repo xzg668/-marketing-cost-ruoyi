@@ -26,6 +26,7 @@ export function countCarriedForwardPrices(rows) {
 
 export function priceValidityText(row) {
   const warning = text(row?.warningMessage)
+  if (warning && !isCarriedForwardPrice(row)) return warning
   if (isCarriedForwardPrice(row)) {
     if (warning) return warning
     const effectiveTo = text(row?.sourceEffectiveTo)

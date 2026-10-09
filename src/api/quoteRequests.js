@@ -89,6 +89,12 @@ export const generateQuotePricePrepare = (oaNo, itemId, body = {}) =>
     body,
   })
 
+export const confirmSupplierPriceReview = (oaNo, itemId, body) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/supplier-price-reviews/confirm`, {
+    method: 'POST',
+    body,
+  })
+
 export const fetchQuoteCostRun = (oaNo, itemId, params) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/cost-run`, { params })
 

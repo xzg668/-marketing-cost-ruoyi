@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import fs from 'node:fs'
 import path from 'node:path'
+import { decimalToPercent, percentToDecimal, formatPercent } from '../src/utils/supplierSupplyRatio.js'
 
 const ROOT = path.resolve(import.meta.dirname, '..')
 const API_FILE = path.join(ROOT, 'src/api/supplierSupplyRatios.js')
@@ -13,6 +14,7 @@ const MENU_FILE = path.resolve(
 
 const apiContent = fs.readFileSync(API_FILE, 'utf-8')
 const pageContent = fs.readFileSync(PAGE_FILE, 'utf-8')
+const importContent = fs.readFileSync(path.join(ROOT, 'src/components/SupplierSupplyRatioImportDialog.vue'), 'utf-8')
 const menuContent = fs.readFileSync(MENU_FILE, 'utf-8')
 
 describe('SSR-07 供应商供货比例 API', () => {
@@ -56,13 +58,12 @@ describe('SSR-07 供应商供货比例页面', () => {
   })
 
   it('导入弹窗展示去重口径和导入结果明细', () => {
-    assert.match(pageContent, /导入去重口径：业务单元 \+ 物料代码 \+ 供应商/)
-    assert.match(pageContent, /totalRows/)
-    assert.match(pageContent, /insertedRows/)
-    assert.match(pageContent, /updatedRows/)
-    assert.match(pageContent, /skippedRows/)
-    assert.match(pageContent, /errorRows/)
-    assert.match(pageContent, /errors/)
+    assert.match(importContent, /按物料整组更新/)
+    assert.match(importContent, /totalRows/)
+    assert.match(importContent, /insertedRows/)
+    assert.match(importContent, /deactivatedRows/)
+    assert.match(importContent, /unfilledRatioRows/)
+    assert.doesNotMatch(importContent, /missingRatioAsZero|skippedRows/)
   })
 
   it('供货比例页面显示百分比，提交给后端使用 decimal', () => {
@@ -70,7 +71,7 @@ describe('SSR-07 供应商供货比例页面', () => {
     assert.match(pageContent, /decimalToPercent/)
     assert.match(pageContent, /percentToDecimal/)
     assert.match(pageContent, /supplyRatio:\s*percentToDecimal/)
-    assert.match(pageContent, /Number\(\(number \/ 100\)\.toFixed\(6\)\)/)
+    assert.equal(percentToDecimal(60), 0.6)
   })
 
   it('权限点对齐 V90 菜单 seed', () => {
@@ -81,5 +82,23 @@ describe('SSR-07 供应商供货比例页面', () => {
     assert.match(menuContent, /base:supplier-supply-ratio:import/)
     assert.match(menuContent, /base:supplier-supply-ratio:edit/)
     assert.match(menuContent, /base:supplier-supply-ratio:remove/)
+  })
+})
+
+
+describe('未填写比例和明确零比例必须区分', () => {
+  it('展示、打开编辑、保存空值时都保持未填写', () => {
+    for (const value of [null, undefined, '']) {
+      assert.equal(formatPercent(value), '未填写')
+      assert.equal(decimalToPercent(value), null)
+      assert.equal(percentToDecimal(value), null)
+    }
+  })
+
+  it('明确填写的零比例不变成未填写', () => {
+    assert.equal(formatPercent(0), '0.00%')
+    assert.equal(decimalToPercent(0), 0)
+    assert.equal(percentToDecimal(0), 0)
+    assert.equal(formatPercent(0.65), '65.00%')
   })
 })

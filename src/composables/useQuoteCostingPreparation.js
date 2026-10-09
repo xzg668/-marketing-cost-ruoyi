@@ -1,6 +1,6 @@
 import { computed, onScopeDispose, ref, watch } from 'vue'
 
-/** 详情与单产品工作台共用本地资料检查；只有用户点击才发起核算。 */
+/** 详情与单产品工作台共用资料检查与核算；查询只读，提交由核算或补齐资料的动作触发。 */
 export function useQuoteCostingPreparation(oaNo, api, scope = oaNo) {
   const state = ref(null)
   const checks = ref([])

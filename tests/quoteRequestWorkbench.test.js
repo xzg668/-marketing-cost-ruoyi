@@ -662,7 +662,7 @@ describe('T11 报价单接入页面契约', () => {
     assert.match(costingWorkbenchPageContent, /tab-index/)
     assert.match(costingWorkbenchPageContent, /tabBadgeLabel\(tab\)/)
     assert.match(costingWorkbenchPageContent, /tabBadgeType\(tab\)/)
-    assert.match(costingWorkbenchPageContent, /currentSuccessVersion\.value\?\.id && versionNo\) return `核算成功/)
+    assert.match(costingWorkbenchPageContent, /currentSuccessVersion\.value\?\.id && versionNo\) return '核算成功'/)
     assert.match(costingWorkbenchPageContent, /if \(currentSuccessVersion\.value\?\.id\) return 'success'/)
     assert.doesNotMatch(costingWorkbenchPageContent, /workflow-strip/)
     assert.doesNotMatch(costingWorkbenchPageContent, /当前处理/)

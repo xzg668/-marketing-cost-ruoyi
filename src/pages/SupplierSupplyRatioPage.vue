@@ -6,7 +6,7 @@
         <p>基础数据 / 供应关系</p>
       </div>
       <div class="toolbar-actions">
-        <el-button :icon="Upload" @click="openImportDialog">导入 Excel</el-button>
+        <el-button v-hasPermi="['base:supplier-supply-ratio:import']" :icon="Upload" @click="openImportDialog">导入 Excel</el-button>
         <el-button type="primary" :icon="RefreshRight" @click="fetchRows">刷新</el-button>
       </div>
     </section>
@@ -33,6 +33,12 @@
               :label="option.label"
               :value="option.value"
             />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="状态">
+          <el-select v-model="filters.isActive" style="width: 120px">
+            <el-option label="当前有效" :value="1" />
+            <el-option label="历史失效" :value="0" />
           </el-select>
         </el-form-item>
         <el-form-item class="query-actions">
@@ -64,14 +70,20 @@
           </template>
         </el-table-column>
         <el-table-column prop="sourceBatchNo" label="批次" min-width="170" show-overflow-tooltip />
+        <el-table-column prop="importedAt" label="导入时间" width="170" />
+        <el-table-column label="状态" width="90">
+          <template #default="{ row }">
+            <el-tag :type="row.isActive === 1 ? 'success' : 'info'">{{ row.isActive === 1 ? '有效' : '失效' }}</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="updatedAt" label="更新时间" width="170" />
         <el-table-column label="操作" width="130" fixed="right">
           <template #default="{ row }">
-            <el-button v-hasPermi="['base:supplier-supply-ratio:edit']" type="primary" link @click="openEdit(row)">
+            <el-button v-if="row.isActive === 1" v-hasPermi="['base:supplier-supply-ratio:edit']" type="primary" link @click="openEdit(row)">
               编辑
             </el-button>
-            <el-button v-hasPermi="['base:supplier-supply-ratio:remove']" type="danger" link @click="removeRow(row)">
-              删除
+            <el-button v-if="row.isActive === 1" v-hasPermi="['base:supplier-supply-ratio:remove']" type="danger" link @click="removeRow(row)">
+              停用
             </el-button>
           </template>
         </el-table-column>
@@ -87,65 +99,7 @@
       />
     </section>
 
-    <el-dialog v-model="importDialogVisible" title="导入供应商供货比例" width="720px">
-      <div class="import-panel">
-        <el-alert
-          title="导入去重口径：业务单元 + 物料代码 + 供应商。重复导入同一业务键会更新已有行。"
-          type="info"
-          show-icon
-          :closable="false"
-        />
-        <el-upload
-          class="ratio-upload"
-          drag
-          :auto-upload="false"
-          :show-file-list="false"
-          accept=".xlsx,.xls"
-          :on-change="handleUploadChange"
-        >
-          <el-icon class="upload-icon"><UploadFilled /></el-icon>
-          <div class="upload-title">拖拽或点击选择 Excel</div>
-          <div class="upload-tip">支持 .xls / .xlsx</div>
-        </el-upload>
-        <div v-if="uploadFileName" class="selected-file">
-          <el-icon><Document /></el-icon>
-          <span :title="uploadFileName">{{ uploadFileName }}</span>
-        </div>
-        <section v-if="importResult" class="import-result">
-          <div class="result-metrics">
-            <div><span>总行数</span><strong>{{ importResult.totalRows || 0 }}</strong></div>
-            <div><span>新增</span><strong>{{ importResult.insertedRows || 0 }}</strong></div>
-            <div><span>更新</span><strong>{{ importResult.updatedRows || 0 }}</strong></div>
-            <div><span>跳过</span><strong>{{ importResult.skippedRows || 0 }}</strong></div>
-            <div><span>错误</span><strong>{{ importResult.errorRows || 0 }}</strong></div>
-          </div>
-          <div class="batch-line">批次：{{ importResult.batchNo || '-' }}</div>
-          <el-table
-            v-if="Array.isArray(importResult.errors) && importResult.errors.length"
-            :data="errorRows"
-            border
-            size="small"
-            max-height="220"
-          >
-            <el-table-column prop="index" label="#" width="60" />
-            <el-table-column prop="message" label="错误明细" min-width="420" show-overflow-tooltip />
-          </el-table>
-        </section>
-      </div>
-      <template #footer>
-        <el-button @click="importDialogVisible = false">关闭</el-button>
-        <el-button
-          v-hasPermi="['base:supplier-supply-ratio:import']"
-          type="primary"
-          :icon="DocumentChecked"
-          :disabled="!uploadFile"
-          :loading="importing"
-          @click="submitImport"
-        >
-          导入
-        </el-button>
-      </template>
-    </el-dialog>
+    <SupplierSupplyRatioImportDialog v-model="importDialogVisible" @imported="onRatioImported" />
 
     <el-dialog v-model="editDialogVisible" title="编辑供货比例" width="560px">
       <el-form :model="editForm" label-width="96px">
@@ -170,7 +124,7 @@
         <el-form-item label="形态属性">
           <el-input v-model="editForm.materialShape" clearable />
         </el-form-item>
-        <el-form-item label="供货比例" required>
+        <el-form-item label="供货比例">
           <el-input-number
             v-model="editForm.supplyRatioPercent"
             :min="0"
@@ -198,23 +152,20 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  Document,
-  DocumentChecked,
   RefreshLeft,
   RefreshRight,
   Search,
   Upload,
-  UploadFilled,
 } from '@element-plus/icons-vue'
 import BasePagination from '../components/BasePagination.vue'
-import { getCmsCostUploadFile, getCmsCostUploadFileName, validateCmsCostFile } from '../api/cmsCost'
+import SupplierSupplyRatioImportDialog from '../components/SupplierSupplyRatioImportDialog.vue'
+import { decimalToPercent, percentToDecimal, formatPercent } from '../utils/supplierSupplyRatio'
 import {
   deleteSupplierSupplyRatio,
   fetchSupplierSupplyRatios,
-  importSupplierSupplyRatioExcel,
   normalizeSupplierSupplyRatioPage,
   updateSupplierSupplyRatio,
 } from '../api/supplierSupplyRatios'
@@ -231,6 +182,7 @@ const filters = reactive({
   specModel: '',
   supplierName: '',
   sourceType: '',
+  isActive: 1,
 })
 const tableRows = ref([])
 const total = ref(0)
@@ -239,11 +191,6 @@ const pageSize = ref(20)
 const loading = ref(false)
 
 const importDialogVisible = ref(false)
-const uploadFile = ref(null)
-const uploadFileName = ref('')
-const importing = ref(false)
-const importResult = ref(null)
-
 const editDialogVisible = ref(false)
 const saving = ref(false)
 const editingId = ref(null)
@@ -255,17 +202,10 @@ const editForm = reactive({
   supplierCode: '',
   unit: '',
   materialShape: '',
-  supplyRatioPercent: 0,
+  supplyRatioPercent: null,
   effectiveFrom: '',
   effectiveTo: '',
 })
-
-const errorRows = computed(() =>
-  (importResult.value?.errors || []).map((message, index) => ({
-    index: index + 1,
-    message,
-  }))
-)
 
 function sourceTagType(value) {
   return SOURCE_TYPE_OPTIONS.find((option) => option.value === value)?.tag || ''
@@ -278,6 +218,7 @@ function queryParams() {
     specModel: filters.specModel.trim(),
     supplierName: filters.supplierName.trim(),
     sourceType: filters.sourceType,
+    isActive: filters.isActive,
     page: currentPage.value,
     pageSize: pageSize.value,
   }
@@ -307,6 +248,7 @@ function resetFilters() {
   filters.specModel = ''
   filters.supplierName = ''
   filters.sourceType = ''
+  filters.isActive = 1
   applyFilters()
 }
 
@@ -314,37 +256,10 @@ function openImportDialog() {
   importDialogVisible.value = true
 }
 
-function handleUploadChange(file) {
-  const raw = getCmsCostUploadFile(file)
-  const validation = validateCmsCostFile(raw)
-  if (!validation.valid) {
-    ElMessage.warning(validation.message)
-    uploadFile.value = null
-    uploadFileName.value = ''
-    return
-  }
-  uploadFile.value = raw
-  uploadFileName.value = getCmsCostUploadFileName(raw)
-  importResult.value = null
-}
-
-async function submitImport() {
-  if (!uploadFile.value) {
-    ElMessage.warning('请先选择供应商供货比例 Excel')
-    return
-  }
-  importing.value = true
-  try {
-    // 当前 Excel 导入按“业务单元+物料代码+供应商”在后端做幂等 upsert，前端只负责传原始文件。
-    importResult.value = await importSupplierSupplyRatioExcel({ file: uploadFile.value })
-    ElMessage.success('供应商供货比例导入完成')
-    currentPage.value = 1
-    fetchRows()
-  } catch (error) {
-    ElMessage.error(error.message || '供应商供货比例导入失败')
-  } finally {
-    importing.value = false
-  }
+function onRatioImported() {
+  filters.isActive = 1
+  currentPage.value = 1
+  fetchRows()
 }
 
 function openEdit(row) {
@@ -364,10 +279,6 @@ function openEdit(row) {
 
 async function submitEdit() {
   if (!editingId.value) {
-    return
-  }
-  if (editForm.supplyRatioPercent === null || editForm.supplyRatioPercent === undefined) {
-    ElMessage.warning('供货比例不能为空')
     return
   }
   saving.value = true
@@ -393,35 +304,16 @@ async function submitEdit() {
 async function removeRow(row) {
   try {
     await ElMessageBox.confirm(
-      `确认删除 ${row.materialCode || ''} / ${row.supplierName || ''} 的供货比例？`,
-      '删除供货比例',
+      `确认停用 ${row.materialCode || ''} / ${row.supplierName || ''}？原记录将保留在历史数据中。`,
+      '停用供货比例',
       { type: 'warning' }
     )
   } catch (error) {
     return
   }
   await deleteSupplierSupplyRatio(row.id)
-  ElMessage.success('供货比例已删除')
+  ElMessage.success('供货比例已停用，历史记录已保留')
   fetchRows()
-}
-
-function decimalToPercent(value) {
-  const number = Number(value)
-  return Number.isFinite(number) ? Number((number * 100).toFixed(2)) : 0
-}
-
-function percentToDecimal(value) {
-  // 后端统一保存 decimal：页面 60% 对应传 0.600000，避免导入和手工编辑口径不一致。
-  const number = Number(value)
-  return Number.isFinite(number) ? Number((number / 100).toFixed(6)) : 0
-}
-
-function formatPercent(value) {
-  const number = Number(value)
-  if (!Number.isFinite(number)) {
-    return '-'
-  }
-  return `${(number * 100).toFixed(2)}%`
 }
 
 watch([currentPage, pageSize], fetchRows)
@@ -498,95 +390,6 @@ onMounted(fetchRows)
   font-weight: 600;
 }
 
-.import-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.ratio-upload :deep(.el-upload) {
-  width: 100%;
-}
-
-.ratio-upload :deep(.el-upload-dragger) {
-  width: 100%;
-  padding: 24px 16px;
-  border-radius: 8px;
-}
-
-.upload-icon {
-  color: #3b82f6;
-  font-size: 34px;
-}
-
-.upload-title {
-  margin-top: 6px;
-  color: #1f2937;
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.upload-tip {
-  margin-top: 4px;
-  color: #64748b;
-  font-size: 12px;
-}
-
-.selected-file {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  color: #475569;
-  font-size: 13px;
-}
-
-.selected-file span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.import-result {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.result-metrics {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.result-metrics div {
-  min-width: 0;
-  padding: 10px;
-  border: 1px solid #e3e8f0;
-  border-radius: 8px;
-  background: #f8fafc;
-}
-
-.result-metrics span {
-  display: block;
-  color: #64748b;
-  font-size: 12px;
-}
-
-.result-metrics strong {
-  display: block;
-  margin-top: 4px;
-  color: #111827;
-  font-size: 20px;
-  font-weight: 700;
-  line-height: 1.1;
-}
-
-.batch-line {
-  color: #475569;
-  font-size: 13px;
-}
-
 .percent-unit {
   margin-left: 8px;
   color: #64748b;
@@ -611,8 +414,5 @@ onMounted(fetchRows)
     margin-left: 0;
   }
 
-  .result-metrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 </style>

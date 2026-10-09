@@ -10,9 +10,10 @@ export function normalizeSupplierSupplyRatioPage(response) {
   }
 }
 
-export function toSupplierSupplyRatioFormData({ file, businessUnitType = '' }) {
+export function toSupplierSupplyRatioFormData({ file, businessUnitType = '', sheetName = '' }) {
   const formData = new FormData()
   formData.append('file', file)
+  if (sheetName) formData.append('sheetName', sheetName)
   // 预留业务单元参数，后续 SRM 同步或多事业部导入时保持同一接口口径。
   if (businessUnitType) {
     formData.append('businessUnitType', businessUnitType)

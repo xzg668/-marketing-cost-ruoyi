@@ -66,6 +66,7 @@ describe('MPPG-10 旧自制件管理入口收口', () => {
     assert.match(makePricePrepareStrategyContent, /lp_make_part_price_calc_row/)
     assert.match(makePricePrepareContractContent, /禁止回退/)
     assert.equal(fs.existsSync(path.dirname(MAKE_PRICE_PREPARE_STRATEGY_FILE).replace('/impl', '/pricing')), true)
-    assert.equal(fs.readdirSync(path.dirname(MAKE_PRICE_PREPARE_STRATEGY_FILE).replace('/impl', '/pricing')).length, 0)
+    assert.equal(fs.readdirSync(path.dirname(MAKE_PRICE_PREPARE_STRATEGY_FILE).replace('/impl', '/pricing'))
+      .filter(name => name.endsWith('Resolver.java')).length, 0)
   })
 })

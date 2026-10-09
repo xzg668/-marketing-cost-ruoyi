@@ -133,6 +133,10 @@
         <span><small>核算月份</small><strong>{{ displayedPeriodMonth }}</strong></span>
         <span><small>{{ historyViewMode ? '历史部品行数' : 'BOM 行数' }}</small><strong>{{ historyViewMode ? costPartRows.length : bomRows.length }}</strong></span>
         <span><small>整体状态</small><strong>{{ historyViewMode ? '历史结果' : tabStatusLabel(workbench.workflowStatus?.overallStatus) }}</strong></span>
+        <span v-if="displayedCostVersion.id" class="workspace-version">
+          <small>成本版本</small>
+          <strong>{{ displayedCostVersion.displayVersionNo || displayedCostVersion.versionNo || displayedCostVersion.costRunNo }}</strong>
+        </span>
       </div>
 
       <el-tabs v-model="activeTab" class="costing-tabs" :before-leave="beforeWorkbenchTabLeave">
@@ -142,9 +146,9 @@
               <span class="tab-index">{{ index + 1 }}</span>
               <span class="tab-copy">
                 <span class="tab-name">{{ tab.name }}</span>
-                <el-tag class="tab-state" size="small" effect="plain" :type="tabBadgeType(tab)">
+                <span class="tab-state" :class="`tab-state--${tabBadgeType(tab)}`">
                   {{ tabBadgeLabel(tab) }}
-                </el-tag>
+                </span>
               </span>
             </span>
           </template>
@@ -509,7 +513,9 @@
             </el-table>
           </div>
 
-          <div v-else-if="isPriceSourceSupplementTab(tab.code)" class="price-source-tab" v-loading="pricePrepareLoading">
+          <div v-else-if="isPriceSourceSupplementTab(tab.code)" class="price-source-tab"
+            v-loading="pricePrepareLoading || costRunActionLoading"
+            :element-loading-text="costRunActionLoading ? '正在检查资料并核算…' : '正在读取价格…'">
             <div class="action-panel">
               <div>
                 <h2>价格源维护</h2>
@@ -525,16 +531,25 @@
                   {{ pricePrepareActionLoading || autoPriceSourceChecking ? '自动检查中' : '自动检查价格源' }}
                 </el-button>
                 <el-button
-                  v-else
+                  v-else-if="priceSourceGapSummary.total > 0"
                   type="primary"
-                  :disabled="isBlockedTab(tab) || priceSourceGapSummary.total === 0"
-                  @click="openPriceSource(pricePrepareGaps[0])"
+                  :disabled="isBlockedTab(tab)"
+                  @click="openPriceSource(sourceMaintenanceGaps[0])"
                 >
                   去维护价格源
                 </el-button>
               </div>
             </div>
 
+            <SupplierPriceReviewPanel
+              :oa-no="oaNo"
+              :item-id="itemId"
+              :period-month="workbench.periodMonth"
+              :reviews="pricePrepare.supplierPriceReviews || []"
+              :prepare-no="pricePrepare.oaScenario?.batch?.prepareNo || ''"
+              :readonly="historyViewMode || costRunActionLoading"
+              @updated="completePriceSourceMaintenance"
+            />
             <section v-if="technicalPriceCorrection?.items?.length" class="technical-price-correction">
               <el-alert type="warning" :closable="false" :title="`本产品有 ${technicalPriceCorrection.items.length} 项自行公式尚未形成可用价格，请下载修正后导入。`" />
               <p class="technical-price-correction__help">下载技术员填写的公式后，报价员按联动价模板整理“联动价-部品6”和“影响因素10”两个业务 Sheet，核对公式与影响因素绑定，再预检、导入。请保留下载文件中的“补录说明”Sheet；只有导入后确认取价可用，才能继续核算。</p>
@@ -547,7 +562,7 @@
                 <el-button v-hasPermi="['price:linked-item:import']" type="primary" :disabled="historyViewMode" @click="openTechnicalPriceImport">导入修正结果</el-button>
               </div>
             </section>
-            <div class="source-gap-cards">
+            <div v-if="sourceMaintenanceGaps.length" class="source-gap-cards">
               <div class="source-gap-card">
                 <span>待补价格源</span>
                 <strong>{{ priceSourceGapSummary.total }}</strong>
@@ -600,7 +615,8 @@
             />
 
             <el-table
-              :data="pricePrepareGaps"
+              :data="sourceMaintenanceGaps"
+              v-if="sourceMaintenanceGaps.length"
               border
               stripe
               scrollbar-always-on
@@ -1155,6 +1171,8 @@ import {
   formatSnapshotDecimal,
 } from './quoteCuCostingUtils'
 
+import SupplierPriceReviewPanel from '../components/SupplierPriceReviewPanel.vue'
+
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
@@ -1402,8 +1420,9 @@ const visiblePricePrepareDifferences = computed(() => onlyDifferentPricePrepare.
 const pricePrepareDifferenceSummary = computed(() => pricePrepare.value.differenceSummary || {})
 const oaCuPricePerKg = computed(() => normalizeCuPricePerKg(header.value.copperPrice))
 const pricePrepareGaps = computed(() => Array.isArray(pricePrepare.value.gaps?.records) ? pricePrepare.value.gaps.records : [])
+const sourceMaintenanceGaps = computed(() => pricePrepareGaps.value.filter(row => row.reasonCode !== 'SUPPLIER_RATIO_REVIEW_REQUIRED'))
 const priceSourceGapSummary = computed(() => {
-  const rows = pricePrepareGaps.value || []
+  const rows = sourceMaintenanceGaps.value
   return {
     total: rows.length,
     fixed: rows.filter((row) => priceSourceGapKind(row) === 'FIXED').length,
@@ -1903,6 +1922,21 @@ async function loadPriceType(showError = true) {
   }
 }
 
+// 补价返回、供货比率导入和人工确认共用此入口；普通查询、刷新不触发核算。
+async function completePriceSourceMaintenance(result) {
+  if (historyViewMode.value || costRunActionLoading.value
+    || result?.oaNo !== oaNo.value || String(result?.oaFormItemId) !== itemId.value
+    || result?.periodMonth !== workbench.value.periodMonth) return
+  pricePrepare.value = result
+  if (result.readiness?.status === 'READY') {
+    await submitProductCosting()
+    return
+  }
+  await loadWorkbench({ resetTab: false, loadChildren: false })
+  await loadCostRun(false)
+  activeTab.value = 'PRICE_SOURCE_SUPPLEMENT'
+}
+
 async function loadPricePrepare(showError = true) {
   if (!oaNo.value || !itemId.value) return
   pricePrepareLoading.value = true
@@ -2166,7 +2200,7 @@ async function generatePricePrepare(successText = '最终价格已生成') {
   }
 }
 
-async function runPriceSourceCheck(successText = '价格源已自动检查') {
+async function runPriceSourceCheck(successText = '价格源已自动检查', refreshCandidates = false) {
   if (pricePrepareActionLoading.value || autoPriceSourceChecking.value) {
     return false
   }
@@ -2174,9 +2208,10 @@ async function runPriceSourceCheck(successText = '价格源已自动检查') {
   try {
     pricePrepare.value = await checkQuotePriceSources(oaNo.value, itemId.value, {
       periodMonth: workbench.value.periodMonth,
+      refreshCandidates,
     })
     if (successText) ElMessage.success(successText)
-    return true
+    return pricePrepare.value
   } catch (error) {
     ElMessage.error(error?.message || '检查价格源失败')
     return false
@@ -2199,7 +2234,7 @@ function priceSourceAutoCheckKey() {
 
 async function ensurePriceSourceChecked() {
   if (activeTab.value !== 'PRICE_SOURCE_SUPPLEMENT') return
-  if (route.query.refreshPriceSource === '1') return
+  if (route.query.refreshPriceSource === '1' || returnPriceSourceRefreshing.value || costRunActionLoading.value) return
   const tab = currentPriceSourceTab()
   if (isBlockedTab(tab)) return
   const checkKey = priceSourceAutoCheckKey()
@@ -2229,9 +2264,10 @@ async function refreshPriceSourceFromReturn() {
   await router.replace({ path: route.path, query }).catch(() => {})
   try {
     autoPriceSourceCheckedKey.value = ''
-    const checked = await runPriceSourceCheck('价格源已自动刷新')
-    if (checked) {
+    const result = await runPriceSourceCheck('', true)
+    if (result) {
       autoPriceSourceCheckedKey.value = priceSourceAutoCheckKey()
+      await completePriceSourceMaintenance(result)
     }
   } finally {
     returnPriceSourceRefreshing.value = false
@@ -2377,6 +2413,9 @@ async function submitNoScrapConfirm() {
 function priceSourceSupplementText(tab) {
   if (isBlockedTab(tab)) {
     return tab.blockedReason || '请先补齐缺失的价格类型，系统才能判断需要补充哪类价格源'
+  }
+  if (pricePrepare.value.supplierPriceReviews?.some(row => row.status !== 'FALLBACK_HIGH')) {
+    return '请确认是否有供货比率新增审核，价格补齐后自动继续核算'
   }
   if (priceSourceGapSummary.value.total > 0) {
     return '请根据缺口行的价格类型维护对应价格源'
@@ -2530,6 +2569,7 @@ function canConfirmNoScrap(row) {
 }
 
 async function submitProductCosting(reason = 'USER_REQUEST') {
+  if (costRunActionLoading.value || historyViewMode.value) return
   if (costRunRepriceLocked.value) {
     ElMessage.warning(activeRepriceLock.value.message || '当前业务单元正在月度调价，暂不能发起成本核算')
     return
@@ -2540,13 +2580,14 @@ async function submitProductCosting(reason = 'USER_REQUEST') {
     const outcome = reason === 'USER_REQUEST'
       ? await materials.submit({ itemId: Number(itemId.value), periodMonth: workbench.value.periodMonth }) : null
     if (reason === 'USER_REQUEST' && !outcome) return
-    const result = reason === 'USER_REQUEST' ? outcome?.product
+    const result = reason === 'USER_REQUEST'
+      ? outcome.product || outcome.checks?.find(check => String(check.oaFormItemId) === itemId.value)
       : await submitQuoteProductCostRun(oaNo.value, itemId.value, { periodMonth: workbench.value.periodMonth, reason })
+    await loadWorkbench({ resetTab: false, loadChildren: true })
     if (outcome && !result) {
       ElMessage.warning(outcome.preparation.message)
       return
     }
-    await loadWorkbench({ resetTab: false, loadChildren: true })
     if (result?.pipelineStatus === 'SUCCESS') {
       localWorkflowGuideText.value = ''
       activeTab.value = 'COST_RUN'
@@ -2783,7 +2824,7 @@ function tabBadgeLabel(tab) {
     if (hasRunningCostVersion.value && versionNo) return '正在重新核算'
     if (hasRunningCostVersion.value) return '正在核算'
     // 成本版本是最终事实来源。旧工作流步骤可能仍为 PENDING，不能把已有当前成功版本误标成待核算。
-    if (currentSuccessVersion.value?.id && versionNo) return `核算成功 ${versionNo}`
+    if (currentSuccessVersion.value?.id && versionNo) return '核算成功'
     if (isBlockedTab(tab)) return '未就绪'
     return '待核算'
   }
@@ -3090,7 +3131,7 @@ onMounted(() => initializeWorkbench())
   display: flex;
   flex-direction: column;
   gap: 12px;
-  min-width: 1180px;
+  min-width: 0;
   color: #2f343d;
 }
 
@@ -3249,65 +3290,77 @@ onMounted(() => initializeWorkbench())
   font-weight: 650;
 }
 
+.workspace-version strong {
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
 .costing-tabs {
   padding: 0 18px 18px;
   background: #ffffff;
 }
 
-.costing-tabs :deep(.el-tabs__header) {
+.costing-tabs > :deep(.el-tabs__header) {
   margin: 0 -18px 18px;
   padding: 0 18px;
   border-bottom: 1px solid #e4e9f1;
   background: #ffffff;
 }
 
-.costing-tabs :deep(.el-tabs__nav-prev),
-.costing-tabs :deep(.el-tabs__nav-next) {
+.costing-tabs > :deep(.el-tabs__header .el-tabs__nav-prev),
+.costing-tabs > :deep(.el-tabs__header .el-tabs__nav-next) {
   display: none;
 }
 
-.costing-tabs :deep(.el-tabs__nav-scroll) {
+.costing-tabs > :deep(.el-tabs__header .el-tabs__nav-scroll) {
   overflow-x: auto;
   scrollbar-width: none;
 }
 
-.costing-tabs :deep(.el-tabs__nav-wrap::after) {
+.costing-tabs > :deep(.el-tabs__header .el-tabs__nav-wrap) {
+  padding: 0;
+}
+
+.costing-tabs > :deep(.el-tabs__header .el-tabs__nav-wrap::after) {
   display: none;
 }
 
-.costing-tabs :deep(.el-tabs__nav) {
+.costing-tabs > :deep(.el-tabs__header .el-tabs__nav) {
   display: grid;
   grid-template-columns: repeat(6, minmax(170px, 1fr));
   width: 100%;
   min-width: 1020px;
+  box-sizing: border-box;
   border: 1px solid #e4e9f1;
   border-radius: 9px;
   background: #f8fafc;
   overflow: hidden;
 }
 
-.costing-tabs :deep(.el-tabs__active-bar) {
+.costing-tabs > :deep(.el-tabs__header .el-tabs__active-bar) {
   display: none;
 }
 
-.costing-tabs :deep(.el-tabs__item) {
-  height: 64px;
-  padding: 0 14px;
+.costing-tabs > :deep(.el-tabs__header .el-tabs__item) {
+  justify-content: flex-start;
+  min-width: 0;
+  height: 72px;
+  padding: 0 16px;
   border-right: 1px solid #e4e9f1;
   color: #475467;
   transition: background-color 0.16s ease, color 0.16s ease;
 }
 
-.costing-tabs :deep(.el-tabs__item:last-child) {
+.costing-tabs > :deep(.el-tabs__header .el-tabs__item:last-child) {
   border-right: 0;
 }
 
-.costing-tabs :deep(.el-tabs__item:hover) {
+.costing-tabs > :deep(.el-tabs__header .el-tabs__item:hover) {
   color: #2563a8;
   background: #f3f7fc;
 }
 
-.costing-tabs :deep(.el-tabs__item.is-active) {
+.costing-tabs > :deep(.el-tabs__header .el-tabs__item.is-active) {
   color: #1f66b1;
   background: #eef6ff;
 }
@@ -3335,7 +3388,7 @@ onMounted(() => initializeWorkbench())
   font-weight: 700;
 }
 
-.costing-tabs :deep(.el-tabs__item.is-active) .tab-index {
+.costing-tabs > :deep(.el-tabs__header .el-tabs__item.is-active) .tab-index {
   border-color: #2f7dcc;
   color: #ffffff;
   background: #2f7dcc;
@@ -3345,7 +3398,7 @@ onMounted(() => initializeWorkbench())
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 5px;
+  gap: 7px;
   min-width: 0;
 }
 
@@ -3358,7 +3411,33 @@ onMounted(() => initializeWorkbench())
 }
 
 .tab-state {
-  max-width: 120px;
+  max-width: 100%;
+  overflow: hidden;
+  color: #667085;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab-state--success { color: #32805c; }
+.tab-state--warning { color: #9a6b1a; }
+.tab-state--danger { color: #bd4545; }
+
+@media (max-width: 1280px) {
+  .costing-tabs > :deep(.el-tabs__header .el-tabs__nav) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    min-width: 0;
+  }
+
+  .costing-tabs > :deep(.el-tabs__header .el-tabs__item:nth-last-child(3n + 1)) {
+    border-right: 0;
+  }
+
+  .costing-tabs > :deep(.el-tabs__header .el-tabs__item:nth-last-child(-n + 3)) {
+    border-top: 1px solid #e4e9f1;
+  }
 }
 
 .tab-toolbar,
@@ -3955,10 +4034,6 @@ onMounted(() => initializeWorkbench())
 }
 
 @media (max-width: 860px) {
-  .costing-page {
-    min-width: 0;
-  }
-
   .page-head,
   .tab-toolbar,
   .action-panel,
