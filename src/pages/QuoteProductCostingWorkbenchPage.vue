@@ -1179,7 +1179,9 @@ const userStore = useUserStore()
 
 const oaNo = computed(() => String(route.params.oaNo || ''))
 const itemId = computed(() => String(route.params.itemId || ''))
-const materials = useQuoteCostingPreparation(oaNo, {
+// 返回报价单时路由会先清空产品编号，停止产品范围的资料查询。
+const preparationOaNo = computed(() => itemId.value ? oaNo.value : '')
+const materials = useQuoteCostingPreparation(preparationOaNo, {
   fetch: (number) => fetchQuoteCostingPreparation(number, { itemId: Number(itemId.value) }),
   submit: prepareQuoteCosting,
 }, computed(() => `${oaNo.value}:${itemId.value}`))
