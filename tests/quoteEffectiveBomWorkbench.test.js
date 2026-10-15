@@ -18,7 +18,7 @@ describe('QEB-14 核算工作台最终有效 BOM 接入', () => {
 
   it('第 1 步只展示本次计价树、必要规则证据和替代选择', () => {
     assert.match(pageContent, /本次计价 BOM/)
-    assert.match(pageContent, /计价物料树/)
+    assert.match(pageContent, /class="effective-bom-tree"/)
     assert.match(pageContent, /effectiveBomStateInfo/)
     assert.match(pageContent, /选择计价方案/)
     assert.doesNotMatch(pageContent, /确认产品明细并生成计价 BOM/)

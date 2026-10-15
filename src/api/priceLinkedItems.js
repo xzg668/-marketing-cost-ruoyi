@@ -36,6 +36,7 @@ export const importLinkedItemsExcel = (file, pricingMonth, options = {}) => {
   if (options.previewFileSha256) {
     form.append('previewFileSha256', options.previewFileSha256)
   }
+  if (options.previewFingerprint) form.append('previewFingerprint', options.previewFingerprint)
   return request('/api/v1/price-linked/items/import-excel', {
     method: 'POST',
     body: form,
@@ -74,11 +75,8 @@ const buildLinkedItemsExcelForm = (file, pricingMonth, options = {}) => {
   return form
 }
 
-export const fetchLinkedImportHistory = (params) =>
-  request('/api/v1/price-linked/items/import-history', { params })
-
-export const fetchLinkedImportBatchDetail = (batchId) =>
-  request(`/api/v1/price-linked/items/import-history/${batchId}`)
+export const fetchLinkedImportedFiles = (params) =>
+  request('/api/v1/price-linked/items/imported-files', { params, suppressErrorToast: true })
 
 /**
  * T19：查询单条联动计算结果的 trace JSON（T16）—— 404 的情况由 errorHandler 统一提示。

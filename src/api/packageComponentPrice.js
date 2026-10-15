@@ -15,7 +15,7 @@ export const PACKAGE_SNAPSHOT_STATUS_OPTIONS = [
 
 export const PACKAGE_GAP_TYPE_OPTIONS = [
   { value: 'MISSING_STRUCTURE', label: '缺结构', tag: 'danger' },
-  { value: 'MISSING_ROUTE', label: '缺价格类型', tag: 'warning' },
+  { value: 'MISSING_ROUTE', label: '暂无候选来源', tag: 'warning' },
   { value: 'MISSING_PRICE', label: '缺价格', tag: 'danger' },
 ]
 

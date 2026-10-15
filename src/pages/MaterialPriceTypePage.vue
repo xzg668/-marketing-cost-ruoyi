@@ -1,120 +1,88 @@
 <template>
   <div class="base-page">
-    <el-card shadow="never" class="filter-card">
-      <div class="filter-header">
-        <div class="filter-title">物料价格类型对照表</div>
-        <div class="filter-actions">
-          <el-button v-if="returnToWorkbenchVisible" @click="returnToWorkbench">
-            返回核算工作台
-          </el-button>
-          <el-upload
-            class="upload-btn"
-            :show-file-list="false"
-            :auto-upload="false"
-            accept=".xlsx,.xls,.csv"
-            :on-change="handleFileChange"
-          >
-            <el-button :loading="importing">导入</el-button>
-          </el-upload>
-          <el-button type="primary" @click="openCreate">新增</el-button>
-        </div>
+    <el-card shadow="never">
+      <div class="page-heading">
+        <h2>物料价格类型对照</h2>
+        <el-button v-if="returnToWorkbenchVisible" @click="returnToWorkbench">返回核算工作台</el-button>
       </div>
-      <el-form :inline="true" label-width="90px">
-        <el-form-item label="物料代码">
-          <el-input v-model="filters.materialCode" placeholder="201800082" />
+      <el-form :inline="true" @submit.prevent="applyFilters">
+        <el-form-item label="月份">
+          <el-date-picker v-model="filters.period" type="month" value-format="YYYY-MM" :clearable="false" />
         </el-form-item>
-        <el-form-item label="价格类型">
-          <el-select v-model="filters.priceType" placeholder="全部">
-            <el-option label="全部" value="" />
-            <el-option label="联动价" value="联动价" />
-            <el-option label="固定价" value="固定价" />
-            <el-option label="结算固定价" value="结算固定价" />
-            <el-option label="区间价" value="区间价" />
-            <el-option label="自制件" value="自制件" />
-          </el-select>
+        <el-form-item label="取价组织">
+          <el-input v-model="filters.priceOrgCode" placeholder="全部组织" clearable />
+        </el-form-item>
+        <el-form-item label="料号">
+          <el-input v-model="filters.materialCode" placeholder="输入料号" clearable />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="applyFilters">查询</el-button>
+          <el-button type="primary" native-type="submit">查询</el-button>
           <el-button @click="resetFilters">重置</el-button>
         </el-form-item>
       </el-form>
+      <p class="hint">结算联动价暂无数据，查不到时继续下一项。</p>
     </el-card>
 
     <el-card shadow="never">
-      <el-table :data="tableRows" stripe v-loading="loading">
-        <el-table-column prop="rowNo" label="行号" width="80" />
-        <el-table-column prop="materialCode" label="物料代码" width="150" />
-        <el-table-column prop="materialName" label="物料名称" min-width="160" />
-        <el-table-column prop="materialModel" label="型号" min-width="160" />
-        <el-table-column prop="unit" label="单位" width="80" />
-        <el-table-column prop="materialShape" label="物料形态属性" width="120" />
-        <el-table-column prop="categoryCode" label="主分类编码" width="120" />
-        <el-table-column prop="categoryName" label="主分类名称" width="140" />
-        <el-table-column prop="priceType" label="价格类型" width="120" />
-        <el-table-column prop="updatedAt" label="更新时间" width="160" />
-        <el-table-column label="操作" width="140" fixed="right">
+      <el-alert v-if="listError" :title="listError" type="error" :closable="false" show-icon />
+      <el-table v-loading="loading" :data="tableRows" row-key="id" stripe>
+        <el-table-column label="料号" min-width="140">
+          <template #default="{ row }">{{ row.configuration.scope.materialCode }}</template>
+        </el-table-column>
+        <el-table-column prop="materialName" label="名称" min-width="140" />
+        <el-table-column label="组织" width="85">
+          <template #default="{ row }">{{ row.configuration.scope.priceOrgCode }}</template>
+        </el-table-column>
+        <el-table-column label="月份" width="100">
+          <template #default="{ row }">{{ row.configuration.scope.period }}</template>
+        </el-table-column>
+        <el-table-column label="取价顺序" min-width="330">
           <template #default="{ row }">
-            <el-button type="primary" link @click="openEdit(row)">
-              编辑
-            </el-button>
-            <el-button type="danger" link @click="removeRow(row)">
-              删除
-            </el-button>
+            <div>{{ row.configuration.order.map(item => priceTypeLabel(item.type)).join(' → ') }}</div>
+            <span class="hint">{{ row.configuration.manual ? '财务调整' : '系统默认' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="最近取价" min-width="190">
+          <template #default="{ row }">
+            <template v-if="row.latestPriceSource">
+              <div>{{ priceTypeLabel(row.latestPriceSource) }}</div>
+              <div class="hint">{{ row.latestOaNo }} · {{ formatTime(row.latestResolvedAt) }}</div>
+              <el-tag v-if="!row.currentPriorityApplied" size="small" type="warning">需重新准备</el-tag>
+            </template>
+            <span v-else class="hint">尚未取价</span>
+          </template>
+        </el-table-column>
+        <el-table-column v-if="canEdit" label="操作" width="170" fixed="right">
+          <template #default="{ row }">
+            <el-button type="primary" link :disabled="saving" @click="openEdit(row)">调整顺序</el-button>
+            <el-button link :disabled="saving || !row.configuration.manual" @click="restoreDefault(row)">恢复默认</el-button>
           </template>
         </el-table-column>
         <template #empty>
-          <el-empty description="暂无数据" />
+          <el-empty :description="listError ? '查询失败，请重试' : '暂无对照，报价准备后生成'" />
         </template>
       </el-table>
-      <BasePagination
-        v-model:current-page="currentPage"
-        v-model:page-size="pageSize"
-        :total="total"
-      />
+      <BasePagination v-model:current-page="currentPage" v-model:page-size="pageSize" :total="total" />
     </el-card>
 
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="520px">
-      <el-form :model="formModel" label-width="90px">
-        <el-form-item label="行号">
-          <el-input v-model="formModel.rowNo" />
-        </el-form-item>
-        <el-form-item label="物料代码">
-          <el-input v-model="formModel.materialCode" />
-        </el-form-item>
-        <el-form-item label="物料名称">
-          <el-input v-model="formModel.materialName" />
-        </el-form-item>
-        <el-form-item label="型号">
-          <el-input v-model="formModel.materialModel" />
-        </el-form-item>
-        <el-form-item label="单位">
-          <el-input v-model="formModel.unit" />
-        </el-form-item>
-        <el-form-item label="物料形态属性">
-          <el-select v-model="formModel.materialShape" placeholder="采购件">
-            <el-option label="采购件" value="采购件" />
-            <el-option label="制造件" value="制造件" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="主分类编码">
-          <el-input v-model="formModel.categoryCode" />
-        </el-form-item>
-        <el-form-item label="主分类名称">
-          <el-input v-model="formModel.categoryName" />
-        </el-form-item>
-        <el-form-item label="价格类型">
-          <el-select v-model="formModel.priceType" placeholder="联动价">
-            <el-option label="联动价" value="联动价" />
-            <el-option label="固定价" value="固定价" />
-            <el-option label="结算固定价" value="结算固定价" />
-            <el-option label="区间价" value="区间价" />
-            <el-option label="自制件" value="自制件" />
-          </el-select>
-        </el-form-item>
-      </el-form>
+    <el-dialog v-model="dialogVisible" title="调整取价顺序" width="520px" :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving">
+      <p v-if="editingRow" class="scope-label">
+        {{ editingRow.configuration.scope.materialCode }} · {{ editingRow.configuration.scope.priceOrgCode }} · {{ editingRow.configuration.scope.period }}
+      </p>
+      <el-alert v-if="editError" :title="editError" type="error" :closable="false" show-icon />
+      <ol class="priority-list">
+        <li v-for="(type, index) in editOrder" :key="type">
+          <span>{{ index + 1 }}. {{ priceTypeLabel(type) }}</span>
+          <div>
+            <el-button size="small" :disabled="index === 0 || saving || conflict" @click="move(index, -1)">上移</el-button>
+            <el-button size="small" :disabled="index === editOrder.length - 1 || saving || conflict" @click="move(index, 1)">下移</el-button>
+          </div>
+        </li>
+      </ol>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitRow">保存</el-button>
+        <el-button :disabled="saving" @click="dialogVisible = false">取消</el-button>
+        <el-button v-if="conflict" type="primary" @click="refreshConfiguration">刷新配置</el-button>
+        <el-button v-else type="primary" :loading="saving" @click="saveOrder">保存</el-button>
       </template>
     </el-dialog>
   </div>
@@ -123,466 +91,157 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import BasePagination from '../components/BasePagination.vue'
-import {
-  fetchMaterialPriceTypes,
-  importMaterialPriceTypes,
-  createMaterialPriceType,
-  updateMaterialPriceType,
-  deleteMaterialPriceType,
-} from '../api/materialPriceTypes'
+import { useUserStore } from '../store/modules/user'
+import { fetchMaterialPriceTypes, updateMaterialPricePriority } from '../api/materialPriceTypes'
+import { businessPricingMonth, movePricePriority, priceTypeLabel, validatePricePriority } from './materialPricePriorityUtils'
 
 const route = useRoute()
 const router = useRouter()
-const loading = ref(false)
-const importing = ref(false)
-const dialogVisible = ref(false)
-const editingId = ref(null)
-
-const filters = ref({
-  materialCode: '',
-  priceType: '',
-})
-
-const formModel = ref({
-  rowNo: '',
-  materialCode: '',
-  materialName: '',
-  materialModel: '',
-  unit: '',
-  materialShape: '采购件',
-  categoryCode: '',
-  categoryName: '',
-  priceType: '联动价',
-})
-
+const user = useUserStore()
+const canEdit = computed(() => user.permissions.includes('*:*:*') || user.permissions.includes('base:material-price-type:edit'))
+const returnTarget = computed(() => String(route.query.returnTo || ''))
+const returnToWorkbenchVisible = computed(() => returnTarget.value.startsWith('/') && !returnTarget.value.startsWith('//'))
+const returnToWorkbench = () => { if (returnToWorkbenchVisible.value) router.push(returnTarget.value) }
+const defaultFilters = () => ({ period: businessPricingMonth(), priceOrgCode: '', materialCode: '' })
+const filters = ref(defaultFilters())
 const tableRows = ref([])
 const total = ref(0)
 const currentPage = ref(1)
 const pageSize = ref(20)
+const loading = ref(false)
+const listError = ref('')
+const dialogVisible = ref(false)
+const editingRow = ref(null)
+const editOrder = ref([])
+const editError = ref('')
+const saving = ref(false)
+const conflict = ref(false)
+let querySequence = 0
 
-const dialogTitle = computed(() =>
-  editingId.value ? '编辑物料价格类型' : '新增物料价格类型',
-)
-const returnToWorkbenchVisible = computed(() => Boolean(route.query.returnTo))
+const formatTime = value => String(value || '').replace('T', ' ').slice(0, 16)
+const validMonth = value => /^\d{4}-(0[1-9]|1[0-2])$/.test(value || '')
 
-const returnToWorkbench = () => {
-  const target = String(route.query.returnTo || '')
-  if (!target) return
-  router.push(target)
+function applyRouteMaterialCode() {
+  filters.value.materialCode = String(route.query.materialCode || '').trim()
+  filters.value.priceOrgCode = String(route.query.priceOrgCode || '').trim()
+  const period = String(route.query.periodMonth || route.query.period || '')
+  filters.value.period = validMonth(period) ? period : businessPricingMonth()
 }
 
-const buildParams = () => ({
-  materialCode: filters.value.materialCode.trim(),
-  priceType: filters.value.priceType,
-  page: currentPage.value,
-  pageSize: pageSize.value,
-})
-
-const applyRouteMaterialCode = () => {
-  const materialCode = String(route.query.materialCode || '').trim()
-  if (!materialCode || filters.value.materialCode === materialCode) {
-    return false
-  }
-  filters.value.materialCode = materialCode
-  return true
-}
-
-const fetchList = async () => {
-  loading.value = true
-  try {
-    const data = await fetchMaterialPriceTypes(buildParams())
-    tableRows.value = data?.list || []
-    total.value = data?.total || 0
-  } catch (error) {
+async function fetchList() {
+  const sequence = ++querySequence
+  listError.value = ''
+  if (!validMonth(filters.value.period)) {
     tableRows.value = []
     total.value = 0
-    ElMessage.error(error?.message || '查询失败')
-  } finally {
     loading.value = false
-  }
-}
-
-watch(currentPage, () => {
-  fetchList()
-})
-
-watch(pageSize, () => {
-  if (currentPage.value === 1) {
-    fetchList()
-  } else {
-    currentPage.value = 1
-  }
-})
-
-watch(() => route.query.materialCode, () => {
-  if (!applyRouteMaterialCode()) {
+    listError.value = '请选择有效月份'
     return
   }
-  if (currentPage.value === 1) {
-    fetchList()
-  } else {
-    currentPage.value = 1
-  }
-})
-
-const applyFilters = () => {
-  if (currentPage.value === 1) {
-    fetchList()
-  } else {
-    currentPage.value = 1
+  loading.value = true
+  try {
+    const data = await fetchMaterialPriceTypes({
+      period: filters.value.period,
+      priceOrgCode: filters.value.priceOrgCode.trim(),
+      materialCode: filters.value.materialCode.trim(),
+      page: currentPage.value,
+      pageSize: pageSize.value,
+    })
+    if (sequence !== querySequence) return
+    tableRows.value = data.list
+    total.value = data.total
+  } catch (error) {
+    if (sequence !== querySequence) return
+    tableRows.value = []
+    total.value = 0
+    listError.value = error?.message || '查询失败，请重试'
+  } finally {
+    if (sequence === querySequence) loading.value = false
   }
 }
 
-const resetFilters = () => {
-  filters.value = {
-    materialCode: '',
-    priceType: '',
-  }
+function applyFilters() {
+  if (currentPage.value === 1) fetchList()
+  else currentPage.value = 1
+}
+
+function resetFilters() {
+  filters.value = defaultFilters()
   applyFilters()
 }
 
-const openCreate = () => {
-  editingId.value = null
-  formModel.value = {
-    rowNo: '',
-    materialCode: '',
-    materialName: '',
-    materialModel: '',
-    unit: '',
-    materialShape: '采购件',
-    categoryCode: '',
-    categoryName: '',
-    priceType: '联动价',
-  }
+function openEdit(row) {
+  editingRow.value = row
+  editOrder.value = row.configuration.order.map(item => item.type)
+  editError.value = ''
+  conflict.value = false
   dialogVisible.value = true
 }
 
-const openEdit = (row) => {
-  editingId.value = row.id
-  formModel.value = {
-    rowNo: row.rowNo ?? '',
-    materialCode: row.materialCode,
-    materialName: row.materialName,
-    materialModel: row.materialModel,
-    unit: row.unit,
-    materialShape: row.materialShape,
-    categoryCode: row.categoryCode,
-    categoryName: row.categoryName,
-    priceType: row.priceType,
-  }
-  dialogVisible.value = true
+function move(index, direction) {
+  editOrder.value = movePricePriority(editOrder.value, index, direction)
 }
 
-const parseNumber = (value) => {
-  const text = String(value ?? '').replace(/,/g, '').trim()
-  if (!text) {
-    return null
-  }
-  const parsed = Number(text)
-  return Number.isNaN(parsed) ? null : parsed
-}
-
-const submitRow = async () => {
-  if (
-    !formModel.value.materialCode ||
-    !formModel.value.materialName ||
-    !formModel.value.materialModel ||
-    !formModel.value.materialShape ||
-    !formModel.value.priceType
-  ) {
-    ElMessage.warning('物料代码、物料名称、型号、物料形态属性、价格类型必填')
-    return
-  }
-  const payload = {
-    rowNo: parseNumber(formModel.value.rowNo),
-    materialCode: formModel.value.materialCode,
-    materialName: formModel.value.materialName,
-    materialModel: formModel.value.materialModel,
-    unit: formModel.value.unit,
-    materialShape: formModel.value.materialShape,
-    categoryCode: formModel.value.categoryCode,
-    categoryName: formModel.value.categoryName,
-    priceType: formModel.value.priceType,
-  }
+async function saveOrder() {
+  if (saving.value || conflict.value || !editingRow.value) return
+  editError.value = validatePricePriority(editOrder.value)
+  if (editError.value) return
+  saving.value = true
   try {
-    if (editingId.value) {
-      await updateMaterialPriceType(editingId.value, payload)
-      ElMessage.success('已更新')
-    } else {
-      await createMaterialPriceType(payload)
-      ElMessage.success('已新增')
-    }
+    await updateMaterialPricePriority(editingRow.value.id, {
+      expectedRevision: editingRow.value.configuration.revision,
+      order: [...editOrder.value],
+    })
     dialogVisible.value = false
-    fetchList()
+    ElMessage.success('取价顺序已保存，相关报价需重新准备价格')
+    await fetchList()
   } catch (error) {
-    ElMessage.error(error?.message || '保存失败')
-  }
-}
-
-const removeRow = async (row) => {
-  try {
-    await ElMessageBox.confirm('确定删除该记录吗？', '提示', {
-      type: 'warning',
-    })
-  } catch (error) {
-    return
-  }
-  try {
-    await deleteMaterialPriceType(row.id)
-    ElMessage.success('已删除')
-    fetchList()
-  } catch (error) {
-    ElMessage.error(error?.message || '删除失败')
-  }
-}
-
-const normalizeHeader = (value) =>
-  String(value || '')
-    .replace(/^\uFEFF/, '')
-    .replace(/[：:]/g, '')
-    .replace(/[\s\u3000]+/g, '')
-    .trim()
-
-const normalizeSheetName = (value) =>
-  normalizeHeader(value).replace(/[-_－—]/g, '')
-
-const normalizeImportPriceType = (value) => {
-  const text = String(value || '').trim()
-  const upper = text.toUpperCase()
-  if (upper === 'FIXED' || ['固定采购价', '采购固定价'].includes(text)) {
-    return '固定价'
-  }
-  if (upper === 'SETTLE_FIXED' || ['结算价', '结算固定价', '家用结算价'].includes(text)) {
-    return '结算固定价'
-  }
-  if (upper === 'LINKED') return '联动价'
-  if (upper === 'RANGE') return '区间价'
-  if (upper === 'MAKE' || upper === 'MAKE_PART') return '自制件'
-  return text
-}
-
-const formatPeriod = (value) => {
-  if (!value) {
-    return ''
-  }
-  if (value instanceof Date) {
-    const year = value.getFullYear()
-    const month = String(value.getMonth() + 1).padStart(2, '0')
-    return `${year}-${month}`
-  }
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    const text = String(Math.trunc(value))
-    if (text.length === 6) {
-      return `${text.slice(0, 4)}-${text.slice(4)}`
-    }
-    return text
-  }
-  const text = String(value).trim()
-  if (!text) {
-    return ''
-  }
-  const match = text.match(/^(\\d{4})[-/.](\\d{1,2})/)
-  if (match) {
-    return `${match[1]}-${String(match[2]).padStart(2, '0')}`
-  }
-  const compact = text.match(/^(\\d{4})(\\d{2})$/)
-  if (compact) {
-    return `${compact[1]}-${compact[2]}`
-  }
-  return text
-}
-
-const handleFileChange = async (uploadFile) => {
-  const rawFile = uploadFile.raw
-  if (!rawFile) {
-    return
-  }
-  importing.value = true
-  try {
-    let XLSX = null
-    try {
-      const mod = await import('xlsx')
-      XLSX = mod
-    } catch (error) {
-      ElMessage.error('未安装xlsx，请先运行 npm install xlsx')
-      return
-    }
-    const buffer = await rawFile.arrayBuffer()
-    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true })
-    const sheetName =
-      workbook.SheetNames.find((name) => normalizeSheetName(name) === '价格类型导入') ||
-      workbook.SheetNames[0]
-    const sheet = workbook.Sheets[sheetName]
-    const rows = XLSX.utils.sheet_to_json(sheet, {
-      header: 1,
-      defval: '',
-      raw: false,
-    })
-    const headerAliases = {
-      rowNo: ['行号', '序号'],
-      materialCode: ['物料代码', '物料编码', '物料编号', '物料料号', '料号'],
-      materialName: ['物料名称', '名称'],
-      materialSpec: ['物料规格', '规格'],
-      materialModel: ['物料型号', '型号', '规格型号'],
-      unit: ['计量单位', '单位'],
-      materialShape: ['U9物料形态属性', '物料形态属性', '物料形态', '形态属性'],
-      categoryCode: ['主分类编码', '主分类代码', '分类编码'],
-      categoryName: ['主分类名称', '分类名称'],
-      priceType: ['价格类型', '价格类别', '采购件--价格类型', '采购件-价格类型', '采购件价格类型'],
-      period: ['期间', '账期', '月份'],
-    }
-    const headerMap = Object.entries(headerAliases).reduce((acc, [key, values]) => {
-      values.forEach((value) => {
-        acc[normalizeHeader(value)] = key
-      })
-      return acc
-    }, {})
-    const headerKeys = Object.keys(headerMap).sort(
-      (a, b) => b.length - a.length,
-    )
-    const resolveHeaderField = (cell) => {
-      const normalized = normalizeHeader(cell)
-      if (!normalized) {
-        return null
-      }
-      if (headerMap[normalized]) {
-        return headerMap[normalized]
-      }
-      const matched = headerKeys.find((key) => normalized.includes(key))
-      return matched ? headerMap[matched] : null
-    }
-    const headerIndex = rows.reduce(
-      (best, row, index) => {
-        const hitCount = row.reduce((count, cell) => {
-          return resolveHeaderField(cell) ? count + 1 : count
-        }, 0)
-        if (hitCount > best.count) {
-          return { index, count: hitCount }
-        }
-        return best
-      },
-      { index: -1, count: 0 },
-    ).index
-    if (headerIndex === -1) {
-      ElMessage.error('未找到表头，请确认Excel格式是否正确')
-      return
-    }
-    const headerRow = rows[headerIndex]
-    const nextHeaderRow = rows[headerIndex + 1] || []
-    const fieldIndex = {}
-    headerRow.forEach((cell, index) => {
-      const normalized = normalizeHeader(cell)
-      let field = resolveHeaderField(cell)
-      // 原 Excel 有两个同名"主分类"列：第一个是编码，第二个是名称。
-      if (normalized === '主分类') {
-        field = fieldIndex.categoryCode === undefined ? 'categoryCode' : 'categoryName'
-      }
-      if (field) {
-        fieldIndex[field] = index
-      }
-    })
-    nextHeaderRow.forEach((cell, index) => {
-      const field = resolveHeaderField(cell)
-      if (field && fieldIndex[field] === undefined) {
-        fieldIndex[field] = index
-      }
-    })
-    const requiredFields = ['materialCode', 'priceType']
-    const requiredLabels = {
-      materialCode: '物料代码',
-      priceType: '价格类型',
-    }
-    const missing = requiredFields.filter((field) => fieldIndex[field] === undefined)
-    if (missing.length > 0) {
-      const names = missing.map((field) => requiredLabels[field] || field)
-      ElMessage.error(`缺少表头：${names.join('、')}`)
-      return
-    }
-    const parsedRows = rows
-      .slice(headerIndex + 1)
-      .map((row) => {
-        return {
-          rowNo: parseNumber(row[fieldIndex.rowNo]),
-          materialCode: String(row[fieldIndex.materialCode] || '').trim(),
-          materialName: String(row[fieldIndex.materialName] || '').trim(),
-          materialSpec: String(row[fieldIndex.materialSpec] || '').trim(),
-          materialModel: String(row[fieldIndex.materialModel] || '').trim(),
-          unit: String(row[fieldIndex.unit] || '').trim(),
-          materialShape: String(row[fieldIndex.materialShape] || '').trim(),
-          categoryCode: String(row[fieldIndex.categoryCode] || '').trim(),
-          categoryName: String(row[fieldIndex.categoryName] || '').trim(),
-          priceType: normalizeImportPriceType(row[fieldIndex.priceType]),
-          period: formatPeriod(row[fieldIndex.period]),
-        }
-      })
-      .filter(
-        (row) =>
-          row.materialCode &&
-          row.priceType,
-      )
-    const dedupeMap = new Map()
-    parsedRows.forEach((row) => {
-      // 导入去重口径与后台保持一致：同一物料同一价格类型只保留一条。
-      const key = [
-        row.materialCode,
-        row.priceType,
-      ].join('\u0001')
-      dedupeMap.set(key, row)
-    })
-    const dataRows = Array.from(dedupeMap.values())
-    if (dataRows.length === 0) {
-      ElMessage.warning('未解析到有效数据')
-      return
-    }
-    const result = await importMaterialPriceTypes({ rows: dataRows })
-    const imported = Array.isArray(result) ? result.length : dataRows.length
-    ElMessage.success(`已导入${imported}条记录`)
-    if (currentPage.value === 1) {
-      fetchList()
-    } else {
-      currentPage.value = 1
-    }
-  } catch (error) {
-    ElMessage.error(error?.message || '导入失败')
+    conflict.value = Number(error?.resultCode) === 409
+    editError.value = conflict.value ? '配置已被其他人修改，请刷新后重新调整' : (error?.message || '保存失败')
   } finally {
-    importing.value = false
+    saving.value = false
   }
 }
 
-onMounted(() => {
-  applyRouteMaterialCode()
+function refreshConfiguration() {
+  dialogVisible.value = false
   fetchList()
-})
+}
+
+async function restoreDefault(row) {
+  if (saving.value) return
+  saving.value = true
+  try {
+    await updateMaterialPricePriority(row.id, {
+      expectedRevision: row.configuration.revision,
+      restoreDefault: true,
+    })
+    ElMessage.success('已恢复默认顺序，相关报价需重新准备价格')
+    await fetchList()
+  } catch (error) {
+    ElMessage.error(error?.message || '恢复默认失败')
+    if (Number(error?.resultCode) === 409) await fetchList()
+  } finally {
+    saving.value = false
+  }
+}
+
+watch(currentPage, fetchList)
+watch(pageSize, applyFilters)
+watch(() => route.query, () => { applyRouteMaterialCode(); applyFilters() })
+onMounted(() => { applyRouteMaterialCode(); fetchList() })
 </script>
 
 <style scoped>
-.base-page {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.filter-card {
-  padding-bottom: 6px;
-}
-
-.filter-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.filter-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1f2a37;
-}
-
-.filter-actions {
-  display: flex;
-  gap: 8px;
-}
+.base-page { display: grid; gap: 16px; }
+.page-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+h2 { margin: 0; font-size: 18px; font-weight: 600; }
+.hint { color: #64748b; font-size: 12px; line-height: 1.7; }
+p.hint { margin: 0; }
+.scope-label { color: #475569; }
+.priority-list { list-style: none; padding: 0; }
+.priority-list li { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #e5e7eb; }
+.el-alert { margin-bottom: 12px; }
 </style>

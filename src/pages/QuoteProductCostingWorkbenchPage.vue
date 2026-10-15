@@ -4,8 +4,18 @@
       <div>
         <h1>单产品核算工作台</h1>
         <p>{{ oaNo }} / {{ productIdentityLabel }} / 核算月份 {{ displayedPeriodMonth }}</p>
+        <div class="costing-status" role="status">
+          <span :class="{ 'costing-status--blocked': costingIssueVisible }">{{ costingStatusSummary }}</span>
+          <el-button v-if="costingIssueVisible" link type="primary" @click="viewCostingIssue">
+            {{ hasPriceGaps ? '查看缺口' : '查看原因' }}
+          </el-button>
+          <el-button v-if="!historyViewMode && materialState?.hasSupplement" link type="primary" @click="router.push({ path: '/collaboration/tasks', query: { oaNo } })">
+            技术补录
+          </el-button>
+        </div>
       </div>
       <div class="page-actions">
+        <el-button @click="quoteDetailsVisible = true">报价资料</el-button>
         <el-button
           v-if="!historyViewMode"
           type="primary"
@@ -23,118 +33,103 @@
       </div>
     </div>
 
-    <QuoteCostingPreparationPanel v-if="!historyViewMode" :oa-no="oaNo" :state="materialState" :checks="materialChecks" :error="materialError" @refresh="materials.refresh" />
-
-    <el-alert
-      v-if="historyViewMode"
-      class="inline-alert"
-      type="info"
-      show-icon
-      :closable="false"
-      :title="`正在查看 ${displayedPeriodMonth} ${historyResultLabel}；该结果只读，不代表当前月份核算状态。`"
-    />
-
-    <el-alert
-      v-if="workflowGuideVisible"
-      class="inline-alert"
-      type="warning"
-      show-icon
-      :closable="false"
-      :title="workflowGuideText"
-    />
-
-    <section class="section-block">
-      <div class="section-head">
-        <span>报价单信息</span>
-        <small>{{ statusLabel('sourceType', header.sourceType) }} / {{ header.processName || header.processCode || '-' }}</small>
-      </div>
-      <el-descriptions class="detail-descriptions" :column="3" border>
-        <el-descriptions-item label="报价单号">{{ header.oaNo || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="外部单号">{{ header.externalFormNo || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="报价场景">{{ statusLabel('quoteScenario', header.quoteScenario) }}</el-descriptions-item>
-        <el-descriptions-item label="客户名称">{{ header.customer || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="申请日期">{{ header.applyDate || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="申请单位">{{ header.applicantUnit || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="申请部门">{{ header.applicantDept || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="申请处室">{{ header.applicantOffice || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="申请人">{{ header.applicantName || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="核算状态">
-          <el-tag effect="plain" :type="costRunStatusTagType">
-            {{ costRunWorkbenchStatusText }}
-          </el-tag>
-        </el-descriptions-item>
-        <el-descriptions-item label="当前阻断步骤">
-          {{ historyViewMode ? '-' : workflowStepLabel(workbench.workflowStatus?.currentBlockedStep) }}
-        </el-descriptions-item>
-        <el-descriptions-item label="备注">{{ header.remark || '-' }}</el-descriptions-item>
-      </el-descriptions>
-    </section>
-
-    <section class="section-block">
-      <div class="section-head">
-        <span>金属及基础价格</span>
-        <small>用于当前报价单报价参数展示</small>
-      </div>
-      <el-table :data="priceMatrixRows" border :show-header="false" class="price-matrix-table">
-        <el-table-column prop="leftLabel" width="140" class-name="matrix-label" />
-        <el-table-column min-width="180">
-          <template #default="{ row }">{{ formatMoney(row.leftValue) }}</template>
-        </el-table-column>
-        <el-table-column prop="rightLabel" width="140" class-name="matrix-label" />
-        <el-table-column min-width="180">
-          <template #default="{ row }">{{ formatMoney(row.rightValue) }}</template>
-        </el-table-column>
-      </el-table>
-    </section>
-
-    <section class="section-block">
-      <div class="section-head">
-        <span>当前报价料号</span>
-        <small>当前产品单独核算</small>
-      </div>
-      <el-table
-        :data="currentItemRows"
-        border
-        stripe
-        scrollbar-always-on
-        row-key="id"
-        class="current-item-table"
-      >
-        <el-table-column prop="seq" label="行号" width="72" fixed="left" />
-        <el-table-column prop="materialNo" label="产品料号" min-width="160" fixed="left" show-overflow-tooltip />
-        <el-table-column prop="productName" label="产品名称" min-width="160" show-overflow-tooltip />
-        <el-table-column prop="sunlModel" label="三花型号" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="customerDrawing" label="客户图号" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="businessType" label="业务类型" width="120" />
-        <el-table-column prop="packageType" label="包装类型" width="120" />
-        <el-table-column prop="packageMethod" label="包装方式" width="130" />
-        <el-table-column prop="packageComponentCode" label="包装组件" min-width="140" show-overflow-tooltip />
-        <el-table-column prop="annualVolume" label="预计年用量" width="120" align="right" />
-        <el-table-column prop="totalWithShip" label="含运费总价" width="120" align="right" />
-        <el-table-column prop="totalNoShip" label="不含运费总价" width="130" align="right" />
-        <el-table-column label="BOM 状态" width="150">
-          <template #default>
-            <el-tag effect="plain" :type="statusTagType('bomStatus', workbench.bomStatus?.bomStatus)">
-              {{ statusLabel('bomStatus', workbench.bomStatus?.bomStatus) }}
+    <el-drawer v-model="quoteDetailsVisible" title="报价资料" size="min(1100px, 100vw)" class="quote-details-drawer">
+      <section class="section-block">
+        <div class="section-head">
+          <span>报价单信息</span>
+          <small>{{ statusLabel('sourceType', header.sourceType) }} / {{ header.processName || header.processCode || '-' }}</small>
+        </div>
+        <el-descriptions class="detail-descriptions" :column="3" border>
+          <el-descriptions-item label="报价单号">{{ header.oaNo || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="外部单号">{{ header.externalFormNo || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="报价场景">{{ statusLabel('quoteScenario', header.quoteScenario) }}</el-descriptions-item>
+          <el-descriptions-item label="客户名称">{{ header.customer || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="申请日期">{{ header.applyDate || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="申请单位">{{ header.applicantUnit || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="申请部门">{{ header.applicantDept || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="申请处室">{{ header.applicantOffice || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="申请人">{{ header.applicantName || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="核算状态">
+            <el-tag effect="plain" :type="costRunStatusTagType">
+              {{ costRunWorkbenchStatusText }}
             </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="当前阻断步骤">
+            {{ historyViewMode ? '-' : workflowStepLabel(workbench.workflowStatus?.currentBlockedStep) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="最终是否招标（板换）">{{ header.boardTender === true ? '是' : header.boardTender === false ? '否' : '未填写，按否' }}</el-descriptions-item>
+          <el-descriptions-item label="备注">{{ header.remark || '-' }}</el-descriptions-item>
+        </el-descriptions>
+      </section>
+
+      <section class="section-block">
+        <div class="section-head">
+          <span>金属及基础价格</span>
+        </div>
+        <el-table :data="priceMatrixRows" border :show-header="false" class="price-matrix-table">
+          <el-table-column prop="leftLabel" width="140" class-name="matrix-label" />
+          <el-table-column min-width="180">
+            <template #default="{ row }">{{ formatMoney(row.leftValue) }}</template>
+          </el-table-column>
+          <el-table-column prop="rightLabel" width="140" class-name="matrix-label" />
+          <el-table-column min-width="180">
+            <template #default="{ row }">{{ formatMoney(row.rightValue) }}</template>
+          </el-table-column>
+        </el-table>
+      </section>
+
+      <section class="section-block">
+        <div class="section-head">
+          <span>产品资料</span>
+        </div>
+        <el-table
+          :data="currentItemRows"
+          border
+          stripe
+          scrollbar-always-on
+          row-key="id"
+          class="current-item-table"
+        >
+          <el-table-column prop="seq" label="行号" width="72" fixed="left" />
+          <el-table-column prop="materialNo" label="产品料号" min-width="160" fixed="left" show-overflow-tooltip />
+          <el-table-column prop="productName" label="产品名称" min-width="160" show-overflow-tooltip />
+          <el-table-column prop="sunlModel" label="三花型号" min-width="150" show-overflow-tooltip />
+          <el-table-column prop="customerDrawing" label="客户图号" min-width="150" show-overflow-tooltip />
+          <el-table-column prop="businessType" label="业务类型" width="120" />
+          <el-table-column prop="packageType" label="包装类型" width="120" />
+          <el-table-column prop="packageMethod" label="包装方式" width="130" />
+          <el-table-column prop="packageComponentCode" label="包装组件" min-width="140" show-overflow-tooltip />
+          <el-table-column prop="annualVolume" label="预计年用量" width="120" align="right" />
+          <el-table-column prop="totalWithShip" label="含运费总价" width="120" align="right" />
+          <el-table-column prop="totalNoShip" label="不含运费总价" width="130" align="right" />
+          <el-table-column label="BOM 状态" width="150">
+            <template #default>
+              <el-tag effect="plain" :type="statusTagType('bomStatus', workbench.bomStatus?.bomStatus)">
+                {{ statusLabel('bomStatus', workbench.bomStatus?.bomStatus) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="technicianName" label="技术员" width="120" />
+          <template #empty>
+            <el-empty description="暂无当前报价料号" />
           </template>
-        </el-table-column>
-        <el-table-column prop="technicianName" label="技术员" width="120" />
-        <template #empty>
-          <el-empty description="暂无当前报价料号" />
-        </template>
-      </el-table>
-    </section>
+        </el-table>
+      </section>
+    </el-drawer>
+
+    <el-dialog v-model="costingIssueDetailsVisible" title="核算未完成" width="min(720px, 90vw)">
+      <p class="costing-issue-detail">{{ costingIssueDetail }}</p>
+      <template #footer>
+        <el-button @click="costingIssueDetailsVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
 
     <AuxiliaryClassificationPanel v-if="!historyViewMode" :oa-no="oaNo" :item-id="itemId" :month="displayedPeriodMonth" :readonly="historyViewMode" :revision="classificationRevision" @classified="refreshWorkbench" />
 
-    <section class="workspace-band section-block">
-      <div class="workspace-meta">
-        <span><small>核算月份</small><strong>{{ displayedPeriodMonth }}</strong></span>
-        <span><small>{{ historyViewMode ? '历史部品行数' : 'BOM 行数' }}</small><strong>{{ historyViewMode ? costPartRows.length : bomRows.length }}</strong></span>
-        <span><small>整体状态</small><strong>{{ historyViewMode ? '历史结果' : tabStatusLabel(workbench.workflowStatus?.overallStatus) }}</strong></span>
-        <span v-if="displayedCostVersion.id" class="workspace-version">
-          <small>成本版本</small>
+    <section ref="workspaceRef" class="workspace-band section-block">
+      <div v-if="displayedCostVersion.id" class="workspace-meta">
+        <span class="workspace-version">
+          <small>{{ currentCostingBlockText ? '最近成功版本' : '成本版本' }}</small>
           <strong>{{ displayedCostVersion.displayVersionNo || displayedCostVersion.versionNo || displayedCostVersion.costRunNo }}</strong>
         </span>
       </div>
@@ -161,12 +156,8 @@
           >
             <div class="pricing-bom-summary">
               <div>
-                <strong>本次计价 BOM</strong>
-                <span>
-                  产品 {{ presentedEffectiveBom.topProductCode || productIdentityLabel }}
-                  · {{ presentedEffectiveBom.costPeriodMonth || workbench.periodMonth || '-' }}
-                  · {{ presentedEffectiveBom.nodes.length }} 个计价节点
-                </span>
+                <strong>计价 BOM</strong>
+                <span>{{ presentedEffectiveBom.nodes.length }} 个节点</span>
               </div>
               <div class="pricing-bom-summary-status">
                 <el-tag v-if="effectiveBomPreviewActive" type="warning" effect="light">
@@ -175,7 +166,22 @@
                 <el-tag :type="effectiveBomStateInfo.type" effect="plain">
                   {{ effectiveBomStateInfo.label }}
                 </el-tag>
-                <span>{{ effectiveAlternativeSummaryText }}</span>
+                <span v-if="presentedEffectiveBom.alternativeSelections?.length">{{ effectiveAlternativeSummaryText }}</span>
+              </div>
+              <div class="toolbar-actions">
+                <el-button
+                  v-if="alternativeFeatureEnabled"
+                  v-hasPermi="['quote:costing:bom:alternative-select']"
+                  type="warning"
+                  plain
+                  :loading="alternativeLoading"
+                  :disabled="effectiveBomLoading"
+                  @click="openAlternativeDrawer"
+                >
+                  选择计价方案
+                </el-button>
+                <el-button size="small" :disabled="effectiveBomTreeData.length === 0" @click="expandBomTree">展开全部</el-button>
+                <el-button size="small" :disabled="effectiveBomTreeData.length === 0" @click="collapseBomTree">收起全部</el-button>
               </div>
             </div>
 
@@ -207,27 +213,6 @@
 
             <div class="pricing-bom-designer">
               <div class="pricing-bom-tree-column">
-            <div class="tab-toolbar">
-              <div>
-                <strong>计价物料树</strong>
-                <span>按 BOM 层级展示，特殊规则与替代料已标注</span>
-              </div>
-              <div class="toolbar-actions">
-                <el-button
-                  v-if="alternativeFeatureEnabled"
-                  v-hasPermi="['quote:costing:bom:alternative-select']"
-                  type="warning"
-                  plain
-                  :loading="alternativeLoading"
-                  :disabled="effectiveBomLoading"
-                  @click="openAlternativeDrawer"
-                >
-                  选择计价方案
-                </el-button>
-                <el-button size="small" :disabled="effectiveBomTreeData.length === 0" @click="expandBomTree">展开全部</el-button>
-                <el-button size="small" :disabled="effectiveBomTreeData.length === 0" @click="collapseBomTree">收起全部</el-button>
-              </div>
-            </div>
             <div class="bom-tree-panel" v-loading="effectiveBomLoading">
               <div v-if="!hasProductIdentity" class="empty-tip">当前产品行无料号、型号和图号</div>
               <div v-else-if="effectiveBomTreeData.length === 0 && !effectiveBomLoading" class="empty-tip">
@@ -430,23 +415,19 @@
                 <strong>{{ priceTypeSummary.packageComponentCount ?? '-' }}</strong>
               </div>
               <div class="metric">
-                <span>缺价格类型</span>
-                <strong>{{ priceTypeSummary.missingTypeCount ?? latestPriceType.gapCount ?? 0 }}</strong>
+                <span>待检查来源</span>
+                <strong>{{ priceTypeSummary.missingSourceCount ?? latestPriceType.gapCount ?? 0 }}</strong>
               </div>
               <div class="metric">
-                <span>参考单价</span>
-                <strong>{{ priceTypeSummary.referencePriceCount ?? latestPriceType.referencePriceCount ?? 0 }}</strong>
-              </div>
-              <div class="metric">
-                <span>可准备价格</span>
-                <strong>{{ priceTypeSummary.readyForPricePrepareCount ?? latestPriceType.confirmedCount ?? 0 }}</strong>
+                <span>计价物料</span>
+                <strong>{{ priceTypeSummary.priceableCount ?? latestPriceType.confirmedCount ?? 0 }}</strong>
               </div>
             </div>
 
             <div class="filter-bar">
               <el-radio-group v-model="priceTypeFilter" size="small">
                 <el-radio-button value="ALL">全部</el-radio-button>
-                <el-radio-button value="MISSING">缺价格类型</el-radio-button>
+                <el-radio-button value="MISSING">待检查来源</el-radio-button>
                 <el-radio-button value="NORMAL">采购件</el-radio-button>
                 <el-radio-button value="MAKE_PART">自制件</el-radio-button>
                 <el-radio-button value="PACKAGE">包装件</el-radio-button>
@@ -459,10 +440,10 @@
                   class="search-control"
                 />
                 <el-button
-                  :disabled="isBlockedTab(tab) || missingPriceTypeRows.length === 0"
+                  :disabled="isBlockedTab(tab)"
                   @click="openMaterialPriceTypePage"
                 >
-                  去物料价格类型维护
+                  查看取价顺序
                 </el-button>
               </div>
             </div>
@@ -488,27 +469,24 @@
                 <template #default="{ row }">{{ priceTypeObjectLabel(row.objectType) }}</template>
               </el-table-column>
               <el-table-column prop="quantity" label="数量" width="110" align="right" />
-              <el-table-column label="价格类型" width="150">
+              <el-table-column label="首选候选类型" width="150">
                 <template #default="{ row }">
                   <el-tag :type="priceTypeTagType(row)" effect="plain">
                     {{ priceTypeDisplay(row) }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="类型来源" width="150" show-overflow-tooltip>
+              <el-table-column label="候选来源" width="150" show-overflow-tooltip>
                 <template #default="{ row }">{{ priceTypeSourceLabel(row) }}</template>
               </el-table-column>
               <el-table-column label="状态" width="120">
                 <template #default="{ row }">{{ priceTypeStatusLabel(row.typeStatus) }}</template>
               </el-table-column>
-              <el-table-column prop="referenceUnitPrice" label="参考单价" width="130" align="right">
-                <template #default="{ row }">{{ formatMoney(row.referenceUnitPrice) }}</template>
-              </el-table-column>
               <el-table-column prop="effectiveFrom" label="生效开始" width="120" />
               <el-table-column prop="effectiveTo" label="生效结束" width="120" />
               <el-table-column prop="message" label="原因" min-width="220" show-overflow-tooltip />
               <template #empty>
-                <el-empty description="暂无价格类型识别结果" />
+                <el-empty description="暂无取价来源结果" />
               </template>
             </el-table>
           </div>
@@ -562,10 +540,10 @@
                 <el-button v-hasPermi="['price:linked-item:import']" type="primary" :disabled="historyViewMode" @click="openTechnicalPriceImport">导入修正结果</el-button>
               </div>
             </section>
-            <div v-if="sourceMaintenanceGaps.length" class="source-gap-cards">
+            <div v-if="priceSourceGapSummary.all" class="source-gap-cards">
               <div class="source-gap-card">
-                <span>待补价格源</span>
-                <strong>{{ priceSourceGapSummary.total }}</strong>
+                <span>待处理缺口</span>
+                <strong>{{ priceSourceGapSummary.all }}</strong>
               </div>
               <div class="source-gap-card">
                 <span>固定采购价缺口</span>
@@ -584,8 +562,20 @@
                 <strong>{{ priceSourceGapSummary.range }}</strong>
               </div>
               <div class="source-gap-card">
+                <span>供货比率待确认</span>
+                <strong>{{ priceSourceGapSummary.ratioReview }}</strong>
+              </div>
+              <div class="source-gap-card">
+                <span>制造件内部缺口</span>
+                <strong>{{ priceSourceGapSummary.make }}</strong>
+              </div>
+              <div class="source-gap-card">
                 <span>废料映射缺口</span>
                 <strong>{{ priceSourceGapSummary.scrapMapping }}</strong>
+              </div>
+              <div class="source-gap-card">
+                <span>其他未判定来源</span>
+                <strong>{{ priceSourceGapSummary.unresolved }}</strong>
               </div>
             </div>
 
@@ -594,7 +584,7 @@
               type="warning"
               show-icon
               :closable="false"
-              title="请先补齐缺失的价格类型，系统才能判断需要补充哪类价格源"
+              title="请先生成报价物料，再检查取价来源"
               class="inline-alert"
             />
             <el-alert
@@ -739,6 +729,20 @@
               :title="priceHistoryWarningText"
               class="inline-alert"
             />
+
+            <section v-if="boardPriceRows.length" class="section-block board-price-inputs">
+              <h3>本次板换不锈钢基价</h3>
+              <p>以下输入同时用于财务成本和客户铜价场景；原公式中的加工费、舍入与税价计算保持一致。</p>
+              <el-table :data="boardPriceRows" border max-height="260">
+                <el-table-column prop="materialCode" label="料号" min-width="150" />
+                <el-table-column prop="grade" label="材质" width="110" />
+                <el-table-column prop="value" label="含税基价" width="130" />
+                <el-table-column prop="unit" label="单位" width="100" />
+                <el-table-column prop="source" label="来源" min-width="150" />
+                <el-table-column prop="finalTender" label="最终招标" width="100" />
+                <el-table-column prop="financialMonth" label="财务来源月" width="130" />
+              </el-table>
+            </section>
 
             <el-tabs v-model="pricePrepareScenarioTab" class="price-scenario-tabs">
               <el-tab-pane label="财务基准" name="FINANCE">
@@ -964,6 +968,21 @@
               title="存在旧的未完成试算，请重新核算生成成功版本"
             />
 
+            <div v-if="displayedCostVersion.id" class="status-strip cost-totals">
+              <div class="metric">
+                <span>财务正常成本</span>
+                <strong>{{ formatMoney(displayedCostVersion.totalCost) }}</strong>
+              </div>
+              <div class="metric">
+                <span>材料费差额</span>
+                <strong>{{ formatSignedMoney(displayedCostVersion.cuMaterialAdjustment) }}</strong>
+              </div>
+              <div class="metric">
+                <span>最终成本</span>
+                <strong>{{ formatMoney(displayedCostVersion.finalQuoteAmount) }}</strong>
+              </div>
+            </div>
+
             <el-table
               :data="costRunVersions"
               border
@@ -993,8 +1012,8 @@
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="总成本" width="130" align="right">
-                <template #default="{ row }">{{ formatMoney(row.totalCost) }}</template>
+              <el-table-column label="最终成本" width="130" align="right">
+                <template #default="{ row }">{{ formatMoney(row.finalQuoteAmount) }}</template>
               </el-table-column>
               <el-table-column prop="partItemCount" label="部品行数" width="100" align="right" />
               <el-table-column prop="costItemCount" label="费用项数" width="100" align="right" />
@@ -1104,10 +1123,9 @@
 
 <script setup>
 import { fetchQuoteCostingPreparation, prepareQuoteCosting } from '../api/quoteRequests'
-import QuoteCostingPreparationPanel from '../components/quotation/QuoteCostingPreparationPanel.vue'
 import { useQuoteCostingPreparation } from '../composables/useQuoteCostingPreparation'
 import AuxiliaryClassificationPanel from '../components/technical-data/AuxiliaryClassificationPanel.vue'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Refresh } from '@element-plus/icons-vue'
@@ -1159,7 +1177,7 @@ import {
   workbenchCanLoadPriceType,
   isEffectiveBomNotPreparedError,
 } from '../utils/quoteEffectiveBom'
-import { formatDateTime, statusLabel, statusTagType } from '../utils/quoteRequestWorkbench'
+import { formatDateTime, statusLabel, statusTagType, currentCostingBlockLabel, boardPricingRows } from '../utils/quoteRequestWorkbench'
 import {
   countCarriedForwardPrices,
   isCarriedForwardPrice,
@@ -1172,6 +1190,7 @@ import {
 } from './quoteCuCostingUtils'
 
 import SupplierPriceReviewPanel from '../components/SupplierPriceReviewPanel.vue'
+import { isSupplierRatioGap, isMissingScrapMappingGap, priceSourceGapKind, summarizePriceSourceGaps } from '../utils/priceSourceGaps'
 
 const route = useRoute()
 const router = useRouter()
@@ -1199,6 +1218,9 @@ const classificationRevision = ref(0)
 const loading = ref(false)
 const refreshingTabs = ref(false)
 const activeTab = ref('PRODUCT_DETAIL')
+const quoteDetailsVisible = ref(false)
+const costingIssueDetailsVisible = ref(false)
+const workspaceRef = ref(null)
 const bomTreeRef = ref(null)
 const effectiveBom = ref(emptyQuoteEffectiveBom())
 const effectiveBomPreview = ref(null)
@@ -1299,12 +1321,12 @@ const tabs = computed(() => {
   const normalizedTabs = serverTabs.length > 0 ? serverTabs : [
     { code: 'PRODUCT_DETAIL', name: '产品明细', status: 'READY' },
     { code: 'QUOTE_BOM', name: '报价物料明细', status: 'PENDING' },
-    { code: 'PRICE_TYPE_CONFIRMATION', name: '价格类型识别', status: 'BLOCKED', blockedReason: '请先生成报价物料' },
-    { code: 'PRICE_PREPARE', name: '最终价格生成', status: 'BLOCKED', blockedReason: '请先补齐价格类型' },
+    { code: 'PRICE_TYPE_CONFIRMATION', name: '取价来源', status: 'BLOCKED', blockedReason: '请先生成报价物料' },
+    { code: 'PRICE_PREPARE', name: '最终价格生成', status: 'BLOCKED', blockedReason: '请先生成报价物料' },
     { code: 'COST_RUN', name: '成本核算', status: 'BLOCKED', blockedReason: '请先生成最终价格' },
   ]
   const byCode = new Map(normalizedTabs.map((tab) => [normalizeTabCode(tab.code), tab]))
-  const priceTypeTab = buildTab(byCode, 'PRICE_TYPE_CONFIRMATION', '价格类型识别')
+  const priceTypeTab = buildTab(byCode, 'PRICE_TYPE_CONFIRMATION', '取价来源')
   const pricePrepareTab = buildTab(byCode, 'PRICE_PREPARE', '最终价格生成')
   if (historyViewMode.value) {
     return [{ ...buildTab(byCode, 'COST_RUN', '成本核算'), status: 'DONE', blockedReason: '' }]
@@ -1325,11 +1347,12 @@ const metalRows = computed(() => [
   { key: 'steelPrice', label: '钢价', value: header.value.steelPrice },
   { key: 'silverPrice', label: '银价', value: header.value.silverPrice },
   { key: 'goldPrice', label: '金价', value: header.value.goldPrice },
-  { key: 'sus304Price', label: 'SUS304价', value: header.value.sus304Price },
-  { key: 'sus316lPrice', label: 'SUS316L价', value: header.value.sus316lPrice },
+  { key: 'sus304Price', label: 'SUS304（元/吨）', value: header.value.sus304Price },
+  { key: 'sus316lPrice', label: 'SUS316（元/吨）', value: header.value.sus316lPrice },
   { key: 'otherMaterial', label: '其他材料', value: header.value.otherMaterial },
   { key: 'baseShipping', label: '基准运费', value: header.value.baseShipping },
 ])
+const boardPriceRows = computed(() => boardPricingRows(financePricePrepareItems.value))
 const priceMatrixRows = computed(() => {
   const rows = []
   for (let index = 0; index < metalRows.value.length; index += 2) {
@@ -1391,7 +1414,7 @@ const effectiveBomPreviewChangedNodeKeys = computed(() => {
 })
 const priceTypeSummary = computed(() => priceType.value.summary || {})
 const flatPriceTypeRows = computed(() => flattenRows(priceType.value.rows || []))
-const missingPriceTypeRows = computed(() => flatPriceTypeRows.value.filter((row) => isMissingPriceTypeRow(row)))
+const missingCandidateSourceRows = computed(() => flatPriceTypeRows.value.filter((row) => isMissingCandidateSourceRow(row)))
 const filteredPriceTypeRows = computed(() => filterTreeRows(priceType.value.rows || []))
 const pricePrepareItems = computed(() => Array.isArray(pricePrepare.value.items?.records) ? pricePrepare.value.items.records : [])
 const oaPrepareBatch = computed(() => pricePrepare.value.oaScenario?.batch || {})
@@ -1422,18 +1445,8 @@ const visiblePricePrepareDifferences = computed(() => onlyDifferentPricePrepare.
 const pricePrepareDifferenceSummary = computed(() => pricePrepare.value.differenceSummary || {})
 const oaCuPricePerKg = computed(() => normalizeCuPricePerKg(header.value.copperPrice))
 const pricePrepareGaps = computed(() => Array.isArray(pricePrepare.value.gaps?.records) ? pricePrepare.value.gaps.records : [])
-const sourceMaintenanceGaps = computed(() => pricePrepareGaps.value.filter(row => row.reasonCode !== 'SUPPLIER_RATIO_REVIEW_REQUIRED'))
-const priceSourceGapSummary = computed(() => {
-  const rows = sourceMaintenanceGaps.value
-  return {
-    total: rows.length,
-    fixed: rows.filter((row) => priceSourceGapKind(row) === 'FIXED').length,
-    settleFixed: rows.filter((row) => priceSourceGapKind(row) === 'SETTLE_FIXED').length,
-    linked: rows.filter((row) => priceSourceGapKind(row) === 'LINKED').length,
-    range: rows.filter((row) => priceSourceGapKind(row) === 'RANGE').length,
-    scrapMapping: rows.filter((row) => priceSourceGapKind(row) === 'SCRAP_MAPPING').length,
-  }
-})
+const sourceMaintenanceGaps = computed(() => pricePrepareGaps.value.filter(row => !isSupplierRatioGap(row)))
+const priceSourceGapSummary = computed(() => summarizePriceSourceGaps(pricePrepareGaps.value))
 const oaPricePrepareReady = computed(() => {
   const readiness = pricePrepare.value.readiness || {}
   const gapCount = Number(readiness.gapCount ?? pricePrepareGaps.value.length)
@@ -1484,6 +1497,11 @@ const productCostingActionLabel = computed(() => (
   currentSuccessVersion.value?.id ? '重新核算本产品' : '核算本产品'
 ))
 const hasStaleCostVersion = computed(() => costRunVersions.value.some((row) => row?.stale))
+const currentCostingBlockText = computed(() => currentCostingBlockLabel({
+  historyView: historyViewMode.value,
+  workspaceStatus: costingWorkspace.value.workspaceStatus,
+  overallStatus: workbench.value.workflowStatus?.overallStatus,
+}))
 const costRunWorkbenchStatusText = computed(() => {
   if (historyViewMode.value && displayedCostVersion.value.id) {
     return `历史结果 ${displayedPeriodMonth.value}`
@@ -1494,6 +1512,7 @@ const costRunWorkbenchStatusText = computed(() => {
     return '正在重新核算'
   }
   if (hasRunningCostVersion.value) return '正在核算'
+  if (currentCostingBlockText.value) return currentCostingBlockText.value
   if (confirmedVersionNo) {
     return `核算成功 ${confirmedVersionNo}`
   }
@@ -1501,6 +1520,8 @@ const costRunWorkbenchStatusText = computed(() => {
   return header.value.calcStatus || '未核算'
 })
 const costRunStatusTagType = computed(() => {
+  if (historyViewMode.value) return 'info'
+  if (currentCostingBlockText.value) return 'warning'
   if (hasRunningCostVersion.value) return 'warning'
   if (currentSuccessVersion.value?.id) return 'success'
   if (hasStaleCostVersion.value) return 'info'
@@ -1539,6 +1560,37 @@ const workflowGuideVisible = computed(() =>
   && (inputGapGuideVisible.value || Boolean(localWorkflowGuideText.value))
 )
 const workflowGuideText = computed(() => localWorkflowGuideText.value || inputGapGuideText.value)
+const costingIssueVisible = computed(() => !historyViewMode.value && Boolean(
+  materialError.value || workflowGuideVisible.value || currentCostingBlockText.value
+  || materialState.value?.canCost === false,
+))
+const hasPriceGaps = computed(() => !materialError.value && !historyViewMode.value
+  && ['WAIT_PRICE', 'PRICE_BLOCKED', 'PRICE_ERROR'].includes(costingWorkspace.value.workspaceStatus)
+  && currentPriceSourceGapCount() > 0)
+const costingStatusSummary = computed(() => {
+  if (historyViewMode.value) return `${historyResultLabel.value} · 只读`
+  if (materialError.value) return '资料状态读取失败'
+  if (costRunActionLoading.value || hasRunningCostVersion.value) return '正在核算'
+  if (materialState.value?.canCost === false) return '暂不能核算'
+  if (hasPriceGaps.value) return `价格缺口 ${currentPriceSourceGapCount()} 项`
+  if (costingWorkspace.value.workspaceStatus === 'WAIT_TECH_DATA') return '待补齐技术资料'
+  return costRunWorkbenchStatusText.value
+})
+const costingIssueDetail = computed(() => materialError.value
+  || (materialState.value?.canCost === false ? materialState.value.message : '')
+  || localWorkflowGuideText.value || costingWorkspace.value.lastErrorMessage
+  || materialChecks.value.find(row => !['READY', 'SUCCESS'].includes(row.pipelineStatus))?.message
+  || workflowGuideText.value)
+
+async function viewCostingIssue() {
+  if (!hasPriceGaps.value) {
+    costingIssueDetailsVisible.value = true
+    return
+  }
+  activeTab.value = 'PRICE_SOURCE_SUPPLEMENT'
+  await nextTick()
+  workspaceRef.value?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+}
 const inputGapGuideText = computed(() => {
   const workspaceStatus = String(costingWorkspace.value.workspaceStatus || '').toUpperCase()
   const blockedStep = normalizeTabCode(workbench.value.workflowStatus?.currentBlockedStep)
@@ -1548,9 +1600,9 @@ const inputGapGuideText = computed(() => {
   if (workspaceStatus === 'WAIT_BOM' || blockedStep === 'QUOTE_BOM') {
     return '当前产品缺少可核算 BOM，请由产品技术补录后重新核算本产品'
   }
-  const missingTypeCount = currentMissingPriceTypeCount()
-  if (missingTypeCount > 0) {
-    return `发起核算发现 ${missingTypeCount} 项缺价格类型，请到“物料价格类型”导入或维护后再确认`
+  const missingSourceCount = currentMissingSourceCount()
+  if (missingSourceCount > 0) {
+    return `发起核算发现 ${missingSourceCount} 项待检查来源，请检查取价组织及价格源后重新准备`
   }
   const gapCount = currentPriceSourceGapCount()
   if (gapCount > 0) {
@@ -1858,8 +1910,8 @@ function applyInputGapGuide() {
     activeTab.value = 'PRODUCT_DETAIL'
     return
   }
-  const missingTypeCount = currentMissingPriceTypeCount()
-  if (missingTypeCount > 0) {
+  const missingSourceCount = currentMissingSourceCount()
+  if (missingSourceCount > 0) {
     priceTypeFilter.value = 'MISSING'
     activeTab.value = 'PRICE_TYPE_CONFIRMATION'
     return
@@ -1887,8 +1939,8 @@ async function refreshAfterAction(successText) {
   if (successText) ElMessage.success(successText)
 }
 
-function currentMissingPriceTypeCount() {
-  return Number(priceTypeSummary.value.missingTypeCount ?? latestPriceType.value.gapCount ?? missingPriceTypeRows.value.length)
+function currentMissingSourceCount() {
+  return Number(priceTypeSummary.value.missingSourceCount ?? latestPriceType.value.gapCount ?? missingCandidateSourceRows.value.length)
 }
 
 function currentPriceSourceGapCount() {
@@ -1897,15 +1949,15 @@ function currentPriceSourceGapCount() {
 
 function guidePriceTypeAfterBomBuild() {
   activeTab.value = 'PRICE_TYPE_CONFIRMATION'
-  const missingTypeCount = currentMissingPriceTypeCount()
-  if (missingTypeCount > 0) {
+  const missingSourceCount = currentMissingSourceCount()
+  if (missingSourceCount > 0) {
     priceTypeFilter.value = 'MISSING'
-    localWorkflowGuideText.value = `报价物料明细已生成，系统发现 ${missingTypeCount} 项缺价格类型，请到“物料价格类型”导入或维护`
+    localWorkflowGuideText.value = `报价物料明细已生成，系统发现 ${missingSourceCount} 项待检查来源，请检查取价组织及价格源`
     ElMessage.warning(localWorkflowGuideText.value)
     return
   }
   priceTypeFilter.value = 'ALL'
-  localWorkflowGuideText.value = '报价物料明细已生成，价格类型已自动识别，可继续检查价格源'
+  localWorkflowGuideText.value = '报价物料明细已生成，候选来源已识别，可继续准备价格'
   ElMessage.success(localWorkflowGuideText.value)
 }
 
@@ -1918,7 +1970,7 @@ async function loadPriceType(showError = true) {
     })
   } catch (error) {
     priceType.value = emptyPriceTypeResponse()
-    if (showError) ElMessage.error(error?.message || '获取价格类型识别结果失败')
+    if (showError) ElMessage.error(error?.message || '获取取价来源结果失败')
   } finally {
     priceTypeLoading.value = false
   }
@@ -2170,11 +2222,12 @@ function effectiveSupplierText(node) {
 }
 
 function openMaterialPriceTypePage() {
-  const first = missingPriceTypeRows.value[0] || {}
+  const first = missingCandidateSourceRows.value[0] || {}
   router.push({
     path: '/base/map',
     query: {
       materialCode: first.materialCode || '',
+      priceOrgCode: first.priceOrgCode || '',
       oaNo: oaNo.value,
       oaFormItemId: itemId.value,
       productCode: costingProductCode.value,
@@ -2182,7 +2235,7 @@ function openMaterialPriceTypePage() {
       returnTo: route.fullPath,
     },
   }).catch(() => {
-    ElMessage.info('请到价格源管理下的物料价格类型页面导入或维护价格类型')
+    ElMessage.info('请到价格源管理下的物料价格类型对照查看取价顺序')
   })
 }
 
@@ -2309,7 +2362,6 @@ function openPriceSource(row) {
     SETTLE_FIXED: '/price/settle-fixed',
     LINKED: '/price/linked/result',
     RANGE: '/price/range',
-    PRICE_TYPE: '/base/map',
   }
   const path = paths[kind]
   if (!path) {
@@ -2414,7 +2466,7 @@ async function submitNoScrapConfirm() {
 
 function priceSourceSupplementText(tab) {
   if (isBlockedTab(tab)) {
-    return tab.blockedReason || '请先补齐缺失的价格类型，系统才能判断需要补充哪类价格源'
+    return tab.blockedReason || '请先生成报价物料，再检查取价来源'
   }
   if (pricePrepare.value.supplierPriceReviews?.some(row => row.status !== 'FALLBACK_HIGH')) {
     return '请确认是否有供货比率新增审核，价格补齐后自动继续核算'
@@ -2428,31 +2480,6 @@ function priceSourceSupplementText(tab) {
   return '价格源已齐全，可生成最终价格'
 }
 
-function priceSourceGapKind(row) {
-  if (isMissingScrapMappingGap(row)) return 'SCRAP_MAPPING'
-  const kind = normalizePriceSourceKind(row?.priceType)
-  if (kind) return kind
-  const gapType = String(row?.gapType || '')
-  if (gapType.includes('MISSING_PRICE_TYPE')) return 'PRICE_TYPE'
-  return 'UNRESOLVED'
-}
-
-function normalizePriceSourceKind(value) {
-  const text = String(value || '').trim()
-  if (!text) return ''
-  const upper = text.toUpperCase()
-  if (isSettleFixedPriceSource(text) || upper === 'SETTLE_FIXED') return 'SETTLE_FIXED'
-  if (['FIXED', 'PURCHASE_FIXED'].includes(upper) || text.includes('固定')) return 'FIXED'
-  if (upper === 'LINKED' || text.includes('联动')) return 'LINKED'
-  if (upper === 'RANGE' || text.includes('区间')) return 'RANGE'
-  if (upper === 'MAKE' || text.includes('自制')) return 'MAKE'
-  return ''
-}
-
-function isSettleFixedPriceSource(text) {
-  return ['SETTLE_FIXED', '结算固定', '固定结算', '家用结算', '结算价'].some((token) => text.includes(token))
-}
-
 function priceSourceGapTypeText(row) {
   const type = row?.priceType
   if (isMissingScrapMappingGap(row)) return '废料映射'
@@ -2462,10 +2489,9 @@ function priceSourceGapTypeText(row) {
     SETTLE_FIXED: '结算固定价',
     LINKED: '联动价',
     RANGE: '区间价',
-    PRICE_TYPE: '价格类型',
     MAKE: '自制件',
     SCRAP_MAPPING: '废料映射',
-    UNRESOLVED: '未返回价格类型',
+    UNRESOLVED: '暂无可用来源',
   }
   return labels[priceSourceGapKind(row)] || '-'
 }
@@ -2484,9 +2510,8 @@ function priceSourceGapActionText(row) {
     SETTLE_FIXED: '维护结算固定价价格源',
     LINKED: '维护联动价结果',
     RANGE: '维护区间价价格源',
-    PRICE_TYPE: '维护物料价格类型',
     MAKE: '自制件价格由原材料/废料价格生成，请按缺口说明处理',
-    UNRESOLVED: '缺口未带价格类型，请重新检查价格源',
+    UNRESOLVED: '当前取价顺序下无可用价格，请查看缺口原因并维护适用价格源',
   }
   const label = labels[priceSourceGapKind(row)] || labels.UNRESOLVED
   return materialCode ? `${label}：${materialCode}` : label
@@ -2498,7 +2523,6 @@ function priceSourceGapButtonText(row) {
     SETTLE_FIXED: '去维护结算固定价',
     LINKED: '去维护联动价',
     RANGE: '去维护区间价',
-    PRICE_TYPE: '去维护价格类型',
     MAKE: '查看说明',
     SCRAP_MAPPING: '处理废料映射',
     UNRESOLVED: '查看说明',
@@ -2515,21 +2539,6 @@ function emptyNoScrapConfirmContext() {
     businessUnitType: '',
     periodMonth: '',
   }
-}
-
-function isScrapMappingSource(row) {
-  return row?.sourceTable === 'lp_material_scrap_ref'
-}
-
-function isMissingScrapMappingGap(row) {
-  const message = String(row?.message || '')
-  return row?.gapType === 'MISSING_SCRAP_MAPPING'
-    || row?.actionType === 'SUPPLEMENT_SCRAP_MAPPING'
-    || row?.actionType === 'CONFIRM_NO_SCRAP'
-    || row?.canConfirmNoScrap === true
-    || isScrapMappingSource(row)
-    || message.includes('缺废料映射')
-    || message.includes('MISSING_SCRAP_MAPPING')
 }
 
 function actionMaterialNo(row) {
@@ -2604,7 +2613,7 @@ async function submitProductCosting(reason = 'USER_REQUEST') {
     localWorkflowGuideText.value = result?.message || '核算资料存在缺口，请按当前步骤处理'
     activeTab.value = productCostingResultTab(result?.currentStep)
     if (result?.pipelineStatus === 'BLOCKED') {
-      ElMessage.warning(localWorkflowGuideText.value)
+      ElMessage.warning('核算未完成，请查看缺口')
       return
     }
     costRunError.value = localWorkflowGuideText.value
@@ -2686,7 +2695,7 @@ function formatPrice(value) {
 function formatSignedMoney(value) {
   if (value === null || value === undefined || value === '') return '-'
   const number = Number(value)
-  const formatted = formatSnapshotDecimal(value, 3)
+  const formatted = formatMoney(value)
   return Number.isFinite(number) && number > 0 ? `+${formatted}` : formatted
 }
 
@@ -2732,7 +2741,7 @@ function buildPriceSourceSupplementTab(priceTypeTab, prepareTab) {
       code: 'PRICE_SOURCE_SUPPLEMENT',
       name: '价格源维护',
       status: 'BLOCKED',
-      blockedReason: '请先补齐价格类型',
+      blockedReason: '请先生成报价物料',
     }
   }
   if (gapCount > 0) {
@@ -2749,14 +2758,14 @@ function buildPriceSourceSupplementTab(priceTypeTab, prepareTab) {
       code: 'PRICE_SOURCE_SUPPLEMENT',
       name: '价格源维护',
       status: 'PENDING',
-      blockedReason: '价格类型已识别，系统将自动检查价格源',
+      blockedReason: '系统将按取价顺序检查价格源',
     }
   }
   return {
     code: 'PRICE_SOURCE_SUPPLEMENT',
     name: '价格源维护',
     status: hasGeneratedPrice ? 'DONE' : 'READY',
-    blockedReason: hasGeneratedPrice ? '' : '价格类型已识别，可自动检查价格源并生成最终价格',
+    blockedReason: hasGeneratedPrice ? '' : '可按取价顺序检查价格源并生成最终价格',
   }
 }
 
@@ -2802,8 +2811,8 @@ function tabBadgeLabel(tab) {
     return '待生成'
   }
   if (code === 'PRICE_TYPE_CONFIRMATION') {
-    const missingTypeCount = currentMissingPriceTypeCount()
-    if (missingTypeCount > 0) return `缺 ${missingTypeCount} 项`
+    const missingSourceCount = currentMissingSourceCount()
+    if (missingSourceCount > 0) return `缺 ${missingSourceCount} 项`
     return tab?.status === 'DONE' ? '已识别' : '待识别'
   }
   if (code === 'PRICE_SOURCE_SUPPLEMENT') {
@@ -2825,7 +2834,8 @@ function tabBadgeLabel(tab) {
     const versionNo = currentSuccessVersion.value?.displayVersionNo || currentSuccessVersion.value?.versionNo
     if (hasRunningCostVersion.value && versionNo) return '正在重新核算'
     if (hasRunningCostVersion.value) return '正在核算'
-    // 成本版本是最终事实来源。旧工作流步骤可能仍为 PENDING，不能把已有当前成功版本误标成待核算。
+    if (currentCostingBlockText.value) return '待重新核算'
+    // 当前无阻断时，保留已确认成功版本，不受旧步骤 PENDING 标记影响。
     if (currentSuccessVersion.value?.id && versionNo) return '核算成功'
     if (isBlockedTab(tab)) return '未就绪'
     return '待核算'
@@ -2844,7 +2854,7 @@ function tabBadgeType(tab) {
     if (workspaceStatus === 'STALE') return 'warning'
     return bomRows.value.length > 0 ? 'success' : 'info'
   }
-  if (code === 'PRICE_TYPE_CONFIRMATION') return currentMissingPriceTypeCount() > 0 ? 'danger' : (tab?.status === 'DONE' ? 'success' : 'warning')
+  if (code === 'PRICE_TYPE_CONFIRMATION') return currentMissingSourceCount() > 0 ? 'danger' : (tab?.status === 'DONE' ? 'success' : 'warning')
   if (code === 'PRICE_SOURCE_SUPPLEMENT') {
     if (isBlockedTab(tab)) return 'info'
     if (currentPriceSourceGapCount() > 0) return 'danger'
@@ -2857,6 +2867,7 @@ function tabBadgeType(tab) {
   }
   if (code === 'COST_RUN') {
     if (historyViewMode.value && displayedCostVersion.value.id) return 'info'
+    if (currentCostingBlockText.value) return 'warning'
     if (hasRunningCostVersion.value) return 'warning'
     if (currentSuccessVersion.value?.id) return 'success'
     return isBlockedTab(tab) ? 'info' : 'warning'
@@ -2934,7 +2945,7 @@ function costVersionStatusTagType(row) {
 function workflowStepLabel(step) {
   const labels = {
     QUOTE_BOM: '报价物料明细',
-    PRICE_TYPE_CONFIRMATION: '价格类型识别',
+    PRICE_TYPE_CONFIRMATION: '取价来源',
     PRICE_SOURCE_SUPPLEMENT: '价格源维护',
     PRICE_PREPARE: '最终价格生成',
     COST_RUN: '成本核算',
@@ -3015,7 +3026,7 @@ function priceTypeRowMatched(row) {
     String(row.materialName || '').toLowerCase().includes(keyword)
   if (!keywordMatched) return false
   if (priceTypeFilter.value === 'ALL') return true
-  if (priceTypeFilter.value === 'MISSING') return isMissingPriceTypeRow(row)
+  if (priceTypeFilter.value === 'MISSING') return isMissingCandidateSourceRow(row)
   if (priceTypeFilter.value === 'NORMAL') return row.objectType === 'NORMAL' || row.objectType === 'PURCHASE'
   if (priceTypeFilter.value === 'MAKE_PART') return ['MAKE_PARENT', 'MAKE_RAW', 'MAKE_SCRAP', 'MAKE_NO_SCRAP', 'MAKE_PART'].includes(row.objectType)
   if (priceTypeFilter.value === 'PACKAGE') return ['PACKAGE_PARENT', 'PACKAGE_CHILD', 'PACKAGE', 'PACKAGE_COMPONENT'].includes(row.objectType)
@@ -3026,15 +3037,16 @@ function isPriceableTypeRow(row) {
   return row && !['MAKE_PARENT', 'PACKAGE_PARENT', 'MAKE_NO_SCRAP'].includes(row.objectType)
 }
 
-function isMissingPriceTypeRow(row) {
-  return isPriceableTypeRow(row) && (!row.priceType || row.typeStatus === 'MISSING_TYPE')
+function isMissingCandidateSourceRow(row) {
+  return isPriceableTypeRow(row) && (!row.priceType || ['NO_SOURCE', 'SCOPE_MISSING'].includes(row.typeStatus))
 }
 
 function priceTypeStatusLabel(status) {
   const labels = {
     RECOGNIZED: '已识别',
-    MISSING_TYPE: '缺价格类型',
-    CHILD_MISSING_TYPE: '子项缺类型',
+    NO_SOURCE: '暂无候选来源',
+    SCOPE_MISSING: '缺取价范围',
+    CHILD_GAP: '子项待检查',
   }
   return labels[status] || status || '-'
 }
@@ -3058,9 +3070,8 @@ function priceTypeObjectLabel(objectType) {
 function priceTypeSourceLabel(row) {
   const source = row?.priceTypeSource || row?.sourceText
   const labels = {
-    MATERIAL_PRICE_TYPE: '价格类型维护',
-    quote_price_type_confirmation: '历史报价确认',
-    manual: '人工维护',
+    FORMAL_PRICE_SOURCE: '公共价源',
+    TECHNICAL_SUPPLEMENT: '技术补录',
     MAKE_PARENT: '自制件生成',
     MAKE_RAW: '自制件生成',
     MAKE_SCRAP: '自制件生成',
@@ -3144,7 +3155,7 @@ onMounted(() => initializeWorkbench())
   gap: 16px;
   padding: 18px 20px;
   border: 1px solid #e4e9f1;
-  border-radius: 10px;
+  border-radius: 4px;
   background: #ffffff;
 }
 
@@ -3161,6 +3172,21 @@ onMounted(() => initializeWorkbench())
   color: #697386;
   font-size: 13px;
 }
+
+.costing-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 10px;
+  color: #606266;
+  font-size: 13px;
+}
+
+.costing-status--blocked { color: #a15c14; }
+.costing-status .el-button { margin: 0; padding: 0; }
+.costing-issue-detail { margin: 0; line-height: 1.7; overflow-wrap: anywhere; }
+.quote-details-drawer .section-block + .section-block { margin-top: 16px; }
 
 .page-actions,
 .toolbar-actions {
@@ -3199,7 +3225,7 @@ onMounted(() => initializeWorkbench())
 .section-block {
   overflow: hidden;
   border: 1px solid #e4e9f1;
-  border-radius: 10px;
+  border-radius: 4px;
   background: #ffffff;
 }
 
@@ -3333,9 +3359,7 @@ onMounted(() => initializeWorkbench())
   width: 100%;
   min-width: 1020px;
   box-sizing: border-box;
-  border: 1px solid #e4e9f1;
-  border-radius: 9px;
-  background: #f8fafc;
+  background: #ffffff;
   overflow: hidden;
 }
 
@@ -3346,9 +3370,9 @@ onMounted(() => initializeWorkbench())
 .costing-tabs > :deep(.el-tabs__header .el-tabs__item) {
   justify-content: flex-start;
   min-width: 0;
-  height: 72px;
+  height: 58px;
   padding: 0 16px;
-  border-right: 1px solid #e4e9f1;
+  border-bottom: 2px solid transparent;
   color: #475467;
   transition: background-color 0.16s ease, color 0.16s ease;
 }
@@ -3364,7 +3388,7 @@ onMounted(() => initializeWorkbench())
 
 .costing-tabs > :deep(.el-tabs__header .el-tabs__item.is-active) {
   color: #1f66b1;
-  background: #eef6ff;
+  border-bottom-color: #1f66b1;
 }
 
 .tab-label {
@@ -3380,20 +3404,13 @@ onMounted(() => initializeWorkbench())
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  width: 24px;
-  height: 24px;
-  border: 1px solid #d5dce6;
-  border-radius: 50%;
-  background: #ffffff;
   color: #667085;
   font-size: 12px;
   font-weight: 700;
 }
 
 .costing-tabs > :deep(.el-tabs__header .el-tabs__item.is-active) .tab-index {
-  border-color: #2f7dcc;
-  color: #ffffff;
-  background: #2f7dcc;
+  color: #1f66b1;
 }
 
 .tab-copy {
@@ -3650,10 +3667,9 @@ onMounted(() => initializeWorkbench())
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 12px 14px;
-  border: 1px solid #d8e5f3;
-  border-radius: 8px;
-  background: #f6faff;
+  padding: 0 0 12px;
+  border-bottom: 1px solid #e4e9f1;
+  flex-wrap: wrap;
 }
 
 .pricing-bom-summary > div,

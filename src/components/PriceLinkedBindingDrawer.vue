@@ -286,7 +286,7 @@ const historyLoading = ref(false)
 // B 组 token：四个字符串由后端白名单锁定（VALID_TOKEN_NAMES）
 const tokenOptions = ['材料含税价格', '材料价格', '废料含税价格', '废料价格']
 
-// 价源下拉 —— 与 lp_finance_base_price.price_source 的可能取值对齐
+// 价源选项与因素身份中的 priceSource 保持一致。
 const priceSourceOptions = [
   '平均价',
   '出厂价',

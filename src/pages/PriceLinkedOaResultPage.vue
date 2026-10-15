@@ -2,9 +2,9 @@
   <div class="oa-result">
     <el-card shadow="never" class="filter-card">
       <div class="filter-header">
-        <div class="filter-title">联动价计算</div>
+        <div class="filter-title">联动价结果</div>
         <div class="filter-actions">
-          <el-button :loading="refreshing" @click="refreshCalc">刷新</el-button>
+          <el-button :loading="loading" @click="fetchList">刷新</el-button>
         </div>
       </div>
       <el-form :inline="true" label-width="90px">
@@ -17,8 +17,8 @@
         <el-form-item label="业务单元">
           <el-select v-model="filters.businessUnitType" placeholder="全部" clearable>
             <el-option label="全部" value="" />
-            <el-option label="COMMERCIAL" value="COMMERCIAL" />
-            <el-option label="HOUSEHOLD" value="HOUSEHOLD" />
+            <el-option label="商用" value="COMMERCIAL" />
+            <el-option label="家用" value="HOUSEHOLD" />
           </el-select>
         </el-form-item>
         <el-form-item label="物料编码">
@@ -34,9 +34,6 @@
         <el-form-item label="价格月份">
           <el-input v-model="filters.pricingMonth" placeholder="2026-05" />
         </el-form-item>
-        <el-form-item label="调价批次">
-          <el-input v-model="filters.adjustBatchId" placeholder="批次 ID" />
-        </el-form-item>
         <el-form-item label="计算状态">
           <el-select v-model="filters.calcStatus" placeholder="全部" clearable>
             <el-option label="全部" value="" />
@@ -47,16 +44,9 @@
         <el-form-item label="结果来源">
           <el-select v-model="filters.factorSource" placeholder="全部" clearable>
             <el-option label="全部" value="" />
-            <el-option label="OA锁价" value="OA_LOCKED" />
-            <el-option label="调价批次" value="ADJUST_BATCH" />
+            <el-option label="客户锁价" value="OA_LOCKED" />
+            <el-option label="财务基准" value="FINANCE_QUOTE_BASE" />
             <el-option label="月度影响因素" value="MONTHLY_FACTOR" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="形态属性">
-          <el-select v-model="filters.shapeAttr" placeholder="全部">
-            <el-option label="全部" value="" />
-            <el-option label="制造件" value="制造件" />
-            <el-option label="采购件" value="采购件" />
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -69,32 +59,16 @@
     <el-card shadow="never" class="summary-card">
       <div class="summary-grid">
         <div class="summary-item">
-          <span>联动价物料数</span>
+          <span>结果总数</span>
           <strong>{{ total }}</strong>
         </div>
         <div class="summary-item">
-          <span>计算成功数</span>
+          <span>本页成功</span>
           <strong>{{ summary.success }}</strong>
         </div>
         <div class="summary-item">
-          <span>计算失败数</span>
+          <span>本页失败</span>
           <strong>{{ summary.failed }}</strong>
-        </div>
-        <div class="summary-item">
-          <span>有 trace 数</span>
-          <strong>{{ summary.hasTrace }}</strong>
-        </div>
-        <div class="summary-item">
-          <span>OA锁价变量</span>
-          <strong>{{ summary.quoteBaseVariables }}</strong>
-        </div>
-        <div class="summary-item">
-          <span>月度影响因素变量</span>
-          <strong>{{ summary.financeVariables }}</strong>
-        </div>
-        <div class="summary-item">
-          <span>调价/派生变量</span>
-          <strong>{{ summary.derivedVariables }}</strong>
         </div>
       </div>
     </el-card>
@@ -115,7 +89,6 @@
           </template>
         </el-table-column>
         <el-table-column prop="pricingMonth" label="价格月份" width="110" />
-        <el-table-column prop="adjustBatchId" label="调价批次" width="110" />
         <el-table-column prop="shapeAttr" label="形态属性" width="120" />
         <el-table-column prop="bomQty" label="部品用量" width="120" />
         <el-table-column prop="partUnitPrice" label="部品单价" width="120" />
@@ -172,7 +145,7 @@
     >
       <div v-if="traceLoading" class="trace-loading">加载中…</div>
       <div v-else-if="!traceData" class="trace-empty">
-        本次刷新未记录 trace，请点击列表页"刷新"后重试。
+        暂无计算明细，请从报价核算页重新核算。
       </div>
       <div v-else class="trace-body">
         <el-descriptions :column="2" border size="small">
@@ -218,22 +191,21 @@
             <el-descriptions-item label="公式求值结果">
               {{ formatNum(traceData?.result) }}
             </el-descriptions-item>
-            <el-descriptions-item label="模式">{{ traceData?.mode || '—' }}</el-descriptions-item>
             <!-- V48 新增：联动价主表 Excel 金标 + 月份，用于业务对比是否同月一致 -->
-            <el-descriptions-item v-if="traceData?.manualPrice !== undefined" label="主表金标">
+            <el-descriptions-item v-if="traceData?.manualPrice !== undefined" label="原表参考价">
               {{ formatNum(traceData?.manualPrice) }}
             </el-descriptions-item>
             <el-descriptions-item v-if="traceData?.manualPriceMonth" label="主表月份">
               {{ traceData?.manualPriceMonth }}
             </el-descriptions-item>
-            <!-- legacy/dual 灰度切换 dual→new 后这些字段不再写入；保留 v-if 兜底显示历史 trace -->
-            <el-descriptions-item v-if="traceData?.legacyResult !== undefined" label="legacy 结果">
+            <!-- 已保存的历史对照仍可查看。 -->
+            <el-descriptions-item v-if="traceData?.legacyResult !== undefined" label="历史旧算法结果">
               {{ formatNum(traceData?.legacyResult) }}
             </el-descriptions-item>
-            <el-descriptions-item v-if="traceData?.newResult !== undefined" label="new 结果">
+            <el-descriptions-item v-if="traceData?.newResult !== undefined" label="历史新算法结果">
               {{ formatNum(traceData?.newResult) }}
             </el-descriptions-item>
-            <el-descriptions-item v-if="traceData?.diff !== undefined" label="双跑差异">
+            <el-descriptions-item v-if="traceData?.diff !== undefined" label="历史对照差异">
               {{ formatNum(traceData?.diff) }}
             </el-descriptions-item>
           </el-descriptions>
@@ -258,7 +230,6 @@ import { ElMessage } from 'element-plus'
 import BasePagination from '../components/BasePagination.vue'
 import {
   fetchPriceLinkedCalcResults,
-  refreshPriceLinkedCalc,
   fetchCalcTrace,
 } from '../api/priceLinkedCalc'
 import { parseTraceJson } from './priceLinkedResultUtils'
@@ -267,7 +238,6 @@ const route = useRoute()
 const loading = ref(false)
 const tableRows = ref([])
 const total = ref(0)
-const refreshing = ref(false)
 
 const filters = ref({
   oaNo: String(route.query.oaNo || '').trim(),
@@ -276,19 +246,13 @@ const filters = ref({
   itemCode: '',
   calcScene: '',
   pricingMonth: '',
-  adjustBatchId: '',
   calcStatus: '',
   factorSource: '',
-  shapeAttr: '',
 })
 
 const currentPage = ref(1)
 const pageSize = ref(20)
 
-const optionalLong = (value) => {
-  const text = String(value || '').trim()
-  return /^\d+$/.test(text) ? Number(text) : undefined
-}
 
 const buildParams = () => ({
   oaNo: filters.value.oaNo?.trim(),
@@ -297,10 +261,8 @@ const buildParams = () => ({
   itemCode: filters.value.itemCode?.trim(),
   calcScene: filters.value.calcScene,
   pricingMonth: filters.value.pricingMonth?.trim(),
-  adjustBatchId: optionalLong(filters.value.adjustBatchId),
   calcStatus: filters.value.calcStatus,
   factorSource: filters.value.factorSource,
-  shapeAttr: filters.value.shapeAttr,
   page: currentPage.value,
   pageSize: pageSize.value,
 })
@@ -309,20 +271,11 @@ const summary = computed(() => {
   const rows = tableRows.value || []
   let success = 0
   let failed = 0
-  let hasTrace = 0
-  let quoteBaseVariables = 0
-  let financeVariables = 0
-  let derivedVariables = 0
   rows.forEach((row) => {
     if (row.calcStatus === 'OK' || row.calcStatus === 'SUCCESS') success += 1
     if (row.calcStatus === 'FAILED') failed += 1
-    if (row.hasTrace) hasTrace += 1
-    const sourceSummary = row.variableSourceSummary || {}
-    quoteBaseVariables += Number(sourceSummary.OA_LOCKED || sourceSummary.QUOTE_BASE || 0)
-    financeVariables += Number(sourceSummary.FINANCE || sourceSummary.FINANCE_FACTOR || 0)
-    derivedVariables += Number(sourceSummary.DERIVED || sourceSummary.FORMULA_REF || 0)
   })
-  return { success, failed, hasTrace, quoteBaseVariables, financeVariables, derivedVariables }
+  return { success, failed }
 })
 
 const oaLockedCount = (row) =>
@@ -337,30 +290,9 @@ const fetchList = async () => {
   } catch (error) {
     tableRows.value = []
     total.value = 0
-    ElMessage.error(error?.message || '获取联动价计算失败')
+    ElMessage.error(error?.message || '获取联动价结果失败')
   } finally {
     loading.value = false
-  }
-}
-
-const refreshCalc = async () => {
-  if (!filters.value.oaNo?.trim()) {
-    ElMessage.warning('请输入OA单号')
-    return
-  }
-  refreshing.value = true
-  try {
-    await refreshPriceLinkedCalc({ oaNo: filters.value.oaNo.trim() })
-    ElMessage.success('已刷新')
-    if (currentPage.value === 1) {
-      fetchList()
-    } else {
-      currentPage.value = 1
-    }
-  } catch (error) {
-    ElMessage.error(error?.message || '刷新失败')
-  } finally {
-    refreshing.value = false
   }
 }
 
@@ -380,11 +312,9 @@ const resetFilters = () => {
     itemCode: '',
     calcScene: '',
     pricingMonth: '',
-    adjustBatchId: '',
     calcStatus: '',
     factorSource: '',
-    shapeAttr: '',
-  }
+    }
   applyFilters()
 }
 
@@ -453,7 +383,7 @@ const formatNum = (v) => {
 const calcStatusText = (status) => {
   if (status === 'OK' || status === 'SUCCESS') return '成功'
   if (status === 'FAILED') return '失败'
-  if (status === 'PENDING') return '待刷新'
+  if (status === 'PENDING') return '待计算'
   return '—'
 }
 
@@ -472,9 +402,9 @@ const calcSceneText = (scene) => {
 
 const factorSourceText = (source) => {
   const map = {
-    OA_LOCKED: 'OA锁价',
+    OA_LOCKED: '客户锁价',
+    FINANCE_QUOTE_BASE: '财务基准',
     QUOTE_BASE: 'OA报价单基价覆盖',
-    ADJUST_BATCH: '调价批次',
     MONTHLY_FACTOR: '月度影响因素',
     FINANCE_FACTOR: '影响因素月度价',
   }
@@ -483,12 +413,12 @@ const factorSourceText = (source) => {
 
 const sourceText = (source) => {
   const map = {
-    OA_LOCKED: 'OA锁价',
+    OA_LOCKED: '客户锁价',
+    FINANCE_QUOTE_BASE: '财务基准',
     QUOTE_BASE: 'OA报价单基价覆盖',
     FINANCE: '报价单基价/影响因素月度价',
     FINANCE_FACTOR: '影响因素月度价',
     MONTHLY_FACTOR: '月度影响因素',
-    ADJUST_BATCH: '调价批次',
     PART_CONTEXT: '行局部字段',
     DERIVED: '派生公式/调价结果',
     FORMULA_REF: '派生公式',
@@ -501,7 +431,7 @@ const sourceText = (source) => {
 
 const openTrace = async (row) => {
   if (!row?.calcId) {
-    ElMessage.warning('该行尚未生成 trace，请先刷新')
+    ElMessage.warning('尚未生成计算明细，请从报价核算页发起核算')
     return
   }
   traceMeta.value = {
@@ -523,7 +453,7 @@ const openTrace = async (row) => {
     const resp = await fetchCalcTrace(row.calcId)
     traceData.value = parseTraceJson(resp?.traceJson)
   } catch (error) {
-    ElMessage.error(error?.message || '获取 trace 失败')
+    ElMessage.error(error?.message || '获取计算明细失败')
     traceData.value = null
   } finally {
     traceLoading.value = false

@@ -29,7 +29,7 @@
           </tr>
           <tr>
             <td class="meta-label">OA单号</td>
-            <td></td>
+            <td>{{ meta.oaNo }}</td>
             <td class="meta-label">报价员</td>
             <td></td>
             <td></td>
@@ -57,10 +57,10 @@
             <td class="meta-label">物料编码</td>
             <td>{{ meta.productCode }}</td>
             <td></td>
-            <td class="meta-label">{{ materials[2] }}</td>
+            <td class="meta-label">{{ financeCopperPrice ? '财务Cu' : materials[2] }}</td>
+            <td>{{ financeCopperPrice || copperPrice }}</td>
+            <td class="meta-label">客户Cu</td>
             <td>{{ copperPrice }}</td>
-            <td></td>
-            <td></td>
             <td></td>
           </tr>
           <tr>
@@ -354,7 +354,7 @@
             <td></td><td></td><td></td><td></td>
           </tr>
           <tr class="total-row">
-            <td colspan="3" class="total-label">不含税总成本</td>
+            <td colspan="3" class="total-label">{{ hasMaterialAdjustment ? '财务正常成本' : '不含税总成本' }}</td>
             <td></td>
             <td></td>
             <td class="amount">
@@ -366,6 +366,12 @@
             <td></td>
             <td></td>
             <td></td>
+          </tr>
+          <tr v-for="summary in adjustmentRows" :key="summary.label" class="total-row">
+            <td colspan="3" class="total-label">{{ summary.label }}</td>
+            <td></td><td></td>
+            <td class="amount">{{ formatAmount(summary.amount) }}</td>
+            <td></td><td></td><td></td><td></td>
           </tr>
           <tr class="footer-row">
             <td>编制：</td>
@@ -421,10 +427,18 @@ const materials = ['不锈钢-316L', '不锈钢-304', '电解铜', '电解锌', 
 
 const partItems = ref([])
 const costItems = ref([])
+const cuMaterialAdjustment = ref(null)
+const finalQuoteAmount = ref(null)
+const hasMaterialAdjustment = computed(() => cuMaterialAdjustment.value !== null)
+const adjustmentRows = computed(() => hasMaterialAdjustment.value ? [
+  { label: '材料费差额', amount: cuMaterialAdjustment.value },
+  { label: '最终成本（不含税）', amount: finalQuoteAmount.value },
+] : [])
 const productAttr = ref('')
 const productName = ref('')
 const productModel = ref('')
 const copperPrice = ref('')
+const financeCopperPrice = ref('')
 const zincPrice = ref('')
 const currentCostRunNo = ref('')
 const currentVersionNo = ref('')
@@ -454,6 +468,7 @@ const effectiveCostRunNo = computed(() => currentCostRunNo.value || meta.value.c
 
 const toText = (value) => (value === null || value === undefined ? '' : String(value))
 const formatAmount = (value) => {
+  if (value === null || value === undefined || value === '') return ''
   const number = Number(value)
   if (!Number.isFinite(number)) {
     return ''
@@ -541,6 +556,7 @@ const loadDetail = async () => {
     productName.value = toText(data?.productName)
     productModel.value = toText(data?.productModel)
     copperPrice.value = toText(data?.copperPrice)
+    financeCopperPrice.value = toText(data?.financeCuPrice)
     zincPrice.value = toText(data?.zincPrice)
     currentCostRunNo.value = toText(data?.costRunNo)
     currentVersionNo.value = toText(data?.versionNo)
@@ -561,6 +577,8 @@ const loadDetail = async () => {
       remark: toText(item.remark),
     }))
     costItems.value = costs
+    cuMaterialAdjustment.value = data?.cuMaterialAdjustment ?? null
+    finalQuoteAmount.value = data?.finalQuoteAmount ?? null
   } catch (error) {
     ElMessage.error(error?.message || '试算结果加载失败')
   }
@@ -821,7 +839,10 @@ const exportSheet = () => {
     setCellValue(rowIndexFinal(4), 7, null)
     setCellValue(rowIndexFinal(5), 2, productName.value || meta.value.productName || '')
     setCellValue(rowIndexFinal(5), 4, meta.value.productCode || '')
-    setCellValue(rowIndexFinal(5), 7, toNumber(copperPrice.value) ?? copperPrice.value)
+    setCellValue(rowIndexFinal(5), 6, financeCopperPrice.value ? '财务Cu' : materials[2])
+    setCellValue(rowIndexFinal(5), 7, toNumber(financeCopperPrice.value || copperPrice.value))
+    setCellValue(rowIndexFinal(5), 8, '客户Cu')
+    setCellValue(rowIndexFinal(5), 9, toNumber(copperPrice.value))
     setCellValue(
       rowIndexFinal(6),
       2,
@@ -894,19 +915,25 @@ const exportSheet = () => {
     setCellValue(rowIndexFinal(41), 6, toNumber(getOtherExpenseValueByName('模具费')))
     setCellValue(rowIndexFinal(42), 6, toNumber(getOtherExpenseValueByName('认证费')))
     const totalRow = rowIndexFinal(43)
-    // 模板第 43 行是签字栏，单独插入总成本行，保留编制／审核位置。
-    sheet.spliceRows(totalRow, 0, [])
+    const summaryRows = [
+      { label: hasMaterialAdjustment.value ? '财务正常成本' : '不含税总成本', amount: getCostAmountValue('TOTAL') },
+      ...adjustmentRows.value,
+    ]
+    // 在签字栏前插入同一冻结版本的汇总金额，页面与导出共用差额行。
+    sheet.spliceRows(totalRow, 0, ...summaryRows.map(() => []))
     const summaryStyleRow = sheet.getRow(rowIndexFinal(35))
-    sheet.getRow(totalRow).height = summaryStyleRow.height
-    for (let col = 1; col <= 10; col += 1) {
-      sheet.getCell(totalRow, col).style = { ...summaryStyleRow.getCell(col).style }
-    }
-    setCellValue(totalRow, 1, '不含税总成本')
-    setCellValue(totalRow, 6, toNumber(getCostAmountValue('TOTAL')))
-    setCellValue(totalRow, 2, null)
-    setCellValue(totalRow, 3, null)
+    summaryRows.forEach((summary, index) => {
+      const row = totalRow + index
+      sheet.getRow(row).height = summaryStyleRow.height
+      for (let col = 1; col <= 10; col += 1) {
+        sheet.getCell(row, col).style = { ...summaryStyleRow.getCell(col).style }
+      }
+      setCellValue(row, 1, summary.label)
+      setCellValue(row, 6, toNumber(summary.amount))
+      applyMergedRange(row, 1, row, 3)
+    })
     restoreTemplateMerges(totalRow)
-    applyMergedRange(totalRow + 1, 1, totalRow + 1, 3)
+    applyMergedRange(totalRow + summaryRows.length, 1, totalRow + summaryRows.length, 3)
 
     if (columnWidths.length > 0) {
       sheet.columns.forEach((column, index) => {

@@ -122,7 +122,7 @@ function resolveLandingPath() {
 /**
  * 将 permissionStore.generateRoutes() 返回的顶层路由逐一 addRoute。
  * - 顶层节点 path 需绝对化（后端通常返回 "system" 这种相对形式）
- * - 注册失败只 warn 不抛；permissionStore 内部已有 Placeholder 兜底
+ * - permissionStore 已排除无法解析组件的菜单；未注册的地址进入 404。
  */
 function registerDynamicRoutes(routes, permissionStore) {
   routes.forEach((route) => {

@@ -29,11 +29,6 @@ describe('动态菜单路由契约', () => {
 
   it('保留联动价动态组件别名', () => {
     assert.match(permissionContent, /'price\/price-linked\/index'\s*:\s*'views:price\/linked\/result\/index'/)
-    assert.match(permissionContent, /'rate\/finance-base-price\/index'\s*:\s*'pages:PriceLinkedFinanceBasePage'/)
-  })
-
-  it('新增报价单基价映射规则动态组件', () => {
-    assert.ok(fs.existsSync(path.join(VIEWS_DIR, 'price/linked/quote-base-mapping/index.vue')))
   })
 
   it('/price/linked 根路径仍默认重定向到 /price/linked/result', () => {

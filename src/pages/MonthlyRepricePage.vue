@@ -89,7 +89,7 @@
                   v-hasPermi="['price:monthly-reprice:operate']"
                   type="warning"
                   link
-                  :disabled="isTerminalStatus(row.status)"
+                  :disabled="isCancelDisabled(row.status)"
                   @click="cancelBatch(row)"
                 >
                   取消
@@ -794,7 +794,7 @@ const calcStatusTagType = (status) => ({
   SKIPPED: 'info',
 }[status] || 'info')
 
-const isTerminalStatus = (status) => ['CONFIRMED', 'CANCELLED', 'FAILED'].includes(status)
+const isCancelDisabled = (status) => ['CONFIRMED', 'CANCELLED'].includes(status)
 const canConfirm = (row) => row?.status === 'WAIT_CONFIRM' && Number(row?.failedCount || 0) === 0
 
 const formatAmount = (value) => {

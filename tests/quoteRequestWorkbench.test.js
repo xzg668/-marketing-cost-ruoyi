@@ -1,3 +1,4 @@
+import { currentCostingBlockLabel, boardPricingRows } from '../src/utils/quoteRequestWorkbench.js'
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import fs from 'node:fs'
@@ -20,6 +21,7 @@ import {
 import { expandQuoteBomDisplayRows } from '../src/utils/quoteCostingBomRows.js'
 import { quoteItemWorkflow, withQuoteItemWorkflow } from '../src/utils/quoteItemWorkflow.js'
 import { workflowStatusTagType } from '../src/utils/workflowStatus.js'
+import { isMissingScrapMappingGap } from '../src/utils/priceSourceGaps.js'
 import {
   countCarriedForwardPrices,
   isCarriedForwardPrice,
@@ -466,7 +468,7 @@ describe('T11 报价单接入页面契约', () => {
     assert.match(detailPageContent, /historyResultKind: selected\.resultTypeLabel === '报价重新核算结果'/)
     assert.match(costingWorkbenchPageContent, /historyViewMode/)
     assert.match(costingWorkbenchPageContent, /versionId: historyVersionId\.value/)
-    assert.match(costingWorkbenchPageContent, /正在查看.*historyResultLabel/)
+    assert.match(costingWorkbenchPageContent, /historyResultLabel\.value\} · 只读/)
     assert.match(costingWorkbenchPageContent, /historyResultKind === 'recalculation'/)
     assert.match(detailPageContent, /function openCostingGap[\s\S]*guide: 'costing-input-gap'/)
   })
@@ -550,7 +552,7 @@ describe('T11 报价单接入页面契约', () => {
     assert.equal(workflows[5].nextAction, 'VIEW_COSTING_GAP')
     assert.equal(workflows[5].assigneeName, '财务报价')
     assert.equal(workflows[5].message, '缺少财务基准价格')
-    assert.equal(workflows[6].currentStatusLabel, '缺价格类型')
+    assert.equal(workflows[6].currentStatusLabel, '待重新检查价格')
     assert.equal(workflows[6].nextAction, 'VIEW_COSTING_GAP')
     assert.equal(workflows[7].currentStatusLabel, '核算中')
     assert.equal(workflows[7].nextAction, 'VIEW_COSTING_PROGRESS')
@@ -637,7 +639,7 @@ describe('T11 报价单接入页面契约', () => {
     assert.match(costingWorkbenchPageContent, /expandBomTree/)
     assert.match(costingWorkbenchPageContent, /collapseBomTree/)
     assert.match(costingWorkbenchPageContent, /报价物料明细/)
-    assert.match(costingWorkbenchPageContent, /价格类型识别/)
+    assert.match(costingWorkbenchPageContent, /取价来源/)
     assert.match(costingWorkbenchPageContent, /价格准备/)
     assert.match(costingWorkbenchPageContent, /成本核算/)
     assert.match(costingWorkbenchPageContent, /tab\.code === 'PRODUCT_DETAIL'/)
@@ -689,14 +691,14 @@ describe('T11 报价单接入页面契约', () => {
     assert.match(quoteRequestApiContent, /exportQuoteCostRunVersion/)
     assert.match(costingWorkbenchPageContent, /按当前规则重新生成/)
     assert.doesNotMatch(costingWorkbenchPageContent, /确认报价物料明细|撤销确认/)
-    assert.match(costingWorkbenchPageContent, /去物料价格类型维护/)
+    assert.match(costingWorkbenchPageContent, /查看取价顺序/)
     assert.match(costingWorkbenchPageContent, /openMaterialPriceTypePage/)
     assert.match(costingWorkbenchPageContent, /path: '\/base\/map'/)
     assert.doesNotMatch(costingWorkbenchPageContent, /调整类型/)
     assert.doesNotMatch(costingWorkbenchPageContent, /priceTypeDrawerMode/)
     assert.doesNotMatch(costingWorkbenchPageContent, /importMissingPriceType/)
     assert.doesNotMatch(costingWorkbenchPageContent, /确认价格类型/)
-    assert.match(costingWorkbenchPageContent, /价格类型已自动识别/)
+    assert.match(costingWorkbenchPageContent, /候选来源已识别/)
     assert.match(costingWorkbenchPageContent, /价格源维护/)
     assert.doesNotMatch(costingWorkbenchPageContent, /价格源补充/)
     assert.match(costingWorkbenchPageContent, /生成最终价格/)
@@ -740,12 +742,12 @@ describe('T11 报价单接入页面契约', () => {
     assert.match(costRunDetailApiContent, /\/traces/)
   })
 
-  it('QWB-09 重新生成报价物料后自动引导到价格类型识别', () => {
+  it('QWB-09 重新生成报价物料后自动引导到取价来源', () => {
     assert.match(costingWorkbenchPageContent, /guidePriceTypeAfterBomBuild/)
     assert.match(costingWorkbenchPageContent, /preparePricingBomForNextStep\(true\)[\s\S]*guidePriceTypeAfterBomBuild\(\)/)
     assert.match(costingWorkbenchPageContent, /activeTab\.value = 'PRICE_TYPE_CONFIRMATION'/)
     assert.match(costingWorkbenchPageContent, /priceTypeFilter\.value = 'MISSING'/)
-    assert.match(costingWorkbenchPageContent, /报价物料明细已生成，系统发现 \$\{missingTypeCount\} 项缺价格类型，请到“物料价格类型”导入或维护/)
+    assert.match(costingWorkbenchPageContent, /报价物料明细已生成，系统发现 \$\{missingSourceCount\} 项待检查来源，请检查取价组织及价格源/)
     assert.match(costingWorkbenchPageContent, /workflowGuideVisible/)
     assert.match(costingWorkbenchPageContent, /!currentSuccessVersion\.value\?\.id/)
     assert.match(costingWorkbenchPageContent, /delete nextQuery\.guide/)
@@ -788,9 +790,9 @@ describe('T11 报价单接入页面契约', () => {
     assert.match(pricePrepareApiContent, /confirmPricePrepareNoScrap/)
     assert.match(costingWorkbenchPageContent, /confirmPricePrepareNoScrap/)
     assert.match(costingWorkbenchPageContent, /isMissingScrapMappingGap\(row\)/)
-    assert.match(costingWorkbenchPageContent, /lp_material_scrap_ref/)
-    assert.match(costingWorkbenchPageContent, /MISSING_SCRAP_MAPPING/)
-    assert.match(costingWorkbenchPageContent, /CONFIRM_NO_SCRAP/)
+    assert.equal(isMissingScrapMappingGap({ sourceTable: 'lp_material_scrap_ref' }), true)
+    assert.equal(isMissingScrapMappingGap({ message: 'MISSING_SCRAP_MAPPING' }), true)
+    assert.equal(isMissingScrapMappingGap({ actionType: 'CONFIRM_NO_SCRAP' }), true)
     assert.match(costingWorkbenchPageContent, /废料映射缺口/)
     assert.match(costingWorkbenchPageContent, /补充废料映射/)
     assert.match(costingWorkbenchPageContent, /确认无废料，按0处理/)
@@ -815,5 +817,36 @@ describe('T11 报价单接入页面契约', () => {
       costingWorkbenchPageContent,
       /loading\.value = true\s*try \{\s*clearEffectiveBom\(\)[\s\S]*?finally \{\s*loading\.value = false/,
     )
+  })
+})
+
+
+it('current blockage takes precedence while historical frozen success remains readable', () => {
+  assert.equal(currentCostingBlockLabel({workspaceStatus:'WAIT_PRICE', overallStatus:'BLOCKED'}), '缺少价格，待重新核算')
+  assert.equal(currentCostingBlockLabel({workspaceStatus:'SUCCESS', overallStatus:'DONE'}), '')
+  assert.equal(currentCostingBlockLabel({workspaceStatus:'SUCCESS', overallStatus:'PENDING'}), '')
+  assert.equal(currentCostingBlockLabel({workspaceStatus:'WAIT_PRICE', overallStatus:'BLOCKED', historyView:true}), '')
+  assert.equal(currentCostingBlockLabel({workspaceStatus:'RUNNING', overallStatus:'BLOCKED'}), '')
+  assert.equal(currentCostingBlockLabel({workspaceStatus:'STALE'}), '输入已变化，待重新核算')
+})
+
+
+describe('board pricing evidence', () => {
+  it('uses saved values and per-grade sources without recalculating from current header', () => {
+    const items = [{ materialCode: 'M1', inputSnapshotJson: JSON.stringify({ boardPricing: {
+      finalTender: true, financialMonth: '2026-10', factors: [
+        { grade: 'SUS304', factorKey: 'AVG|304/2B/1219', value: 23, unit: 'CNY_KG', source: 'CUSTOMER_SUS' },
+        { grade: 'SUS316', factorKey: 'AVG|316L/2B', value: 32.5, unit: 'CNY_KG', source: 'FINANCE_FACTOR' },
+      ],
+    } }) }]
+    const rows = boardPricingRows(items)
+    assert.deepEqual(rows.map(r => [r.grade, r.value, r.unit, r.source, r.finalTender]), [
+      ['SUS304', 23, '元/公斤', '客户指定基价', '是'],
+      ['SUS316', 32.5, '元/公斤', '财务招标基价', '是'],
+    ])
+    assert.deepEqual(boardPricingRows([{ inputSnapshotJson: '{bad' }, {}, { inputSnapshotJson: '{"boardPricing":null}' }]), [])
+    assert.equal(boardPricingRows([{ inputSnapshotJson: { boardPricing: { finalTender: false, factors: [
+      { grade: 'SUS304', value: 20, source: 'FINANCE_FACTOR', unit: 'CNY_KG' },
+    ] } } }])[0].source, '财务非招标基价')
   })
 })

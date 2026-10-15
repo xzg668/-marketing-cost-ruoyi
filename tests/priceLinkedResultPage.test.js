@@ -3,13 +3,8 @@ import { describe, it } from 'node:test'
 import fs from 'node:fs'
 import path from 'node:path'
 import {
-  DIFF_THRESHOLD,
-  buildFormulaResultRows,
-  buildImportSummaryItems,
   buildTraceTimeline,
-  diffWithGolden,
   parseTraceJson,
-  splitImportDetailRows,
 } from '../src/pages/priceLinkedResultUtils.js'
 
 /**
@@ -25,13 +20,6 @@ const FILE = path.resolve(
   '../src/pages/PriceLinkedResultPage.vue'
 )
 const content = fs.readFileSync(FILE, 'utf-8')
-const UTILS_FILE = path.resolve(
-  import.meta.dirname,
-  '../src/pages/priceLinkedResultUtils.js'
-)
-const utilsContent = fs.readFileSync(UTILS_FILE, 'utf-8')
-const resultDisplayContent = `${content}\n${utilsContent}`
-
 describe('PriceLinkedResultPage.vue T24 契约', () => {
   it('导入 fetchTrace 端点', () => {
     assert.match(
@@ -43,28 +31,20 @@ describe('PriceLinkedResultPage.vue T24 契约', () => {
   it('导入 priceLinkedResultUtils 结果页纯函数', () => {
     assert.match(content, /parseTraceJson/)
     assert.match(content, /buildTraceTimeline/)
-    assert.match(content, /diffWithGolden/)
-    assert.match(content, /buildImportSummaryItems/)
-    assert.match(content, /splitImportDetailRows/)
     assert.match(
       content,
       /from\s*['"]\.\/priceLinkedResultUtils['"]/
     )
   })
 
-  it('表格列：Excel 金标 / 系统结果 / 差异', () => {
-    assert.match(content, /label="Excel 金标"/)
-    assert.match(content, /label="系统结果"/)
-    assert.match(content, /label="差异"/)
+  it('原稿单价和财务复算价并列，输入不同不标红', () => {
+    assert.match(content, /label="原稿未税单价"/)
+    assert.match(content, /label="财务未税单价"/)
+    assert.doesNotMatch(content, /diff-exceeds|diffWithGolden/)
   })
 
-  it('差异列在超阈值时挂 diff-exceeds class（红色高亮）', () => {
-    assert.match(content, /diff-exceeds/)
-    assert.match(content, /\.diff-exceeds\s*\{[\s\S]{0,120}color:\s*#dc2626/)
-  })
-
-  it('操作列新增 "查看 Trace" 按钮并调用 openTrace(row)', () => {
-    assert.match(content, /查看\s*Trace/)
+  it('现有记录的计算依据仍可查看', () => {
+    assert.match(content, /计算依据/)
     assert.match(content, /@click="openTrace\(row\)"/)
   })
 
@@ -86,32 +66,18 @@ describe('PriceLinkedResultPage.vue T24 契约', () => {
     assert.match(content, /buildTraceTimeline\(/)
   })
 
-  it('derivedRows 计算 diffValue / diffExceeds（用于列高亮）', () => {
-    assert.match(content, /diffValue/)
-    assert.match(content, /diffExceeds/)
-    assert.match(content, /diffWithGolden\(/)
-  })
 })
 
 describe('PriceLinkedResultPage.vue V2-14 月度导入和结果页契约', () => {
-  it('主导入按钮文案为“导入月度联动价与影响因素 Excel”', () => {
-    assert.match(content, /导入月度联动价与影响因素 Excel/)
+  it('主导入按钮文案为“导入联动原稿”', () => {
+    assert.match(content, /导入联动原稿/)
   })
 
-  it('V4-08：主导入、导入历史和行操作按钮有清晰权限控制', () => {
-    assert.match(
-      content,
-      /v-hasPermi="\['price:linked-item:import'\]"[\s\S]{0,180}导入月度联动价与影响因素 Excel/
-    )
-    assert.match(
-      content,
-      /v-hasPermi="\['price:linked-item:import-history:list'\]"[\s\S]{0,180}查看导入记录/
-    )
+  it('V4-08：新增、编辑、删除和变量绑定操作有清晰权限控制', () => {
     assert.match(content, /v-hasPermi="\['price:linked-item:add'\]"/)
     assert.match(content, /v-hasPermi="\['price:linked-item:edit'\]"/)
     assert.match(content, /v-hasPermi="\['price:linked-item:remove'\]"/)
     assert.match(content, /v-hasPermi="\['price:linked:binding:view'\]"/)
-    assert.match(content, /v-hasPermi="\['price:linked:binding:admin'\]"/)
   })
 
   it('导入入口走 importLinkedItemsExcel multipart，不再走 importLinkedItems JSON', () => {
@@ -122,7 +88,7 @@ describe('PriceLinkedResultPage.vue V2-14 月度导入和结果页契约', () =>
     )
   })
 
-  it('T1：导入弹窗包含月份、业务单元、公式生效日期、价格冲突策略和 Excel 文件校验', () => {
+  it('技术补录弹窗包含月份、业务单元、公式生效日期、价格冲突策略和 Excel 文件校验', () => {
     assert.match(content, /v-model="importForm\.pricingMonth"/)
     assert.match(content, /v-model="importForm\.businessUnitType"/)
     assert.match(content, /v-model="importForm\.formulaEffectiveDate"/)
@@ -140,7 +106,7 @@ describe('PriceLinkedResultPage.vue V2-14 月度导入和结果页契约', () =>
     assert.match(content, /formulaEffectiveDate:\s*firstDayOfMonth\(queryString\('pricingMonth',\s*currentMonthText\(\)\)\)/)
   })
 
-  it('T1：默认保留已有影响因素价格，并提交新参数', () => {
+  it('技术补录默认保留已有影响因素价格，并提交新参数', () => {
     assert.match(content, /factorPriceConflictStrategy:\s*'KEEP_EXISTING'/)
     assert.match(content, /formulaEffectiveDate:\s*importForm\.value\.formulaEffectiveDate/)
     assert.match(content, /factorPriceConflictStrategy:\s*importForm\.value\.factorPriceConflictStrategy/)
@@ -158,32 +124,6 @@ describe('PriceLinkedResultPage.vue V2-14 月度导入和结果页契约', () =>
     assert.doesNotMatch(content, /覆盖生效/)
   })
 
-  it('导入结果区展示影响因素、版本化联动公式、自动绑定、冲突和失败数量', () => {
-    for (const key of [
-      'linkedCreatedCount',
-      'linkedVersionCreatedCount',
-      'linkedExpiredCount',
-      'linkedUnchangedSkippedCount',
-      'linkedSkippedCount',
-      'monthlyPriceConflictCount',
-      'monthlyPriceOverwriteCount',
-      'autoBindingCount',
-      'conflictBindingCount',
-      'bindingErrorCount',
-    ]) {
-      assert.match(resultDisplayContent, new RegExp(key))
-    }
-    assert.match(resultDisplayContent, /conflictTypeText/)
-    assert.match(resultDisplayContent, /failureTypeText/)
-  })
-
-  it('页面包含影响因素预览、冲突处理、失败明细、导入历史入口', () => {
-    assert.match(content, /本次影响因素预览/)
-    assert.match(content, /冲突处理/)
-    assert.match(content, /失败明细/)
-    assert.match(content, /查看导入记录/)
-  })
-
   it('V4-11：联动价格主表使用服务端分页，不一次性加载全部料号', () => {
     assert.match(content, /BasePagination/)
     assert.match(content, /fetchLinkedItemsPage/)
@@ -197,59 +137,10 @@ describe('PriceLinkedResultPage.vue V2-14 月度导入和结果页契约', () =>
     assert.match(content, /<el-table\s+:data="visibleRows"[\s\S]*?<BasePagination/)
   })
 
-  it('V3-09：导入结果只展示公共基价识别摘要，并引导到影响因素表看明细', () => {
-    assert.match(content, /公共基价识别/)
-    assert.match(content, /quoteBaseRecognizedCount/)
-    assert.match(content, /quoteBaseConflictCount/)
-    assert.match(content, /quoteBaseUnrecognizedCount/)
-    assert.match(content, /明细请到影响因素表查看和维护/)
-    assert.match(content, /去影响因素表查看公共基价/)
-    assert.doesNotMatch(content, /quoteBaseDetectRows/)
-    assert.doesNotMatch(content, /empty-text="暂无公共基价识别明细"/)
-    assert.doesNotMatch(content, /label="命中报价单字段"/)
-    assert.doesNotMatch(content, /label="命中关键词"/)
-    assert.doesNotMatch(content, /label="识别来源"/)
-    assert.doesNotMatch(content, /quoteBaseStatusText/)
-  })
-
-  it('V3-09：导入后不让历史详情覆盖本次公共基价识别结果', () => {
-    assert.match(content, /const\s+fetchList\s*=\s*async\s*\(\{\s*loadLatestImport\s*=\s*true\s*\}\s*=\s*\{\}\)/)
-    assert.match(content, /fetchList\(\{\s*loadLatestImport:\s*false\s*\}\)/)
-    assert.match(content, /loadImportHistory\(\{\s*loadLatest:\s*false\s*\}\)/)
-  })
-
-  it('V4-04：导入结果区提示这里只核对本次导入，不做长期维护', () => {
-    assert.match(content, /本区只用于核对本次导入结果/)
-    assert.match(content, /影响因素长期维护请进入影响因素表/)
-  })
-
-  it('V4-12：历史批次分开展示公式和失败明细，技术日志折叠显示', () => {
-    assert.match(content, /批次导入结果/)
-    assert.match(content, /formulaResultRows/)
-    assert.match(content, /batchResultTab/)
-    assert.match(content, /failureDisplayCount/)
-    assert.doesNotMatch(content, /失败记录仅保留了数量/)
-    assert.match(content, /label="联动公式"/)
-    assert.doesNotMatch(content, /label="引用因素"/)
-    assert.match(content, /label="导入公式"/)
-    assert.match(content, /label="处理建议"/)
-    assert.match(content, /查看技术明细/)
-    assert.match(content, /自动绑定技术明细/)
-    assert.match(content, /v-if="showTechnicalLogs"/)
-  })
-
-  it('V4-13：失败数量卡片可点击并定位到批次失败明细', () => {
-    assert.match(content, /summary-item--clickable/)
-    assert.match(content, /查看明细/)
-    assert.match(content, /handleSummaryItemClick/)
-    assert.match(content, /tab: 'failures'/)
-    assert.match(content, /importBatchResultRef/)
-  })
-
   it('V4-04：提供跳转到影响因素表本月汇总的入口', () => {
-    assert.match(content, /去影响因素表查看本月汇总/)
+    assert.match(content, /财务基价/)
     assert.match(content, /goFactorMonthlySummary/)
-    assert.match(content, /path:\s*['"]\/price\/linked\/finance-base['"]/)
+    assert.match(content, /path:\s*['"]\/rules\/finance-cu-base['"]/)
     assert.match(content, /priceMonth:\s*filters\.value\.pricingMonth/)
     assert.match(content, /businessUnitType:\s*filters\.value\.businessUnitType/)
   })
@@ -262,201 +153,6 @@ describe('PriceLinkedResultPage.vue V2-14 月度导入和结果页契约', () =>
     assert.match(content, /queryString\('materialCode',\s*''\)/)
   })
 
-  it('V4-04：本次影响因素预览补齐上传人和上传时间，只读展示', () => {
-    assert.match(content, /prop="uploadedBy"\s+label="上传人"/)
-    assert.match(content, /prop="uploadedAt"\s+label="上传时间"/)
-    assert.match(content, /uploadedBy:\s*row\?\.uploadedBy/)
-    assert.match(content, /uploadedAt:\s*row\?\.uploadedAt/)
-  })
-
-  it('V4-05：导入历史默认最近 10 条，并支持查看更多到最多 50 条', () => {
-    assert.match(content, /const\s+importHistoryLimit\s*=\s*ref\(10\)/)
-    assert.match(content, /limit:\s*importHistoryLimit\.value/)
-    assert.match(content, /loadMoreImportHistory/)
-    assert.match(content, /Math\.min\(importHistoryLimit\.value\s*\+\s*10,\s*50\)/)
-    assert.match(content, /普通用户只看自己的记录/)
-  })
-
-  it('冲突和失败行可进入现有人工绑定抽屉', () => {
-    assert.match(content, /openBindingByMaterial/)
-    assert.match(content, /openBinding\(target\)/)
-  })
-})
-
-describe('PriceLinkedResultPage.vue T7 导入结果展示辅助', () => {
-  it('前端结果卡片展示新增字段，且无公式变化时只显示未变化跳过', () => {
-    const items = buildImportSummaryItems({
-      batchId: '77',
-      formulaEffectiveDate: '2026-06-01',
-      factorPriceConflictStrategy: 'KEEP_EXISTING',
-      linkedCount: 0,
-      linkedVersionCreatedCount: 0,
-      linkedUnchangedSkippedCount: 1,
-      linkedExpiredCount: 0,
-      monthlyPriceConflictCount: 0,
-      monthlyPriceOverwriteCount: 0,
-      autoBindingCount: 0,
-      conflictBindingCount: 0,
-      bindingErrorCount: 0,
-    }, {
-      factorPreviewRows: [],
-      conflictRows: [],
-      failedRows: [],
-    })
-    const byKey = Object.fromEntries(items.map((item) => [item.key, item]))
-
-    assert.equal(byKey.linkedCreated.label, '联动价新增版本')
-    assert.equal(byKey.linkedCreated.value, 0)
-    assert.equal(byKey.linkedSkipped.label, '联动价未变化跳过')
-    assert.equal(byKey.linkedSkipped.value, 1)
-    assert.equal(byKey.linkedExpired.value, 0)
-    assert.equal(byKey.factorPriceConflictStrategy.value, '保留已有价格，冲突行跳过')
-  })
-
-  it('冲突行可见并包含影响因素价格冲突和历史绑定关系冲突原因', () => {
-    const detailRows = splitImportDetailRows({
-      bindingErrors: [{
-        excelRowNumber: 3,
-        materialCode: 'M001',
-        tokenName: '材料含税价格',
-        existingFactorIdentity: 1001,
-        newFactorIdentity: 9999,
-        reason: '本次公式识别结果与历史标准关系不一致，默认不覆盖，请人工确认',
-      }],
-      errors: [],
-    }, [{
-      sourceSheetName: '影响因素',
-      sourceRowNumber: 64,
-      factorIdentityId: 2001,
-      factorName: '电解铜',
-      monthlyPriceAction: 'CONFLICT_KEEP_EXISTING',
-    }])
-
-    assert.equal(detailRows.conflictRows.length, 2)
-    assert.match(detailRows.conflictRows[0].reason, /影响因素价格冲突/)
-    assert.equal(detailRows.conflictRows[0].conflictTypeText, '影响因素价格冲突')
-    assert.equal(detailRows.conflictRows[1].conflictTypeText, '历史绑定关系冲突')
-    assert.equal(detailRows.conflictRows[1].tokenName, '材料含税价格')
-  })
-
-  it('公式版本生效日期倒挂进入失败列表并给出明确类型', () => {
-    const detailRows = splitImportDetailRows({
-      errors: [{
-        rowNumber: 2,
-        materialCode: 'M001',
-        message: 'formulaEffectiveDate 必须晚于当前公式版本 effective_from，避免生命周期倒挂: 2026-05-01 <= 2026-05-01',
-      }],
-    }, [])
-
-    assert.equal(detailRows.failedRows.length, 1)
-    assert.equal(detailRows.failedRows[0].failureTypeText, '公式版本生效日期冲突')
-    assert.match(detailRows.failedRows[0].message, /生命周期倒挂/)
-  })
-
-  it('持久化失败明细保留物料、公式、生效日期和处理建议', () => {
-    const detailRows = splitImportDetailRows({
-      errors: [{
-        rowNumber: 15,
-        materialCode: '301990317',
-        materialName: '废紫铜沫（干净）',
-        supplierCode: '',
-        sourceSheetName: '联动价',
-        formula: 'Cu * 0.981',
-        formulaEffectiveDate: '2026-07-01',
-        errorStage: 'FORMULA_VERSION',
-        errorCode: 'FORMULA_LIFECYCLE_OVERLAP',
-        message: '公式版本生命周期倒挂',
-        suggestion: '请将新公式生效日期调整后重新导入',
-      }],
-    }, [])
-
-    assert.equal(detailRows.failedRows.length, 1)
-    assert.equal(detailRows.failedRows[0].rowNumber, 15)
-    assert.equal(detailRows.failedRows[0].materialName, '废紫铜沫（干净）')
-    assert.equal(detailRows.failedRows[0].formula, 'Cu * 0.981')
-    assert.equal(detailRows.failedRows[0].formulaEffectiveDate, '2026-07-01')
-    assert.equal(detailRows.failedRows[0].refText, '联动价!15')
-    assert.match(detailRows.failedRows[0].suggestion, /重新导入/)
-    assert.equal(detailRows.failedRows[0].canOpenBinding, false)
-  })
-
-  it('旧批次未持久化失败行时，失败汇总仍使用批次总数', () => {
-    const items = buildImportSummaryItems({
-      errorCount: 3,
-      unpersistedErrorCount: 3,
-      errors: [],
-    }, {
-      failedRows: [],
-    })
-
-    const failed = items.find((item) => item.key === 'failed')
-    assert.equal(failed.value, 3)
-    assert.equal(failed.tag, 'danger')
-  })
-
-  it('逐因素技术日志按联动价料号聚合成一条公式结果', () => {
-    const rows = buildFormulaResultRows([
-      {
-        linkedItemId: 191,
-        materialCode: '201500340',
-        supplierCode: 'S001',
-        excelFormula: 'Cu * 0.981 + 加工费',
-        tokenName: 'Cu',
-        sourceSheetName: '影响因素10',
-        sourceCellRef: 'E7',
-        status: 'SUCCESS',
-      },
-      {
-        linkedItemId: 191,
-        materialCode: '201500340',
-        supplierCode: 'S001',
-        excelFormula: 'Cu * 0.981 + 加工费',
-        tokenName: '加工费',
-        sourceSheetName: '影响因素10',
-        sourceCellRef: 'E8',
-        status: 'SUCCESS',
-      },
-    ])
-
-    assert.equal(rows.length, 1)
-    assert.equal(rows[0].materialCode, '201500340')
-    assert.equal(rows[0].formula, 'Cu * 0.981 + 加工费')
-    assert.equal(rows[0].factorRefs.length, 2)
-    assert.equal(rows[0].resultText, '已识别 2 个因素')
-    assert.equal(rows[0].resultTag, 'success')
-  })
-
-  it('同一公式存在失败日志时优先显示失败原因', () => {
-    const rows = buildFormulaResultRows([
-      {
-        linkedItemId: 192,
-        materialCode: '301990317',
-        excelFormula: 'Cu * 0.981',
-        tokenName: 'Cu',
-        status: 'success',
-      },
-      {
-        linkedItemId: 192,
-        materialCode: '301990317',
-        excelFormula: 'Cu * 0.981',
-        tokenName: '加工费',
-        status: 'failed',
-        message: '未找到对应影响因素',
-      },
-    ])
-
-    assert.equal(rows.length, 1)
-    assert.equal(rows[0].resultText, '识别失败')
-    assert.equal(rows[0].resultTag, 'danger')
-    assert.equal(rows[0].message, '未找到对应影响因素')
-  })
-})
-
-// ============================ DIFF_THRESHOLD ============================
-describe('DIFF_THRESHOLD', () => {
-  it('阈值为 0.01（DoD 要求）', () => {
-    assert.equal(DIFF_THRESHOLD, 0.01)
-  })
 })
 
 // ============================ parseTraceJson ============================
@@ -547,61 +243,5 @@ describe('buildTraceTimeline', () => {
 
   it('空对象 → 空 steps', () => {
     assert.deepEqual(buildTraceTimeline({}), [])
-  })
-})
-
-// ============================ diffWithGolden ============================
-describe('diffWithGolden', () => {
-  it('任一侧缺失 → {diff:null, exceeds:false}', () => {
-    assert.deepEqual(diffWithGolden(null, 100), { diff: null, exceeds: false })
-    assert.deepEqual(diffWithGolden(100, null), { diff: null, exceeds: false })
-    assert.deepEqual(diffWithGolden('', 100), { diff: null, exceeds: false })
-    assert.deepEqual(diffWithGolden(100, ''), { diff: null, exceeds: false })
-    assert.deepEqual(diffWithGolden(undefined, undefined), {
-      diff: null,
-      exceeds: false,
-    })
-  })
-
-  it('非数字字符串 → {diff:null, exceeds:false}', () => {
-    assert.deepEqual(diffWithGolden('abc', 100), {
-      diff: null,
-      exceeds: false,
-    })
-    assert.deepEqual(diffWithGolden(100, 'xx'), {
-      diff: null,
-      exceeds: false,
-    })
-  })
-
-  it('小于阈值（0.005）→ exceeds false', () => {
-    const { diff, exceeds } = diffWithGolden(100.005, 100)
-    assert.ok(Math.abs(diff - 0.005) < 1e-9)
-    assert.equal(exceeds, false)
-  })
-
-  it('恰好等于阈值（0.01）→ exceeds false（严格大于）', () => {
-    // 注：用 (0.01, 0) 避免 100.01-100 的浮点误差（实际为 0.010000000000005）
-    const { diff, exceeds } = diffWithGolden(0.01, 0)
-    assert.equal(diff, 0.01)
-    assert.equal(exceeds, false)
-  })
-
-  it('超过阈值（0.02）→ exceeds true', () => {
-    const { diff, exceeds } = diffWithGolden(0.02, 0)
-    assert.ok(Math.abs(diff - 0.02) < 1e-9)
-    assert.equal(exceeds, true)
-  })
-
-  it('差值取绝对值（system < golden 也能算）', () => {
-    const { diff, exceeds } = diffWithGolden(99, 100)
-    assert.equal(diff, 1)
-    assert.equal(exceeds, true)
-  })
-
-  it('接受字符串数字', () => {
-    const { diff, exceeds } = diffWithGolden('100.5', '100')
-    assert.ok(Math.abs(diff - 0.5) < 1e-9)
-    assert.equal(exceeds, true)
   })
 })

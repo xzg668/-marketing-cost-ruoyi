@@ -379,6 +379,7 @@ const headerFields = computed(() => {
     { key: 'zincPrice', label: '锌基价', value: header.zincPrice },
     { key: 'aluminumPrice', label: '铝基价', value: header.aluminumPrice },
     { key: 'steelPrice', label: '不锈钢基价', value: header.steelPrice },
+    { key: 'boardTender', label: '最终是否招标（板换）', value: header.boardTender === true ? '是' : header.boardTender === false ? '否' : '未填写，按否' },
     { key: 'sus304Price', label: 'SUS304 基价', value: header.sus304Price },
     { key: 'sus316lPrice', label: 'SUS316L 基价', value: header.sus316lPrice },
     { key: 'silverPrice', label: '银基价', value: header.silverPrice },

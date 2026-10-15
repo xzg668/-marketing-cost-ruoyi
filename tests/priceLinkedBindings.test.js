@@ -8,9 +8,9 @@ import path from 'node:path'
  *
  * <p>node --test 不拉 JSDOM，走"读源文件 + 正则断言"的轻量契约校验：
  * <ul>
- *   <li>api/priceLinkedBindings.js 的 6 个方法与后端 controller 路由对齐</li>
+ *   <li>api/priceLinkedBindings.js 的逐行维护方法与后端 controller 路由对齐</li>
  *   <li>components/PriceLinkedBindingDrawer.vue 有表格 / 编辑弹窗 / 历史 / 来源徽章</li>
- *   <li>pages/PriceLinkedResultPage.vue 已接线：徽章 + CSV 按钮 + 行按钮 + drawer + pending 拉取</li>
+ *   <li>pages/PriceLinkedResultPage.vue 已接线：异常入口 + 行按钮 + drawer + pending 拉取</li>
  * </ul>
  */
 
@@ -56,12 +56,6 @@ describe('api/priceLinkedBindings.js', () => {
     assert.match(src, /\/bindings\/pending/)
   })
 
-  it('导出 importBindings 走 POST /import + FormData field=file', () => {
-    assert.match(src, /export\s+const\s+importBindings\b/)
-    assert.match(src, /\/bindings\/import/)
-    assert.match(src, /form\.append\(['"]file['"]/)
-    assert.match(src, /new\s+FormData\(\)/)
-  })
 })
 
 // ============================ components/PriceLinkedBindingDrawer.vue ============================
@@ -144,10 +138,10 @@ describe('PriceLinkedResultPage.vue T6 改造', () => {
     )
   })
 
-  it('导入 fetchPending / importBindings', () => {
+  it('导入 fetchPending', () => {
     assert.match(
       src,
-      /import\s*\{[^}]*fetchPending[^}]*importBindings[^}]*\}\s*from\s*['"]\.\.\/api\/priceLinkedBindings['"]/s,
+      /import\s*\{[^}]*fetchPending[^}]*\}\s*from\s*['"]\.\.\/api\/priceLinkedBindings['"]/s,
     )
   })
 
@@ -158,27 +152,12 @@ describe('PriceLinkedResultPage.vue T6 改造', () => {
     )
   })
 
-  it('顶部徽章展示"待绑定 N"并可点击', () => {
-    assert.match(src, /待绑定\s*\{\{\s*pendingTotal\s*\}\}/)
+  it('当前页异常或已启用筛选时显示切换入口', () => {
+    assert.match(src, /v-if="pendingTotal > 0 \|\| onlyBindingIssues"/)
     assert.match(src, /@click="openPendingList"/)
   })
 
-  it('绑定 CSV 导入按钮走 handleBindingCsvChange', () => {
-    assert.match(src, /绑定\s*CSV/)
-    // el-upload 用 :on-change 绑定，不是 @change
-    assert.match(src, /:on-change="handleBindingCsvChange"/)
-  })
 
-  it('handleBindingCsvChange 调 importBindings + 刷新 loadPending', () => {
-    assert.match(
-      src,
-      /const\s+handleBindingCsvChange\s*=\s*async[\s\S]*?importBindings\(/,
-    )
-    assert.match(
-      src,
-      /handleBindingCsvChange[\s\S]*?loadPending\(\)/,
-    )
-  })
 
   it('表格行新增"变量绑定"按钮，点击打开 openBinding(row)', () => {
     assert.match(src, /变量绑定/)
@@ -202,11 +181,11 @@ describe('PriceLinkedResultPage.vue T6 改造', () => {
     assert.match(src, /onMounted\(loadPending\)/)
   })
 
-  it('loadPending 失败时不打扰（徽章归零即可）', () => {
-    // 不调用 ElMessage.error，catch 里把 pendingTotal 归 0
+  it('绑定读取失败时清除旧身份，异常数量由本页实际行派生', () => {
+    // 清除旧绑定身份；不以全量计数冒充本页异常数量。
     assert.match(
       src,
-      /const\s+loadPending\s*=\s*async[\s\S]*?catch[\s\S]*?pendingTotal\.value\s*=\s*0/,
+      /const\s+loadPending\s*=\s*async[\s\S]*?catch[\s\S]*?pendingItemIds\.value\s*=\s*new Set\(\)/,
     )
   })
 })

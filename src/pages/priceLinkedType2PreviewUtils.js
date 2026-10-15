@@ -11,6 +11,7 @@ export const currentPricingMonth = (date = new Date()) => {
 
 export const priceLinkedTemplateText = (templateType) => {
   const normalized = String(templateType || '').toUpperCase()
+  if (normalized === 'ORIGINAL') return '供管部原稿'
   if (normalized === 'STANDARD') return '标准模板'
   if (normalized === 'TYPE2') return '采购价联动类型 2'
   if (normalized === 'AMBIGUOUS') return '模板结构存在歧义'
@@ -105,7 +106,8 @@ export const canConfirmLinkedPreview = ({
     !loading &&
     !error &&
     preview?.canConfirm === true &&
-    preview?.fileSha256,
+    preview?.fileSha256 &&
+    (preview.expressionVersion !== 'ORIGINAL_V1' || preview.previewFingerprint),
   )
 
 export const linkedImportResultText = (result = {}) => {

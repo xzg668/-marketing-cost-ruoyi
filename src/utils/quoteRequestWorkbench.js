@@ -8,6 +8,32 @@ export const QUOTE_SCENARIO_OPTIONS = [
   { value: 'UNKNOWN', label: '待人工确认' },
 ]
 
+// 只展示服务端实际计算快照，不由页面重选基价或推导来源。
+export function boardPricingRows(items = []) {
+  const result = []
+  for (const item of items) {
+    let snapshot = item.inputSnapshotJson
+    if (typeof snapshot === 'string') {
+      try { snapshot = JSON.parse(snapshot) } catch { continue }
+    }
+    const board = snapshot?.boardPricing
+    if (!board || !Array.isArray(board.factors)) continue
+    for (const factor of board.factors) {
+      result.push({
+        materialCode: item.materialCode,
+        grade: factor.grade,
+        factorKey: factor.factorKey,
+        value: factor.value,
+        unit: { CNY_KG: '元/公斤', CNY_TON: '元/吨', CNY_G: '元/克' }[factor.unit] || factor.unit,
+        source: factor.source === 'CUSTOMER_SUS' ? '客户指定基价' : board.finalTender ? '财务招标基价' : '财务非招标基价',
+        finalTender: board.finalTender ? '是' : '否',
+        financialMonth: board.financialMonth,
+      })
+    }
+  }
+  return result
+}
+
 export const CLASSIFICATION_STATUS_OPTIONS = [
   { value: 'CONFIRMED', label: '已确认', type: 'success' },
   { value: 'PENDING', label: '待确认', type: 'warning' },
@@ -198,4 +224,17 @@ export function quoteRequestCompletionLabel(row) {
 export function quoteRequestCompletionTagType(row) {
   const value = quoteRequestCompletionValue(row)
   return QUOTE_REQUEST_COMPLETION_OPTIONS.find((item) => item.value === value)?.type || 'warning'
+}
+
+// 已冻结的旧成功结果可供查询；当前核算的缺口不能被旧版本成功状态覆盖。
+export const currentCostingBlockLabel = ({ historyView = false, workspaceStatus, overallStatus } = {}) => {
+  if (historyView || workspaceStatus === 'RUNNING') return ''
+  const labels = {
+    WAIT_PRICE: '缺少价格，待重新核算',
+    WAIT_BOM: '缺少 BOM，待重新核算',
+    WAIT_PRICE_TYPE: '待按当前顺序重新检查价格',
+    STALE: '输入已变化，待重新核算',
+    FAILED: '本次核算失败',
+  }
+  return labels[workspaceStatus] || (overallStatus === 'BLOCKED' ? '本次核算受阻' : '')
 }

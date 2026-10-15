@@ -284,7 +284,7 @@ const conclusionRows = computed(() => {
   const linked = source.linkedCalcItem || {}
   return {
     priceSource: selectedDetail.value?.sourceType || prepare.priceSource || selectedDetail.value?.sourceType || '',
-    batchNo: make.calcBatchId || linked.adjustBatchId || prepare.prepareNo || selectedDetail.value?.sourceBatchNo || '',
+    batchNo: make.calcBatchId || prepare.prepareNo || selectedDetail.value?.sourceBatchNo || '',
     prepareNo: prepare.prepareNo || '',
     periodMonth: prepare.periodMonth || make.pricingMonth || linked.pricingMonth || selectedDetail.value?.pricingMonth || '',
   }

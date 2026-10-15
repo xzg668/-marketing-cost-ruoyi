@@ -26,7 +26,7 @@ describe('PLI2-11 查看导入依据抽屉', () => {
   it('主表行按钮受列表权限控制并打开抽屉', () => {
     assert.match(
       PAGE,
-      /v-hasPermi="\['price:linked-item:list'\]"[\s\S]{0,140}@click="openImportBasis\(row\)"[\s\S]{0,100}查看导入依据/,
+      /v-hasPermi="\['price:linked-item:list'\]"[\s\S]{0,140}@click="openImportBasis\(row\)"[\s\S]{0,100}详情/,
     )
     assert.match(PAGE, /<PriceLinkedImportBasisDrawer/)
     assert.match(PAGE, /v-model:visible="importBasisDrawerVisible"/)

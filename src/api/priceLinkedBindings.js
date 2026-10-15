@@ -11,7 +11,6 @@ import { request } from './http'
  *   <li>{@link saveBinding}      —— 新增 / 同 effective_date UPDATE / 更晚 effective_date 版本切换</li>
  *   <li>{@link deleteBinding}    —— 软删（deleted=1），历史仍可查</li>
  *   <li>{@link fetchPending}     —— 待绑定列表（公式含 B 组 token 但无当前绑定）</li>
- *   <li>{@link importBindings}   —— CSV 批量导入，multipart/form-data，字段名 file</li>
  * </ul>
  *
  * <p>权限：读接口 {@code price:linked:binding:view}；写接口 {@code price:linked:binding:admin}。
@@ -49,19 +48,3 @@ export const deleteBinding = (id) =>
 /** 待绑定列表（公式含 B 组 token 但无当前绑定）—— 顶部徽章 + 过滤联动用 */
 export const fetchPending = () =>
   request('/api/v1/price-linked/bindings/pending')
-
-/**
- * CSV 批量导入 —— multipart/form-data，字段名固定为 {@code file}。
- * 编码 UTF-8（BOM 可选），首行表头，列顺序固定（见 CSV 模板：物料编码,规格型号,token名,factor_code,价源,生效日期,备注）。
- *
- * @param {File|Blob} file 前端上传文件
- * @returns {Promise<{total,inserted,updated,expired,errors:[{line,materialCode,specModel,reason}]}>}
- */
-export const importBindings = (file) => {
-  const form = new FormData()
-  form.append('file', file)
-  return request('/api/v1/price-linked/bindings/import', {
-    method: 'POST',
-    body: form,
-  })
-}

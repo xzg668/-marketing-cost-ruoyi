@@ -21,16 +21,6 @@
       </div>
       <!-- 固定采购价页面只展示 PURCHASE_FIXED，结算固定价后续独立页面维护。 -->
       <el-form :inline="true" label-width="90px">
-        <el-form-item label="结算期间">
-          <el-date-picker
-            v-model="filters.pricingMonth"
-            type="month"
-            format="YYYY-MM"
-            value-format="YYYY-MM"
-            placeholder="2026-03"
-            style="width: 140px"
-          />
-        </el-form-item>
         <el-form-item label="物料代码">
           <el-input v-model="filters.materialCode" placeholder="1008000300944" />
         </el-form-item>
@@ -54,7 +44,6 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="pricingMonth" label="结算期间" width="100" />
         <el-table-column prop="materialName" label="物料名称" min-width="140" />
         <el-table-column prop="materialCode" label="物料代码" width="160" />
         <el-table-column prop="specModel" label="规格型号" width="140" />
@@ -102,11 +91,6 @@
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="640px">
       <el-form :model="formModel" label-width="90px">
         <!-- 本页固定写入 PURCHASE_FIXED，避免和结算固定价混用。 -->
-        <el-form-item label="结算期间" required>
-          <el-date-picker v-model="formModel.pricingMonth" type="month"
-                          format="YYYY-MM" value-format="YYYY-MM" placeholder="2026-03"
-                          style="width: 100%" />
-        </el-form-item>
         <el-form-item label="组织">
           <el-input v-model="formModel.orgCode" />
         </el-form-item>
@@ -229,7 +213,6 @@ const sourceTagType = (v) =>
   SOURCE_TYPE_OPTIONS.find((o) => o.value === v)?.tag || ''
 
 const filters = ref({
-  pricingMonth: '2026-03',
   materialCode: '',
   supplierCode: '',
 })
@@ -243,9 +226,7 @@ const returnToWorkbench = () => {
 
 const applyRouteContext = () => {
   const materialCode = String(route.query.materialCode || '').trim()
-  const pricingMonth = String(route.query.pricingMonth || route.query.periodMonth || '').trim()
   if (materialCode) filters.value.materialCode = materialCode
-  if (pricingMonth) filters.value.pricingMonth = pricingMonth
 }
 
 const formModel = ref({
@@ -271,7 +252,6 @@ const formModel = ref({
   quota: '',
   // V46 新字段
   sourceType: FIXED_PURCHASE_SOURCE_TYPE,
-  pricingMonth: '2026-03',
   processNo: '',
   remark: '',
 })
@@ -287,7 +267,6 @@ const dialogTitle = computed(() =>
 
 const buildParams = () => ({
   sourceType: FIXED_PURCHASE_SOURCE_TYPE,
-  pricingMonth: filters.value.pricingMonth || undefined,// V46：月份选择器
   materialCode: filters.value.materialCode.trim(),
   supplierCode: filters.value.supplierCode.trim(),
   page: currentPage.value,
@@ -331,7 +310,6 @@ const applyFilters = () => {
 
 const resetFilters = () => {
   filters.value = {
-    pricingMonth: '2026-03',
     materialCode: '',
     supplierCode: '',
   }
@@ -362,7 +340,6 @@ const openCreate = () => {
     orderType: '',
     quota: '',
     sourceType: FIXED_PURCHASE_SOURCE_TYPE,
-    pricingMonth: filters.value.pricingMonth || '2026-03',
     processNo: '',
     remark: '',
   }
@@ -394,7 +371,6 @@ const openEdit = (row) => {
     quota: row.quota ?? '',
     // V46 新字段
     sourceType: row.sourceType ?? FIXED_PURCHASE_SOURCE_TYPE,
-    pricingMonth: row.pricingMonth ?? '2026-03',
     processNo: row.processNo ?? '',
     remark: row.remark ?? '',
   }
@@ -493,7 +469,6 @@ const submitRow = async () => {
     quota: parseNumber(formModel.value.quota),
     // V46 新字段
     sourceType: FIXED_PURCHASE_SOURCE_TYPE,
-    pricingMonth: formModel.value.pricingMonth,
     processNo: formModel.value.processNo,
     remark: formModel.value.remark,
   }
@@ -756,7 +731,6 @@ const handleFileChange = async (uploadFile) => {
         sourceSystem: u9Source ? 'U9' : srmDocNo ? 'SRM' : 'EXCEL',
         sourceSheetName: sheetName,
         sourceRowNo: headerIndex + offset + 2,
-        pricingMonth: filters.value.pricingMonth || '2026-03',
         taxIncluded: false,
       }
     }).filter((row) => {

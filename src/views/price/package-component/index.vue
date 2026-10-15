@@ -658,7 +658,6 @@ const buildGenerateBody = () => {
     bomPurpose: DEFAULT_BOM_PURPOSE,
     sourceType: generateForm.sourceType || 'U9',
     asOfDate: generateForm.asOfDate,
-    forceRefresh: true,
   }
   Object.keys(body).forEach((key) => {
     if (body[key] === '') delete body[key]
@@ -713,7 +712,6 @@ const regenerate = async (row) => {
       topProductCode: row.sourceTopProductCode,
       bomPurpose: DEFAULT_BOM_PURPOSE,
       sourceType: 'U9',
-      forceRefresh: true,
     })
     delete detailCache.value[row.id]
     showGenerateResultMessage(result)
@@ -784,7 +782,7 @@ const oaPushStatusLabel = (status) => labelFrom(oaPushStatusMap, status)
 const oaPushStatusTag = (status) => tagFrom(oaPushStatusMap, status, 'info')
 const detailPriceStatusLabel = (status) => {
   if (status === 'PRICED') return '已取价'
-  if (status === 'MISSING_ROUTE') return '缺价格类型'
+  if (status === 'MISSING_ROUTE') return '暂无候选来源'
   if (status === 'MISSING_PRICE') return '缺价格'
   return status || '-'
 }

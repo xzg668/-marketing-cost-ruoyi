@@ -24,7 +24,7 @@ describe('PLI2-11 原联动价页面兼容', () => {
   })
 
   it('原增删改、公式、Trace 和变量绑定操作继续保留', () => {
-    for (const text of ['编辑', '公式', '查看 Trace', '变量绑定', '删除']) {
+    for (const text of ['编辑', '公式', '计算依据', '变量绑定', '删除']) {
       assert.match(PAGE, new RegExp(text))
     }
     for (const api of [

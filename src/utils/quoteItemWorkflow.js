@@ -79,8 +79,9 @@ export function quoteItemWorkflow(item) {
       'VIEW_COSTING_GAP', '查看缺口', workspace?.lastErrorMessage || '当前月份缺少已审核生效的技术资料', '产品技术')
   }
   if (workspaceStatus === 'WAIT_PRICE_TYPE') {
-    return state(base, 'MISSING', '缺价格类型', 'MISSING_PRICE', '缺价格类型',
-      'VIEW_COSTING_GAP', '查看缺口', workspace?.lastErrorMessage || '价格类型存在缺口', '财务报价')
+    // Existing workspaces retain this historical status until their next preparation.
+    return state(base, 'PENDING', '待重新检查价格', 'MISSING_PRICE', '待重新检查价格',
+      'VIEW_COSTING_GAP', '查看缺口', '请重新发起核算，按当前取价顺序检查价格', '财务报价')
   }
   if (workspaceStatus === 'WAIT_PRICE') {
     const assignee = String(workspace?.lastErrorCode || '').toUpperCase() === 'FINANCE_BASE_PRICE_MISSING'

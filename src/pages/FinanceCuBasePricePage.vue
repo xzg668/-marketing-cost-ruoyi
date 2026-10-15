@@ -1,451 +1,286 @@
 <template>
-  <div class="finance-cu-page">
-    <el-card shadow="never" class="hero-card">
-      <div class="hero-content">
-        <div>
-          <div class="page-title">财务 Cu 报价基准</div>
-          <div class="page-subtitle">
-            按月维护财务报价使用的电解铜基准。页面统一使用元/吨，保存时由后端换算为元/公斤。
+  <div class="finance-base-page">
+    <el-card shadow="never">
+      <template #header>
+        <div class="page-heading">
+          <div>
+            <h2>财务基价</h2>
+            <p>发布基价时同步生成适用原稿的财务有效价；成功后即可使用。</p>
           </div>
+          <el-button v-if="canImport" type="primary" @click="importVisible = true">导入财务基价表</el-button>
         </div>
-        <div class="hero-actions">
-          <el-tag v-if="!canEdit" type="info" effect="plain">只读权限</el-tag>
-          <el-button v-if="canEdit" type="primary" @click="openInitializeDialog">
-            批量初始化
-          </el-button>
-          <el-button :loading="loading" @click="loadRows">刷新</el-button>
+      </template>
+      <el-form inline>
+        <el-form-item label="组织">
+          <el-select v-model="scope.priceOrgCode" aria-label="财务基价组织" style="width: 130px" @change="changeOrganization">
+            <el-option label="商用" value="210" />
+            <el-option label="板换" value="220" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="月份">
+          <el-date-picker v-model="scope.priceMonth" type="month" value-format="YYYY-MM" :clearable="false" @change="scopeChanged" />
+        </el-form-item>
+        <el-form-item v-if="scope.priceOrgCode === '220'" label="条件">
+          <el-select v-model="scope.condition" aria-label="板换基价条件" style="width: 130px" @change="scopeChanged">
+            <el-option label="非招标" value="NON_TENDER" />
+            <el-option label="招标" value="TENDER" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="snapshot?.schemeCodes.length > 1" label="方案">
+          <el-select v-model="scope.schemeCode" aria-label="财务基价方案" style="width: 180px" @change="loadSnapshot">
+            <el-option v-for="code in snapshot.schemeCodes" :key="code" :value="code" :label="schemeLabel(code)" />
+          </el-select>
+        </el-form-item>
+        <el-form-item><el-button :loading="loading" @click="loadSnapshot">查询</el-button></el-form-item>
+      </el-form>
+      <el-alert v-if="loadError" :title="loadError" type="info" :closable="false" show-icon />
+      <template v-if="snapshot">
+        <div class="publication-summary">
+          <span>方案：{{ schemeLabel(snapshot.scope.schemeCode) }}</span>
+          <span>修订：{{ snapshot.revision }}</span>
+          <span>来源：{{ snapshot.fileName }}</span>
+          <span>发布人：{{ snapshot.publishedBy }} · {{ snapshot.publishedAt?.replace('T', ' ') }}</span>
+          <span v-if="snapshot.publicationNote">调整原因：{{ snapshot.publicationNote }}</span>
         </div>
+        <div v-if="copper" class="copper-summary">
+          <div><span>财务 Cu 基价</span><strong>{{ copperPerTon }} <small>元/吨</small></strong></div>
+          <el-button v-if="canEditCopper" @click="openCopperAdjustment">调整 Cu 基价</el-button>
+        </div>
+        <el-table v-loading="loading" :data="factorRows" max-height="520">
+          <el-table-column prop="shortName" label="因素" min-width="160" />
+          <el-table-column label="有效基价" min-width="160"><template #default="{ row }">{{ displayFactorPrice(row.price) }}</template></el-table-column>
+          <el-table-column label="单位" width="110"><template #default="{ row }">{{ priceUnitLabel(row.unit) }}</template></el-table-column>
+          <el-table-column label="税价" width="80"><template #default="{ row }">{{ row.taxIncluded ? '含税' : '未税' }}</template></el-table-column>
+          <el-table-column label="来源" min-width="240">
+            <template #default="{ row }">
+              <el-popover trigger="click" width="420">
+                <template #reference><el-button link type="primary">{{ row.sources.map(s => `${s.sheetName}!${s.cellRef}`).join('、') }}</el-button></template>
+                <div v-for="source in row.sources" :key="source.id" class="source-detail">
+                  <b>{{ source.sheetName }}!{{ source.cellRef }}</b>
+                  <div>原值：{{ source.originalValue }} {{ source.originalUnit }}</div>
+                  <div v-if="source.formula">原公式：{{ source.formula }}</div>
+                  <div v-if="source.conversionBasis === 'BOARD_FIXED_SUS_VALUE_DIVIDE_1000'">板换固定不锈钢价由元/吨换算为元/公斤。</div>
+                  <div v-if="source.conversionBasis === 'CURRENT_WORKBOOK_PREVIOUS_MONTH_AVERAGE'">方案未填写，采用本表上月均价。</div>
+                  <div v-if="source.conversionBasis === 'FINANCE_MANUAL_CU_ADJUSTMENT'">有效价来自财务 Cu 调整，原文件值保留。</div>
+                </div>
+              </el-popover>
+            </template>
+          </el-table-column>
+        </el-table>
+      </template>
+    </el-card>
+
+    <el-dialog v-model="importVisible" title="导入财务基价表" width="880px" :close-on-click-modal="false">
+      <p>{{ scope.priceOrgCode === '220' ? '板换' : '商用' }} · {{ scope.priceMonth }}</p>
+      <el-upload ref="financeUpload" :auto-upload="false" :limit="1" accept=".xls,.xlsx" :on-change="chooseFile" :on-exceed="replaceFile" :on-remove="removeFile" :disabled="publishing">
+        <el-button>选择财务基价表</el-button>
+        <template #tip><div class="el-upload__tip">支持商用多方案基价表和板换基价表。预检后再确认发布。</div></template>
+      </el-upload>
+      <el-form label-width="110px" class="import-options">
+        <el-form-item label="Sheet（可选）"><el-input v-model="importContext.sheetName" placeholder="多个匹配表时填写" @input="clearImportPreview" /></el-form-item>
+        <el-form-item v-if="schemes.length" label="默认方案">
+          <el-select v-model="importContext.defaultSchemeCode" @change="clearImportPreview">
+            <el-option v-for="scheme in schemes" :key="scheme.code" :label="scheme.label" :value="scheme.code" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <el-button :disabled="!file" :loading="previewing" @click="previewImport">预检并查看差异</el-button>
+      <div v-if="importPreview" class="preview-result">
+        <p>有效价格 {{ importPreview.changes.filter(c => c.kind !== 'REMOVED').length }} 项；来源记录 {{ importPreview.workbook.values.length }} 条。</p>
+        <el-alert v-if="importPreview.workbook.problems.length" title="存在异常，整批不能发布" type="error" :closable="false" />
+        <div v-for="(problem, index) in importPreview.workbook.problems" :key="index" class="problem">{{ problem.sheetName }}!{{ problem.cellRef }}：{{ problem.message }}</div>
+        <el-table :data="importPreview.changes" max-height="310">
+          <el-table-column label="因素" min-width="150"><template #default="{ row }">{{ factorLabel(row.canonicalKey) }}</template></el-table-column>
+          <el-table-column prop="schemeCode" label="方案" width="135" />
+          <el-table-column label="条件" width="90"><template #default="{ row }">{{ conditionLabel(row.conditionCode) }}</template></el-table-column>
+          <el-table-column label="原有效价" min-width="140"><template #default="{ row }">{{ displayFactorPrice(row.previousPrice) }}</template></el-table-column>
+          <el-table-column label="本次有效价" min-width="140"><template #default="{ row }">{{ displayFactorPrice(row.price) }}</template></el-table-column>
+          <el-table-column label="变化" width="80"><template #default="{ row }">{{ changeLabel(row.kind) }}</template></el-table-column>
+        </el-table>
       </div>
-    </el-card>
-
-    <el-card shadow="never" class="filter-card">
-      <el-form :inline="true" label-width="90px">
-        <el-form-item label="开始月份">
-          <el-date-picker
-            v-model="filters.startMonth"
-            type="month"
-            value-format="YYYY-MM"
-            format="YYYY-MM"
-            placeholder="选择开始月份"
-          />
-        </el-form-item>
-        <el-form-item label="结束月份">
-          <el-date-picker
-            v-model="filters.endMonth"
-            type="month"
-            value-format="YYYY-MM"
-            format="YYYY-MM"
-            placeholder="选择结束月份"
-          />
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" :loading="loading" @click="queryRows">查询</el-button>
-          <el-button @click="resetFilters">重置</el-button>
-        </el-form-item>
-      </el-form>
-    </el-card>
-
-    <div class="summary-grid">
-      <el-card shadow="never" class="summary-card">
-        <span class="summary-label">当前业务单元</span>
-        <strong>{{ currentBusinessUnit || '—' }}</strong>
-      </el-card>
-      <el-card shadow="never" class="summary-card">
-        <span class="summary-label">已配置月份</span>
-        <strong>{{ rows.length }}</strong>
-      </el-card>
-      <el-card shadow="never" class="summary-card">
-        <span class="summary-label">默认基准</span>
-        <strong>{{ formatPricePerTon(defaultPricePerTon) }} 元/吨</strong>
-      </el-card>
-    </div>
-
-    <el-card shadow="never" class="table-card">
-      <el-table
-        v-loading="loading"
-        :data="rows"
-        stripe
-        empty-text="当前月份范围暂无财务 Cu 基准"
-      >
-        <el-table-column prop="priceMonth" label="月份" width="120" />
-        <el-table-column prop="businessUnitType" label="业务单元" min-width="140" />
-        <el-table-column label="Cu基准（元/吨）" min-width="170" align="right">
-          <template #default="{ row }">
-            <span class="price-value">{{ formatPricePerTon(row.pricePerTon) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="数据状态" width="110">
-          <template #default>
-            <el-tag type="success" effect="light">已配置</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="lastModifiedBy" label="最近修改人" min-width="130">
-          <template #default="{ row }">{{ row.lastModifiedBy || '—' }}</template>
-        </el-table-column>
-        <el-table-column label="最近修改时间" min-width="180">
-          <template #default="{ row }">
-            {{ formatDateTime(row.lastModifiedAt || row.updatedAt) }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="lastChangeReason" label="调整原因" min-width="240" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.lastChangeReason || '—' }}</template>
-        </el-table-column>
-        <el-table-column label="操作" width="110" fixed="right">
-          <template #default="{ row }">
-            <el-button v-if="canEdit" type="primary" link @click="openAdjustDialog(row)">
-              调整
-            </el-button>
-            <span v-else class="readonly-text">只读</span>
-          </template>
-        </el-table-column>
-      </el-table>
-    </el-card>
-
-    <el-dialog
-      v-model="initializeDialogVisible"
-      title="批量初始化财务 Cu 基准"
-      width="560px"
-      :close-on-click-modal="false"
-    >
-      <el-alert
-        title="已存在月份会自动跳过，不会覆盖原有财务基准。"
-        type="info"
-        :closable="false"
-        show-icon
-        class="dialog-alert"
-      />
-      <el-form label-width="120px">
-        <el-form-item label="开始月份" required>
-          <el-date-picker
-            v-model="initializeForm.monthFrom"
-            type="month"
-            value-format="YYYY-MM"
-            format="YYYY-MM"
-            placeholder="选择开始月份"
-          />
-        </el-form-item>
-        <el-form-item label="结束月份" required>
-          <el-date-picker
-            v-model="initializeForm.monthTo"
-            type="month"
-            value-format="YYYY-MM"
-            format="YYYY-MM"
-            placeholder="选择结束月份"
-          />
-        </el-form-item>
-        <el-form-item label="Cu基准（元/吨）" required>
-          <el-input-number
-            v-model="initializeForm.pricePerTon"
-            :min="0.01"
-            :max="maxPricePerTon"
-            :step="1000"
-            :precision="2"
-            controls-position="right"
-            class="price-input"
-          />
-        </el-form-item>
-      </el-form>
       <template #footer>
-        <el-button @click="initializeDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="initializeSubmitting" @click="submitInitialize">
-          确认初始化
-        </el-button>
+        <el-button @click="importVisible = false">关闭</el-button>
+        <el-button type="primary" :disabled="!canConfirmImport" :loading="publishing" @click="confirmImport">{{ publishing ? '正在发布并生成有效价' : '确认发布' }}</el-button>
       </template>
     </el-dialog>
 
-    <el-dialog
-      v-model="adjustDialogVisible"
-      title="调整单月财务 Cu 基准"
-      width="560px"
-      :close-on-click-modal="false"
-    >
-      <el-descriptions v-if="adjustingRow" :column="1" border class="adjust-summary">
-        <el-descriptions-item label="月份">{{ adjustingRow.priceMonth }}</el-descriptions-item>
-        <el-descriptions-item label="业务单元">
-          {{ adjustingRow.businessUnitType }}
-        </el-descriptions-item>
-        <el-descriptions-item label="当前基准">
-          {{ formatPricePerTon(adjustingRow.pricePerTon) }} 元/吨
-        </el-descriptions-item>
-      </el-descriptions>
-      <el-form label-width="120px">
-        <el-form-item label="新基准（元/吨）" required>
-          <el-input-number
-            v-model="adjustForm.pricePerTon"
-            :min="0.01"
-            :max="maxPricePerTon"
-            :step="1000"
-            :precision="2"
-            controls-position="right"
-            class="price-input"
-          />
-        </el-form-item>
-        <el-form-item label="调整原因" required>
-          <el-input
-            v-model="adjustForm.changeReason"
-            type="textarea"
-            :rows="4"
-            maxlength="500"
-            show-word-limit
-            placeholder="请填写财务调整依据或原因"
-          />
-        </el-form-item>
+    <el-dialog v-model="copperVisible" title="调整财务 Cu 基价" width="560px" :close-on-click-modal="false">
+      <p>本次调整 {{ snapshot?.scope.schemeCode }} / {{ conditionLabel(scope.condition) }} 的 Cu。其他因素保持当前有效值。</p>
+      <el-form label-width="110px">
+        <el-form-item label="Cu（元/吨）"><el-input v-model="copperForm.pricePerTon" inputmode="decimal" @input="clearCopperPreview" /></el-form-item>
+        <el-form-item label="调整原因"><el-input v-model="copperForm.changeReason" type="textarea" maxlength="512" show-word-limit @input="clearCopperPreview" /></el-form-item>
       </el-form>
+      <el-button :loading="previewingCopper" @click="previewCopper">预检调整</el-button>
+      <el-alert v-if="copperPreview" class="preview-result" type="success" :closable="false" title="预检通过，确认后保存新修订。原修订及原文件值保留。" />
       <template #footer>
-        <el-button @click="adjustDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="adjustSubmitting" @click="submitAdjust">
-          保存调整
-        </el-button>
+        <el-button @click="copperVisible = false">取消</el-button>
+        <el-button type="primary" :disabled="!copperPreview || previewingCopper" :loading="publishingCopper" @click="confirmCopper">{{ publishingCopper ? '正在保存并生成有效价' : '确认调整' }}</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
+import { financePublicationMessage } from '../components/originalPriceDisplay'
 import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import {
-  adjustFinanceCuBasePrice,
-  fetchFinanceCuBasePrices,
-  initializeFinanceCuBasePrices,
-} from '../api/financeQuoteBasePrice'
 import { useUserStore } from '../store/modules/user'
-import {
-  FINANCE_CU_DEFAULT_PRICE_PER_TON,
-  FINANCE_CU_MAX_PRICE_PER_TON,
-  addMonths,
-  currentMonthText,
-  formatDateTime,
-  formatPricePerTon,
-  hasFinanceCuEditPermission,
-  initializationResultMessage,
-  validateChangeReason,
-  validateMonthRange,
-  validatePricePerTon,
-} from './financeCuBasePriceUtils'
+import { fetchFinanceFactorSnapshot, previewFinanceFactors, publishFinanceFactors, previewFinanceCopper, publishFinanceCopper } from '../api/financeFactorPublications'
+import { displayFactorPrice, factorPricePerTon, priceUnitLabel, publicationCanConfirm, validateCopperAdjustment } from './financeFactorPublicationUtils'
 
-const userStore = useUserStore()
-const defaultPricePerTon = FINANCE_CU_DEFAULT_PRICE_PER_TON
-const maxPricePerTon = FINANCE_CU_MAX_PRICE_PER_TON
-const currentMonth = currentMonthText()
-
+const user = useUserStore()
+const allowed = (permission) => user.permissions?.includes('*:*:*') || user.permissions?.includes(permission)
+const canImport = computed(() => allowed('price:finance-base:import'))
+const canReadFactors = computed(() => allowed('price:finance-base:list'))
+const canEditCopper = computed(() => allowed('cost:finance-cu-base:edit'))
+const route = useRoute()
+const now = new Date()
+const initialOrg = ['210', '220'].includes(route.query.priceOrgCode) ? route.query.priceOrgCode : (route.query.businessUnitType === 'PLATE' ? '220' : '210')
+const initialMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(route.query.priceMonth || '') ? route.query.priceMonth : `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+const scope = ref({ priceOrgCode: initialOrg, priceMonth: initialMonth, condition: initialOrg === '220' ? 'NON_TENDER' : 'GENERAL', schemeCode: '' })
+const snapshot = ref(null)
+const loadError = ref('')
 const loading = ref(false)
-const rows = ref([])
-const filters = ref({
-  startMonth: currentMonth,
-  endMonth: addMonths(currentMonth, 11),
-})
+const factorRows = computed(() => Object.values(snapshot.value?.factors || {}))
+const copper = computed(() => snapshot.value?.factors?.['AVG|1#CU'])
+const copperPerTon = computed(() => factorPricePerTon(copper.value))
+const importVisible = ref(false)
+const file = ref(null)
+const financeUpload = ref(null)
+const importContext = ref({ sheetName: '', defaultSchemeCode: '' })
+const schemes = ref([])
+const importPreview = ref(null)
+const previewing = ref(false)
+const publishing = ref(false)
+const canConfirmImport = computed(() => publicationCanConfirm(importPreview.value, file.value, publishing.value || previewing.value))
+const copperVisible = ref(false)
+const copperForm = ref({ pricePerTon: '', changeReason: '' })
+const copperPreview = ref(null)
+const previewingCopper = ref(false)
+const publishingCopper = ref(false)
+const copperPriceId = ref(null)
+let snapshotRequest = 0
+let importRequest = 0
+let copperRequest = 0
+const factorLabel = (key) => importPreview.value?.workbook.values.find(value => value.canonicalKey === key)?.shortName || key
+const conditionLabel = (condition) => ({ GENERAL: '通用', NON_TENDER: '非招标', TENDER: '招标' }[condition] || condition)
+const schemeLabel = (code) => code === 'BOARD' ? '板换基价' : code?.startsWith('CU_') ? `Cu ${code.slice(3)} 元/吨方案` : code
+const changeLabel = (kind) => ({ NEW: '新增', CHANGED: '修改', UNCHANGED: '未变', REMOVED: '移除' }[kind] || kind)
 
-const initializeDialogVisible = ref(false)
-const initializeSubmitting = ref(false)
-const initializeForm = ref({
-  monthFrom: currentMonth,
-  monthTo: addMonths(currentMonth, 5),
-  pricePerTon: defaultPricePerTon,
-})
-
-const adjustDialogVisible = ref(false)
-const adjustSubmitting = ref(false)
-const adjustingRow = ref(null)
-const adjustForm = ref({ pricePerTon: defaultPricePerTon, changeReason: '' })
-
-const canEdit = computed(() => hasFinanceCuEditPermission(userStore.permissions))
-const currentBusinessUnit = computed(
-  () => userStore.businessUnitType || rows.value[0]?.businessUnitType || '',
-)
-
-const loadRows = async () => {
+async function loadSnapshot() {
+  const request = ++snapshotRequest
   loading.value = true
+  snapshot.value = null
+  loadError.value = ''
   try {
-    const data = await fetchFinanceCuBasePrices({
-      startMonth: filters.value.startMonth,
-      endMonth: filters.value.endMonth,
-    })
-    rows.value = Array.isArray(data) ? data : []
-  } catch (error) {
-    rows.value = []
-    ElMessage.error(error?.message || '获取财务 Cu 基准失败')
-  } finally {
-    loading.value = false
-  }
-}
-
-const queryRows = () => {
-  const error = validateMonthRange(filters.value.startMonth, filters.value.endMonth)
-  if (error) {
-    ElMessage.warning(error)
-    return
-  }
-  loadRows()
-}
-
-const resetFilters = () => {
-  filters.value = { startMonth: currentMonth, endMonth: addMonths(currentMonth, 11) }
-  loadRows()
-}
-
-const openInitializeDialog = () => {
-  initializeForm.value = {
-    monthFrom: filters.value.startMonth || currentMonth,
-    monthTo: addMonths(filters.value.startMonth || currentMonth, 5),
-    pricePerTon: defaultPricePerTon,
-  }
-  initializeDialogVisible.value = true
-}
-
-const submitInitialize = async () => {
-  const monthError = validateMonthRange(
-    initializeForm.value.monthFrom,
-    initializeForm.value.monthTo,
-  )
-  const priceError = validatePricePerTon(initializeForm.value.pricePerTon)
-  if (monthError || priceError) {
-    ElMessage.warning(monthError || priceError)
-    return
-  }
-  initializeSubmitting.value = true
-  try {
-    const result = await initializeFinanceCuBasePrices(initializeForm.value)
-    const message = initializationResultMessage(result)
-    if (Number(result?.skippedCount || 0) > 0) {
-      ElMessage.warning(message)
-    } else {
-      ElMessage.success(message)
+    const result = await fetchFinanceFactorSnapshot({ ...scope.value }, !canReadFactors.value)
+    if (request === snapshotRequest) {
+      snapshot.value = result
+      scope.value.schemeCode = result.scope.schemeCode
     }
-    initializeDialogVisible.value = false
-    filters.value = {
-      startMonth: initializeForm.value.monthFrom,
-      endMonth: initializeForm.value.monthTo,
-    }
-    await loadRows()
   } catch (error) {
-    ElMessage.error(error?.message || '批量初始化财务 Cu 基准失败')
+    if (request === snapshotRequest) loadError.value = error.message || '财务基价读取失败'
   } finally {
-    initializeSubmitting.value = false
+    if (request === snapshotRequest) loading.value = false
   }
 }
-
-const openAdjustDialog = (row) => {
-  adjustingRow.value = row
-  adjustForm.value = {
-    pricePerTon: Number(row.pricePerTon),
-    changeReason: '',
-  }
-  adjustDialogVisible.value = true
+function clearImportPreview() { importRequest++; importPreview.value = null }
+function clearCopperPreview() { copperRequest++; copperPreview.value = null }
+function scopeChanged() {
+  scope.value.schemeCode = ''
+  clearImportPreview()
+  clearCopperPreview()
+  copperVisible.value = false
+  importContext.value = { sheetName: '', defaultSchemeCode: '' }
+  schemes.value = []
+  loadSnapshot()
 }
-
-const submitAdjust = async () => {
-  if (!adjustingRow.value) return
-  const priceError = validatePricePerTon(adjustForm.value.pricePerTon)
-  const reasonError = validateChangeReason(adjustForm.value.changeReason)
-  if (priceError || reasonError) {
-    ElMessage.warning(priceError || reasonError)
-    return
-  }
-  adjustSubmitting.value = true
+function changeOrganization() {
+  scope.value.condition = scope.value.priceOrgCode === '220' ? 'NON_TENDER' : 'GENERAL'
+  scopeChanged()
+}
+function chooseFile(upload) {
+  file.value = upload.raw
+  schemes.value = []
+  importContext.value = { sheetName: '', defaultSchemeCode: '' }
+  clearImportPreview()
+}
+function replaceFile(files) {
+  if (!files.length || publishing.value) return
+  financeUpload.value?.clearFiles()
+  financeUpload.value?.handleStart(files[0])
+}
+function removeFile() { file.value = null; clearImportPreview() }
+async function previewImport() {
+  if (!file.value) return
+  previewing.value = true
+  clearImportPreview()
+  const request = importRequest
   try {
-    await adjustFinanceCuBasePrice(adjustingRow.value.id, adjustForm.value)
-    ElMessage.success(`${adjustingRow.value.priceMonth}财务 Cu 基准调整成功`)
-    adjustDialogVisible.value = false
-    await loadRows()
-  } catch (error) {
-    ElMessage.error(error?.message || '调整财务 Cu 基准失败')
-  } finally {
-    adjustSubmitting.value = false
-  }
+    const result = await previewFinanceFactors(file.value, { ...scope.value, ...importContext.value })
+    if (request !== importRequest) return
+    importContext.value = { sheetName: result.context.sheetName, defaultSchemeCode: result.context.defaultSchemeCode }
+    schemes.value = result.workbook.schemes
+    importPreview.value = result
+  } catch (error) { if (request === importRequest) ElMessage.error(error.message || '预检失败') }
+  finally { previewing.value = false }
 }
-
-onMounted(loadRows)
+async function confirmImport() {
+  if (!canConfirmImport.value) return
+  publishing.value = true
+  try {
+    const result = await publishFinanceFactors(file.value, { ...scope.value, ...importContext.value }, importPreview.value.previewFingerprint)
+    ElMessage.success(financePublicationMessage(result))
+    importVisible.value = false
+    clearImportPreview()
+    await loadSnapshot()
+  } catch (error) { clearImportPreview(); ElMessage.error(error.message || '发布失败') }
+  finally { publishing.value = false }
+}
+function openCopperAdjustment() {
+  copperPriceId.value = copper.value.monthlyPriceId
+  copperForm.value = { pricePerTon: copperPerTon.value, changeReason: '' }
+  clearCopperPreview()
+  copperVisible.value = true
+}
+async function previewCopper() {
+  const error = validateCopperAdjustment(copperForm.value)
+  if (error) return ElMessage.warning(error)
+  previewingCopper.value = true
+  clearCopperPreview()
+  const request = copperRequest
+  try {
+    const result = await previewFinanceCopper(copperPriceId.value, { ...copperForm.value })
+    if (request === copperRequest) copperPreview.value = result
+  } catch (error) { if (request === copperRequest) ElMessage.error(error.message || '调整预检失败') }
+  finally { previewingCopper.value = false }
+}
+async function confirmCopper() {
+  if (!copperPreview.value || publishingCopper.value) return
+  publishingCopper.value = true
+  try {
+    const result = await publishFinanceCopper(copperPriceId.value, { ...copperForm.value, previewFingerprint: copperPreview.value.previewFingerprint })
+    ElMessage.success(financePublicationMessage(result))
+    copperVisible.value = false
+    await loadSnapshot()
+  } catch (error) { copperPreview.value = null; ElMessage.error(error.message || '调整失败') }
+  finally { publishingCopper.value = false }
+}
+onMounted(loadSnapshot)
 </script>
 
 <style scoped>
-.finance-cu-page {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 20px;
-}
-
-.hero-card {
-  border-top: 3px solid #c58a21;
-}
-
-.hero-content {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-}
-
-.page-title {
-  color: #17233d;
-  font-size: 22px;
-  font-weight: 700;
-}
-
-.page-subtitle {
-  margin-top: 8px;
-  color: #667085;
-  font-size: 14px;
-}
-
-.hero-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  white-space: nowrap;
-}
-
-.filter-card :deep(.el-card__body) {
-  padding-bottom: 2px;
-}
-
-.summary-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.summary-card :deep(.el-card__body) {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.summary-card strong {
-  color: #17233d;
-  font-size: 20px;
-}
-
-.summary-label,
-.readonly-text {
-  color: #667085;
-  font-size: 13px;
-}
-
-.price-value {
-  color: #9a6700;
-  font-variant-numeric: tabular-nums;
-  font-weight: 700;
-}
-
-.dialog-alert,
-.adjust-summary {
-  margin-bottom: 20px;
-}
-
-.price-input {
-  width: 260px;
-}
-
-@media (max-width: 900px) {
-  .hero-content {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .summary-grid {
-    grid-template-columns: 1fr;
-  }
-}
+.finance-base-page { padding: 20px; }
+.page-heading, .copper-summary { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.page-heading h2 { margin: 0 0 8px; font-size: 21px; }
+.page-heading p { margin: 0; color: #667085; font-size: 14px; }
+.publication-summary { display: flex; flex-wrap: wrap; gap: 20px; padding: 12px 0; color: #667085; font-size: 13px; }
+.copper-summary { margin: 12px 0 22px; padding: 20px; border-radius: 8px; background: #f4f8ff; }
+.copper-summary span { display: block; color: #667085; margin-bottom: 8px; }
+.copper-summary strong { color: #175cd3; font-size: 27px; }
+.copper-summary small { font-size: 14px; font-weight: normal; }
+.import-options, .preview-result { margin-top: 18px; }
+.problem { color: #b42318; padding: 6px 0; }
+.source-detail { margin: 10px 0; line-height: 1.7; overflow-wrap: anywhere; }
 </style>

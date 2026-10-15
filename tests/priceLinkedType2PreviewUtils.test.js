@@ -116,3 +116,12 @@ describe('PLI2-11 类型2预检纯函数', () => {
     )
   })
 })
+
+
+it('原稿确认必须具有文件摘要和完整预检版本', () => {
+  const input = { file: { name: '原稿.xlsx' }, preview: { canConfirm: true, fileSha256: 'hash', expressionVersion: 'ORIGINAL_V1' } }
+  assert.equal(canConfirmLinkedPreview(input), false)
+  input.preview.previewFingerprint = 'version'
+  assert.equal(canConfirmLinkedPreview(input), true)
+  assert.equal(priceLinkedTemplateText('ORIGINAL'), '供管部原稿')
+})

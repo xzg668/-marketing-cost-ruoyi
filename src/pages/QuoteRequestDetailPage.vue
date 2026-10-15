@@ -239,7 +239,7 @@
           <el-table-column prop="periodMonth" label="核算月份" width="110" />
           <el-table-column prop="resultNo" label="结果编号" min-width="210" show-overflow-tooltip />
           <el-table-column label="总成本" width="130" align="right">
-            <template #default="{ row }">{{ formatCostAmount(row.totalCost) }}</template>
+            <template #default="{ row }">{{ formatCostAmount(row.finalQuoteAmount ?? row.totalCost) }}</template>
           </el-table-column>
           <el-table-column label="完成时间" min-width="170">
             <template #default="{ row }">{{ formatDateTime(row.completedAt) }}</template>
@@ -272,7 +272,11 @@
             <el-descriptions-item label="结果类型">{{ costResultDialog.selected.resultTypeLabel }}</el-descriptions-item>
             <el-descriptions-item label="核算月份">{{ costResultDialog.selected.periodMonth || '-' }}</el-descriptions-item>
             <el-descriptions-item label="结果状态">{{ costResultStatusLabel(costResultDialog.selected.status) }}</el-descriptions-item>
-            <el-descriptions-item label="总成本">{{ formatCostAmount(costResultDialog.selected.totalCost) }}</el-descriptions-item>
+            <el-descriptions-item label="总成本">{{ formatCostAmount(costResultDialog.selected.finalQuoteAmount ?? costResultDialog.selected.totalCost) }}</el-descriptions-item>
+            <template v-if="costResultDialog.selected.cuMaterialAdjustment != null">
+              <el-descriptions-item label="财务正常成本">{{ formatCostAmount(costResultDialog.selected.totalCost) }}</el-descriptions-item>
+              <el-descriptions-item label="材料费差额">{{ formatCostAmount(costResultDialog.selected.cuMaterialAdjustment) }}</el-descriptions-item>
+            </template>
             <template v-if="costResultDialog.selected.resultType === 'MONTHLY_REPRICE'">
               <el-descriptions-item label="材料费">{{ formatCostAmount(costResultDialog.selected.materialCost) }}</el-descriptions-item>
               <el-descriptions-item label="人工费">{{ formatCostAmount(costResultDialog.selected.laborCost) }}</el-descriptions-item>
