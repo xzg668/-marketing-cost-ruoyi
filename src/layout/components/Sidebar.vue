@@ -1,10 +1,10 @@
 <template>
-  <div class="sidebar" :class="{ collapsed: effectiveCollapsed }">
+  <nav class="sidebar" :class="{ collapsed: effectiveCollapsed }" aria-label="主导航">
     <div class="sidebar-logo">
       <span v-if="!effectiveCollapsed">产品成本核算</span>
       <span v-else>成本</span>
     </div>
-    <el-scrollbar>
+    <el-scrollbar class="sidebar-scrollbar">
       <div v-if="displayRoutes.length === 0" class="sidebar-empty">
         <el-empty
           v-if="!effectiveCollapsed"
@@ -20,9 +20,6 @@
         :collapse="effectiveCollapsed"
         :collapse-transition="false"
         :unique-opened="false"
-        background-color="#ffffff"
-        text-color="#1f2a37"
-        active-text-color="#409eff"
         @select="handleMenuSelect"
       >
         <sidebar-item
@@ -33,7 +30,7 @@
         />
       </el-menu>
     </el-scrollbar>
-  </div>
+  </nav>
 </template>
 
 <script setup>
@@ -43,6 +40,7 @@ import { ElMessage } from 'element-plus'
 import { usePermissionStore } from '../../store/modules/permission'
 import { useAppStore } from '../../store/modules/app'
 import SidebarItem from './SidebarItem.vue'
+import '../styles/sidebar.css'
 
 const route = useRoute()
 const appStore = useAppStore()
@@ -107,22 +105,25 @@ onBeforeUnmount(() => {
 <style scoped>
 .sidebar {
   width: 220px;
+  flex-shrink: 0;
   height: 100vh;
   display: flex;
   flex-direction: column;
   background: #ffffff;
-  border-right: 1px solid #ebeef5;
+  border-right: 1px solid #e8edf4;
+  box-sizing: border-box;
   transition: width 0.2s ease;
 }
 
 .sidebar.collapsed {
-  width: 64px;
+  width: 80px;
 }
 
 .sidebar-logo {
   height: 50px;
+  flex-shrink: 0;
   line-height: 50px;
-  padding: 0 16px;
+  padding: 0 12px;
   font-size: 16px;
   font-weight: 600;
   color: #1f2a37;
@@ -132,12 +133,9 @@ onBeforeUnmount(() => {
   text-align: center;
 }
 
-.sidebar-menu {
-  border-right: none;
-}
-
-.sidebar-menu:not(.el-menu--collapse) {
-  width: 220px;
+.sidebar-scrollbar {
+  flex: 1;
+  min-height: 0;
 }
 
 .sidebar-empty {

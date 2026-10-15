@@ -1,14 +1,19 @@
 <template>
   <template v-if="visibleChildren.length === 0">
-    <el-menu-item v-if="!route.meta?.hidden" :index="fullPath">
-      <el-icon v-if="iconComponent"><component :is="iconComponent" /></el-icon>
-      <template #title>{{ route.meta?.title || route.path }}</template>
+    <el-menu-item v-if="!route.meta?.hidden" :index="fullPath" :aria-label="title">
+      <span class="sidebar-menu-compact" aria-hidden="true">{{ title }}</span>
+      <template #title><span class="sidebar-menu-label" :title="title">{{ title }}</span></template>
     </el-menu-item>
   </template>
-  <el-sub-menu v-else-if="!route.meta?.hidden" :index="fullPath">
+  <el-sub-menu
+    v-else-if="!route.meta?.hidden"
+    :index="fullPath"
+    :aria-label="title"
+    popper-class="sidebar-menu-popper"
+  >
     <template #title>
-      <el-icon v-if="iconComponent"><component :is="iconComponent" /></el-icon>
-      <span>{{ route.meta?.title || route.path }}</span>
+      <span class="sidebar-menu-compact" aria-hidden="true">{{ title }}</span>
+      <span class="sidebar-menu-label" :title="title">{{ title }}</span>
     </template>
     <sidebar-item
       v-for="child in visibleChildren"
@@ -21,7 +26,6 @@
 
 <script setup>
 import { computed } from 'vue'
-import * as ElIcons from '@element-plus/icons-vue'
 import { resolveRoutePath } from '../utils/resolveRoutePath'
 
 const props = defineProps({
@@ -29,40 +33,12 @@ const props = defineProps({
   basePath: { type: String, default: '' },
 })
 
-const ICONLESS_MENU_TITLES = new Set([
-  'U9数据',
-  'U9基础数据',
-  'CMS数据',
-  'CMS成本数据',
-  '供应商供货比例',
-  '供应商供货比率',
-])
-const ICONLESS_MENU_PATHS = new Set([
-  '/base/u9',
-  'base/u9',
-  '/base/cms-cost',
-  'base/cms-cost',
-  '/base/supplier-relation/supply-ratio',
-  'base/supplier-relation/supply-ratio',
-])
-
+const title = computed(() => props.route.meta?.title || props.route.path)
 const fullPath = computed(() => resolveRoutePath(props.basePath, props.route.path))
 
 const visibleChildren = computed(() => {
   const kids = Array.isArray(props.route.children) ? props.route.children : []
   return kids.filter((c) => c && !c.meta?.hidden)
-})
-
-const iconComponent = computed(() => {
-  if (shouldHideIcon.value) return null
-  const name = props.route.meta?.icon
-  if (!name) return null
-  return ElIcons[name] || null
-})
-
-const shouldHideIcon = computed(() => {
-  const title = String(props.route.meta?.title || '').replace(/\s/g, '')
-  return ICONLESS_MENU_TITLES.has(title) || ICONLESS_MENU_PATHS.has(fullPath.value)
 })
 
 </script>

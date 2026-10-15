@@ -1,0 +1,126 @@
+/* Keep the expanded navigation and its teleported flyouts visually consistent. */
+.sidebar-menu,
+.sidebar-menu-popper {
+  --el-menu-bg-color: #fff;
+  --el-menu-text-color: #1f2a37;
+  --el-menu-active-color: #2563eb;
+  --el-menu-hover-bg-color: #f3f6fa;
+  --el-menu-item-height: 56px;
+  --el-menu-sub-item-height: 50px;
+  --el-menu-base-level-padding: 20px;
+  --el-menu-level-padding: 20px;
+}
+
+.sidebar-menu {
+  width: 100%;
+  padding: 0;
+  border-right: 0;
+}
+
+.sidebar-menu .el-menu-item,
+.sidebar-menu .el-sub-menu__title,
+.sidebar-menu-popper .el-menu-item,
+.sidebar-menu-popper .el-sub-menu__title {
+  min-width: 0;
+  margin: 0;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 400;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.sidebar-menu .el-sub-menu__icon-arrow,
+.sidebar-menu-popper .el-sub-menu__icon-arrow {
+  color: #94a3b8;
+}
+
+.sidebar-menu .el-menu-item.is-active,
+.sidebar-menu-popper .el-menu-item.is-active {
+  color: #2563eb;
+  background: #edf4ff;
+  box-shadow: inset 3px 0 #3b82f6;
+}
+
+.sidebar-menu .el-sub-menu.is-active > .el-sub-menu__title,
+.sidebar-menu-popper .el-sub-menu.is-active > .el-sub-menu__title {
+  color: #2563eb;
+}
+
+.sidebar-menu .el-menu-item:focus-visible,
+.sidebar-menu .el-sub-menu:focus-visible > .el-sub-menu__title,
+.sidebar-menu-popper .el-menu-item:focus-visible,
+.sidebar-menu-popper .el-sub-menu:focus-visible > .el-sub-menu__title {
+  outline: 2px solid #93b4f4;
+  outline-offset: -2px;
+}
+
+.sidebar-menu-label {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-menu-compact {
+  display: none;
+}
+
+.sidebar-menu.el-menu--collapse {
+  width: 100%;
+}
+
+.sidebar-menu.el-menu--collapse > .el-menu-item,
+.sidebar-menu.el-menu--collapse > .el-sub-menu > .el-sub-menu__title {
+  height: 48px;
+  padding: 0 4px;
+  justify-content: center;
+}
+
+.sidebar-menu.el-menu--collapse > .el-menu-item .el-menu-tooltip__trigger {
+  padding: 0 4px;
+  justify-content: center;
+}
+
+/* Element Plus normally leaves only icons visible when collapsed. Use text here. */
+.sidebar-menu.el-menu--collapse > .el-menu-item .sidebar-menu-compact,
+.sidebar-menu.el-menu--collapse > .el-sub-menu > .el-sub-menu__title > .sidebar-menu-compact {
+  display: -webkit-box;
+  width: 100%;
+  height: auto;
+  max-height: 36px;
+  overflow: hidden;
+  visibility: visible;
+  font-size: 13px;
+  line-height: 18px;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.sidebar-menu.el-menu--collapse > .el-sub-menu.is-active > .el-sub-menu__title {
+  background: #edf4ff;
+}
+
+.sidebar-menu-popper .el-menu--popup {
+  min-width: 220px;
+  max-width: 300px;
+  max-height: calc(100vh - 32px);
+  padding: 6px;
+  overflow-y: auto;
+  border: 1px solid #e8edf4;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgb(31 42 55 / 10%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar,
+  .sidebar-menu .el-menu-item,
+  .sidebar-menu .el-sub-menu__title,
+  .sidebar-menu-popper .el-menu-item,
+  .sidebar-menu-popper .el-sub-menu__title {
+    transition: none;
+  }
+}

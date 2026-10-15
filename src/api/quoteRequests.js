@@ -164,5 +164,6 @@ export const fetchQuoteCostingPreparation = (oaNo, params = {}) =>
 
 export const prepareQuoteCosting = (oaNo, body) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}/costing-preparation`, {
-    method: 'POST', body, suppressErrorToast: true,
+    // 整单资料检查先同步完成，再进入核算队列；100 产品并发时可能超过通用的 60 秒。
+    method: 'POST', body, timeout: 600000, suppressErrorToast: true,
   })

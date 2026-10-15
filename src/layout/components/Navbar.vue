@@ -1,10 +1,18 @@
 <template>
   <div class="navbar">
     <div class="navbar-left">
-      <el-icon class="hamburger" :size="20" @click="appStore.toggleSidebar">
-        <Fold v-if="!appStore.sidebarCollapsed" />
-        <Expand v-else />
-      </el-icon>
+      <button
+        type="button"
+        class="hamburger"
+        :aria-label="appStore.sidebarCollapsed ? '展开导航' : '收起导航'"
+        :aria-expanded="!appStore.sidebarCollapsed"
+        @click="appStore.toggleSidebar"
+      >
+        <el-icon :size="20">
+          <Fold v-if="!appStore.sidebarCollapsed" />
+          <Expand v-else />
+        </el-icon>
+      </button>
       <breadcrumb />
     </div>
     <div class="navbar-right">
@@ -81,6 +89,7 @@ async function onLogout() {
 <style scoped>
 .navbar {
   height: 50px;
+  flex-shrink: 0;
   padding: 0 16px;
   background: #ffffff;
   border-bottom: 1px solid #ebeef5;
@@ -96,12 +105,27 @@ async function onLogout() {
 }
 
 .hamburger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
   cursor: pointer;
   color: #5a6775;
 }
 
 .hamburger:hover {
-  color: #409eff;
+  color: #2563eb;
+  background: #f3f6fa;
+}
+
+.hamburger:focus-visible {
+  outline: 2px solid #93b4f4;
+  outline-offset: 2px;
 }
 
 .navbar-right {
@@ -128,5 +152,11 @@ async function onLogout() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .hamburger {
+    display: none;
+  }
 }
 </style>

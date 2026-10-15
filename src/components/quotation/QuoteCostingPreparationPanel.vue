@@ -21,7 +21,10 @@ const props = defineProps({ oaNo: String, state: Object, checks: { type: Array, 
 defineEmits(['refresh'])
 const router = useRouter()
 const blocked = computed(() => props.checks.filter(row => row.pipelineStatus !== 'READY'))
-const messageType = computed(() => props.error || ['WAITING_INPUT', 'WAITING'].includes(props.state?.status) ? 'warning' : 'info')
+const messageType = computed(() => {
+  if (props.error || props.state?.status === 'FAILED') return 'error'
+  return ['WAITING_INPUT', 'WAITING'].includes(props.state?.status) ? 'warning' : 'info'
+})
 function viewSupplement() { router.push({ path: '/collaboration/tasks', query: { oaNo: props.oaNo } }) }
 </script>
 <style scoped>
@@ -30,6 +33,7 @@ function viewSupplement() { router.push({ path: '/collaboration/tasks', query: {
 .costing-preparation__row strong { white-space: nowrap; }
 .costing-preparation__message { flex: 1; min-width: 180px; color: #606c80; line-height: 1.6; }
 .costing-preparation__message.warning { color: #b45309; }
+.costing-preparation__message.error { color: #dc2626; }
 .costing-preparation__message.success { color: #268445; }
 .costing-preparation__actions { display: flex; gap: 12px; margin-left: auto; }
 .costing-preparation__actions .el-button { margin: 0; }
