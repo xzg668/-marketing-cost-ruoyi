@@ -221,6 +221,7 @@
               <el-option label="默认生成" value="DEFAULT" />
               <el-option label="更新" value="REFRESH" />
               <el-option label="阻断" value="BLOCKED" />
+              <el-option label="撤销默认来源" value="CANCEL" />
             </el-select>
           </el-form-item>
           <el-form-item>
