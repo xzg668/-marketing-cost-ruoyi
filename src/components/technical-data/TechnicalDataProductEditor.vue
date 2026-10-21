@@ -79,7 +79,7 @@ const editable = computed(() => !readOnly.value && canEditTechnicalModule(workfl
 const showForm = computed(() => !!formComponent.value && !!activeState.value && (!readOnly.value || activeState.value.currentVersionId != null))
 const forms = { PROFILE: TechnicalDataProfileForm, DRAWING_BOM: TechnicalDataDrawingForm, MANUFACTURING: TechnicalDataManufacturingForm, PACKAGE: TechnicalDataPackageForm, AUXILIARY: TechnicalDataAuxiliaryForm, SOLDER: TechnicalDataSolderForm, SALARY: TechnicalDataSalaryForm, NET_LOSS: TechnicalDataNetLossForm, PRICE: TechnicalDataPriceForm }
 const formComponent = computed(() => forms[activeModule.value])
-const formProps = computed(() => activeModule.value === 'PROFILE' ? { product: product.value, editable: editable.value }
+const formProps = computed(() => activeModule.value === 'PROFILE' ? { product: product.value, taskId: props.taskId, editable: editable.value }
   : { productId: product.value.id, editable: editable.value, oaNo: task.value.oaNo,
     versionId: readOnly.value ? activeState.value?.currentVersionId : undefined })
 const formKey = computed(() => `${props.taskId}:${activeModule.value}:${props.submissionId || ''}:${revision.value}`)

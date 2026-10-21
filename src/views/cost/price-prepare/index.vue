@@ -681,6 +681,7 @@ const noScrapSourceOaNo = (row) =>
 
 const priceSourceLabel = (value) => {
   if (!value) return '-'
+  if (value === 'SCRAP_PRICE') return '废料价格'
   if (value === 'FIXED_PRICE') return '固定采购价'
   if (value === 'MAKE_PART_PRICE') return '自制件价格'
   if (value === 'PACKAGE_PRICE') return '包装组件价格'

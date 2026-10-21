@@ -21,6 +21,7 @@ export function priceSourceGapKind(row) {
   if (isMissingScrapMappingGap(row)) return 'SCRAP_MAPPING'
   const type = String(row?.priceType || '').trim()
   const upper = type.toUpperCase()
+  if (upper === 'SETTLE_LINKED' || type.includes('结算联动')) return 'SETTLE_LINKED'
   if (['SETTLE_FIXED', '结算固定', '固定结算', '家用结算', '结算价']
     .some((token) => type.includes(token))) return 'SETTLE_FIXED'
   if (['FIXED', 'PURCHASE_FIXED'].includes(upper) || type.includes('固定')) return 'FIXED'
@@ -41,6 +42,7 @@ export function summarizePriceSourceGaps(gaps) {
     ratioReview: 0,
     fixed: 0,
     settleFixed: 0,
+    settleLinked: 0,
     linked: 0,
     range: 0,
     make: 0,
@@ -56,6 +58,7 @@ export function summarizePriceSourceGaps(gaps) {
     const key = {
       FIXED: 'fixed',
       SETTLE_FIXED: 'settleFixed',
+      SETTLE_LINKED: 'settleLinked',
       LINKED: 'linked',
       RANGE: 'range',
       MAKE: 'make',

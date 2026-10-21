@@ -14,7 +14,7 @@ describe('报价价格缺口分类', () => {
     ]
     const result = summarizePriceSourceGaps(gaps)
     assert.deepEqual(result, {
-      all: 39, total: 29, ratioReview: 10, fixed: 0, settleFixed: 0,
+      all: 39, total: 29, ratioReview: 10, fixed: 0, settleFixed: 0, settleLinked: 0,
       linked: 19, range: 0, make: 5, scrapMapping: 1, unresolved: 4,
     })
     assert.equal(isSupplierRatioGap(gaps[25]), true)

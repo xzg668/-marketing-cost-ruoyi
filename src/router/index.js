@@ -86,6 +86,14 @@ const staticRoutes = [
         meta: { title: '单产品核算工作台', activeMenu: '/ingest/quote-requests' },
       },
       {
+        path: '/price/settle-fixed',
+        redirect: to => ({ path: '/price/settlement', query: { ...to.query, priceType: 'SETTLE_FIXED' } }),
+      },
+      {
+        path: '/price/settle',
+        redirect: to => ({ path: '/price/settlement', query: to.query }),
+      },
+      {
         path: '/price/linked',
         redirect: '/price/linked/result',
       },

@@ -554,6 +554,10 @@
                 <strong>{{ priceSourceGapSummary.settleFixed }}</strong>
               </div>
               <div class="source-gap-card">
+                <span>结算联动价缺口</span>
+                <strong>{{ priceSourceGapSummary.settleLinked }}</strong>
+              </div>
+              <div class="source-gap-card">
                 <span>联动价缺口</span>
                 <strong>{{ priceSourceGapSummary.linked }}</strong>
               </div>
@@ -758,10 +762,10 @@
                   <el-table-column prop="itemType" label="类型" width="110" />
                   <el-table-column prop="quantity" label="数量" width="110" align="right" />
                   <el-table-column prop="unitPrice" label="单价" width="120" align="right">
-                    <template #default="{ row }">{{ formatMoney(row.unitPrice) }}</template>
+                    <template #default="{ row }">{{ formatSnapshotDecimal(row.unitPrice, 8) }}</template>
                   </el-table-column>
                   <el-table-column prop="amount" label="金额" width="120" align="right">
-                    <template #default="{ row }">{{ formatMoney(row.amount) }}</template>
+                    <template #default="{ row }">{{ formatSnapshotDecimal(row.amount, 8) }}</template>
                   </el-table-column>
                   <el-table-column prop="priceSource" label="价格来源" min-width="160" show-overflow-tooltip />
                   <el-table-column label="价格有效性" min-width="300">
@@ -795,10 +799,10 @@
                   <el-table-column prop="itemType" label="类型" width="110" />
                   <el-table-column prop="quantity" label="数量" width="110" align="right" />
                   <el-table-column prop="unitPrice" label="单价" width="120" align="right">
-                    <template #default="{ row }">{{ formatMoney(row.unitPrice) }}</template>
+                    <template #default="{ row }">{{ formatSnapshotDecimal(row.unitPrice, 8) }}</template>
                   </el-table-column>
                   <el-table-column prop="amount" label="金额" width="120" align="right">
-                    <template #default="{ row }">{{ formatMoney(row.amount) }}</template>
+                    <template #default="{ row }">{{ formatSnapshotDecimal(row.amount, 8) }}</template>
                   </el-table-column>
                   <el-table-column prop="priceSource" label="价格来源" min-width="160" show-overflow-tooltip />
                   <el-table-column label="价格有效性" min-width="300">
@@ -2359,7 +2363,8 @@ function openPriceSource(row) {
   }
   const paths = {
     FIXED: '/price/fixed',
-    SETTLE_FIXED: '/price/settle-fixed',
+    SETTLE_FIXED: '/price/settlement',
+    SETTLE_LINKED: '/price/settlement',
     LINKED: '/price/linked/result',
     RANGE: '/price/range',
   }
@@ -2487,6 +2492,7 @@ function priceSourceGapTypeText(row) {
   const labels = {
     FIXED: '固定采购价',
     SETTLE_FIXED: '结算固定价',
+    SETTLE_LINKED: '结算联动价',
     LINKED: '联动价',
     RANGE: '区间价',
     MAKE: '自制件',
@@ -2508,6 +2514,7 @@ function priceSourceGapActionText(row) {
   const labels = {
     FIXED: '维护固定采购价价格源',
     SETTLE_FIXED: '维护结算固定价价格源',
+    SETTLE_LINKED: '维护结算联动价及重量',
     LINKED: '维护联动价结果',
     RANGE: '维护区间价价格源',
     MAKE: '自制件价格由原材料/废料价格生成，请按缺口说明处理',
@@ -2521,6 +2528,7 @@ function priceSourceGapButtonText(row) {
   const labels = {
     FIXED: '去维护固定采购价',
     SETTLE_FIXED: '去维护结算固定价',
+    SETTLE_LINKED: '去维护结算联动价',
     LINKED: '去维护联动价',
     RANGE: '去维护区间价',
     MAKE: '查看说明',

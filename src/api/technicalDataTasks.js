@@ -1,5 +1,6 @@
 import { requestToken } from '../utils/oaSession'
 import { request } from './http'
+import { technicalProfilePayload } from '../utils/technicalDataPlateMaterial'
 
 const id = (value) => encodeURIComponent(String(value))
 
@@ -92,14 +93,7 @@ export const submitTechnicalDataDocument = (formId, body) =>
 export const saveTechnicalDataProfile = (productId, profile) =>
   request(`/api/v2/technical-data/products/${id(productId)}/profile`, {
     method: 'PATCH',
-    body: {
-      productProperty: profile.productProperty,
-      hasAdditionalFees: profile.hasAdditionalFees,
-      unitToolingFee: profile.unitToolingFee,
-      unitMouldFee: profile.unitMouldFee,
-      unitCertificationFee: profile.unitCertificationFee,
-      expectedVersion: profile.expectedVersion,
-    },
+    body: technicalProfilePayload(profile),
     suppressErrorToast: true,
   })
 

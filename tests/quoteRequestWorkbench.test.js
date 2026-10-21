@@ -772,7 +772,6 @@ describe('T11 报价单接入页面契约', () => {
     assert.match(costingWorkbenchPageContent, /returnTo: route\.fullPath/)
     ;[
       priceFixedPageContent,
-      priceSettleFixedPageContent,
       priceLinkedResultPageContent,
       priceRangePageContent,
     ].forEach((pageContent) => {
@@ -782,7 +781,11 @@ describe('T11 报价单接入页面契约', () => {
       assert.match(pageContent, /route\.query\.returnTo|priceWorkbenchReturn\(route\.query\)/)
     })
     assert.match(priceFixedPageContent, /applyRouteContext/)
-    assert.match(priceSettleFixedPageContent, /applyRouteContext/)
+    assert.match(priceSettleFixedPageContent, /SettlementPricePage/)
+    const settlementPage = fs.readFileSync(path.resolve(import.meta.dirname, '../src/pages/SettlementPricePage.vue'), 'utf8')
+    assert.match(settlementPage, /返回报价核算/)
+    assert.match(settlementPage, /settlementReturnTo\(route\.query\.returnTo\)/)
+    assert.match(settlementPage, /router\.push\(returnTo\)/)
     assert.match(priceRangePageContent, /applyRouteContext/)
   })
 

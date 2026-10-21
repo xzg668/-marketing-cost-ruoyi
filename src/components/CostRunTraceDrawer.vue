@@ -544,6 +544,7 @@ function partCategoryLabel(row) {
 function priceMethodLabel(type) {
   const labels = {
     MAKE_PART: '取自制件价格生成结果',
+    SCRAP_PRICE: '取废料价格',
     LINKED_PRICE: '取联动价',
     FIXED_PRICE: '取固定价',
     SETTLE_FIXED_PRICE: '取结算固定价',
@@ -560,6 +561,7 @@ function priceMethodLabel(type) {
 function sourceTypeLabel(type) {
   const labels = {
     MAKE_PART: '自制件价格生成',
+    SCRAP_PRICE: '废料价格',
     LINKED_PRICE: '联动价',
     FIXED_PRICE: '固定采购价',
     SETTLE_FIXED_PRICE: '结算固定价',
@@ -826,6 +828,7 @@ function variableSourceLabel(source) {
     OA_LOCKED: '报价单锁价',
     PRICE_PREPARE: '价格准备结果',
     MAKE_PART: '制造件生成快照',
+    SCRAP_PRICE: '废料价格',
     LINKED_PRICE: '联动价计算结果',
     FIXED_PRICE: '固定采购价',
     COST_RUN: '核算快照',
