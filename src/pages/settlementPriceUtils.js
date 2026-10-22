@@ -22,7 +22,12 @@ export const weightChange = (form, revision) => ({
   copperWeightG: decimalInput(form.copper), zincWeightG: decimalInput(form.zinc),
   reason: reason(form.reason), expectedRevision: revision,
 })
-export const baseChange = (form, month, current) => ({
-  priceMonth: month, copperPrice: decimalInput(form.copper), zincPrice: decimalInput(form.zinc),
-  unit: form.unit, reason: reason(form.reason), expectedRevision: current?.priceMonth === month ? current.revisionNo : 0,
-})
+export function importWeightStatus(rule) {
+  if (rule.priceType !== 'SETTLE_LINKED') return '固定价无需重量'
+  if (rule.formula?.version !== 'SETTLEMENT_CU_ZN_ROUND4_V2' || rule.weights?.originalCopperG == null) return '待确认完整重量'
+  return rule.weights.originalZincG == null ? '原稿锌重空白，按0计算' : '采用本次原稿重量'
+}
+export function settlementFinanceScheme(base) {
+  const scheme = base?.financial?.scope?.schemeCode
+  return scheme?.startsWith('CU_') ? `Cu ${scheme.slice(3).replace('_', '.')} 元/吨方案` : scheme || '未使用'
+}

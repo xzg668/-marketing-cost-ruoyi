@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { decimalInput, settlementMonth, settlementReturnTo, weightChange, baseChange } from '../src/pages/settlementPriceUtils.js'
+import { decimalInput, settlementMonth, settlementReturnTo, weightChange, importWeightStatus, settlementFinanceScheme } from '../src/pages/settlementPriceUtils.js'
 import { priceSourceGapKind, summarizePriceSourceGaps } from '../src/utils/priceSourceGaps.js'
 
 test('结算联动缺口与普通联动分开', () => {
@@ -24,8 +24,22 @@ test('金额和重量保留十进制字符串，空值与零不同', () => {
   assert.throws(() => weightChange({ copper: '0', zinc: '', reason: '确认' }, 2))
   assert.throws(() => weightChange({ copper: '0', zinc: '0', reason: '' }, 2))
 })
-test('沿用十月基价时十一月建立首版，不把十月修订号用于十一月', () => {
-  const input = { copper: '110000', zinc: '26000', reason: '十一月', unit: 'CNY/T' }
-  assert.equal(baseChange(input, '2026-11', { priceMonth: '2026-10', revisionNo: 3 }).expectedRevision, 0)
-  assert.equal(baseChange(input, '2026-10', { priceMonth: '2026-10', revisionNo: 3 }).expectedRevision, 3)
+test('新版原稿空白锌重按零计算，原始空白保留，铜重缺失和旧样例仍待确认', () => {
+  const rule = { priceType: 'SETTLE_LINKED', formula: { version: 'SETTLEMENT_CU_ZN_ROUND4_V2' }, weights: { originalCopperG: '1.3', originalZincG: null } }
+  assert.equal(importWeightStatus(rule), '原稿锌重空白，按0计算')
+  assert.equal(rule.weights.originalZincG, null)
+  rule.weights.originalZincG = '0'
+  assert.equal(importWeightStatus(rule), '采用本次原稿重量')
+  rule.weights.originalCopperG = null
+  assert.equal(importWeightStatus(rule), '待确认完整重量')
+  rule.weights.originalCopperG = '1.3'
+  rule.formula.version = 'SETTLEMENT_CU_ZN_V1'
+  assert.equal(importWeightStatus(rule), '待确认完整重量')
+  rule.priceType = 'SETTLE_FIXED'
+  assert.equal(importWeightStatus(rule), '固定价无需重量')
+})
+test('结算详情展示实际财务方案，方案金额保持字符串精度', () => {
+  assert.equal(settlementFinanceScheme(null), '未使用')
+  assert.equal(settlementFinanceScheme({ financial: { scope: { schemeCode: 'CU_90000' } } }), 'Cu 90000 元/吨方案')
+  assert.equal(settlementFinanceScheme({ financial: { scope: { schemeCode: 'CU_90000_0000001' } } }), 'Cu 90000.0000001 元/吨方案')
 })

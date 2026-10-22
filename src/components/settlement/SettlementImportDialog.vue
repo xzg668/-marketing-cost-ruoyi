@@ -1,6 +1,6 @@
 <template>
   <el-dialog v-model="visible" title="导入结算价格原稿" destroy-on-close width="900px" :close-on-click-modal="false" :before-close="close">
-    <el-alert title="按月追加原稿：同月重复内容不会新增版本；未提供的料号继续沿用旧月份。已确认重量和已维护基价会保留。" type="info" :closable="false" />
+    <el-alert title="结算联动价引用商用财务已发布的铜锌基价，原表基价仅供对照。按月追加原稿，未提供的料号继续沿用已有规则。" type="info" :closable="false" />
     <el-form label-width="100px" :disabled="busy" class="import-form">
       <el-form-item label="导入月份"><el-date-picker v-model="month" type="month" value-format="YYYY-MM" :clearable="false" @change="preview = null" /></el-form-item>
       <el-form-item label="原稿文件"><input aria-label="结算原稿文件" type="file" accept=".xls,.xlsx" :disabled="busy" @change="selectFile" /></el-form-item>
@@ -8,11 +8,12 @@
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
     <section v-if="preview" aria-label="导入预览">
       <p>来源 {{ preview.workbook.sourceRows.length }} 行，合并为 {{ preview.workbook.rules.length }} 条价格；结算固定价 {{ fixedCount }} 条，结算联动价 {{ preview.workbook.rules.length - fixedCount }} 条。</p>
-      <el-alert title="原稿重量仅留作来源记录，包括标注“凑数”的重量。财务确认完整重量前，联动价采用给定价。" type="warning" :closable="false" />
+      <el-alert title="新版四位小数公式采用原稿重量，空白锌重按0克计算并保留原始空白；铜重缺失时须先确认重量。原稿重量变化时生成新版本，同一原稿重导保留后续人工确认。" type="info" :closable="false" />
       <el-table :data="preview.workbook.rules" height="280" size="small">
         <el-table-column prop="materialCode" label="料号" width="130" />
         <el-table-column label="类型" width="120"><template #default="{ row }">{{ typeLabel(row.priceType) }}</template></el-table-column>
         <el-table-column label="给定价"><template #default="{ row }">{{ displayDecimal(row.givenPrice) }}</template></el-table-column>
+        <el-table-column label="重量处理" width="190"><template #default="{ row }">{{ importWeightStatus(row) }}</template></el-table-column>
         <el-table-column label="来源行"><template #default="{ row }">{{ row.sources.map(s => s.row).join('、') }}</template></el-table-column>
       </el-table>
     </section>
@@ -27,7 +28,7 @@
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { previewSettlement, importSettlement } from '../../api/settlementPrices'
-import { typeLabel, displayDecimal } from '../../pages/settlementPriceUtils'
+import { typeLabel, displayDecimal, importWeightStatus } from '../../pages/settlementPriceUtils'
 const visible = defineModel({ type: Boolean })
 const props = defineProps({ priceMonth: String })
 const emit = defineEmits(['imported'])

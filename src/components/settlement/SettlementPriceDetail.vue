@@ -15,11 +15,16 @@
       </el-descriptions>
       <template v-if="rule.priceType === 'SETTLE_LINKED'">
         <h3>联动计算依据</h3>
-        <p>计划价 × 加成系数 + [(结算铜基价 − 预算铜价) × 铜重 + (结算锌基价 − 预算锌价) × 锌重] ÷ 1000 ÷ 税率除数 × 加成系数</p>
+        <p>计划价 × 加成系数 + [(商用铜基价 − 预算铜价) × 铜重 + (商用锌基价 − 预算锌价) × 锌重] ÷ 1000 ÷ 税率除数 × 加成系数<span v-if="rule.formulaVersion === 'SETTLEMENT_CU_ZN_ROUND4_V2'">，最终单价四舍五入保留4位小数</span>。</p>
         <el-descriptions :column="2" border>
           <el-descriptions-item v-for="(label, key) in fields" :key="key" :label="label">{{ displayDecimal(rule[key]) }}</el-descriptions-item>
-          <el-descriptions-item label="实际基价月">{{ entry.base?.priceMonth || '给定模式无需基价' }}</el-descriptions-item>
+          <el-descriptions-item label="商用基价月份">{{ entry.base?.priceMonth || (entry.failureCode ? '尚未使用' : '给定模式无需基价') }}</el-descriptions-item>
           <el-descriptions-item label="实际铜 / 锌基价">{{ entry.base ? `${displayDecimal(entry.base.copperPrice)} / ${displayDecimal(entry.base.zincPrice)} 元/千克` : '未使用' }}</el-descriptions-item>
+          <el-descriptions-item v-if="entry.base?.financial" label="财务发布版本">第{{ entry.base.financial.revision }}版 · 商用默认方案</el-descriptions-item>
+          <el-descriptions-item v-if="entry.base?.financial" label="财务方案">{{ settlementFinanceScheme(entry.base) }}</el-descriptions-item>
+          <el-descriptions-item v-if="entry.base?.financial" label="财务发布人">{{ entry.base.financial.publishedBy }}</el-descriptions-item>
+          <el-descriptions-item v-if="entry.base?.financial" label="基价原稿" :span="2">{{ entry.base.financial.fileName }}</el-descriptions-item>
+          <el-descriptions-item label="原表参考铜 / 锌">{{ displayDecimal(rule.referenceCu) }} / {{ displayDecimal(rule.referenceZn) }} 元/千克</el-descriptions-item>
           <el-descriptions-item label="重量确认依据" :span="2">{{ rule.weightConfirmationNote || '尚未确认完整重量' }}</el-descriptions-item>
         </el-descriptions>
         <p>保存的公式：{{ rule.expression }}</p>
@@ -47,7 +52,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { fetchSettlementHistory, downloadSettlementOriginal } from '../../api/settlementPrices'
-import { displayDecimal, modeLabel, typeLabel } from '../../pages/settlementPriceUtils'
+import { displayDecimal, modeLabel, typeLabel, settlementFinanceScheme } from '../../pages/settlementPriceUtils'
 const visible = defineModel({ type: Boolean })
 const props = defineProps({ entry: Object })
 const rule = computed(() => props.entry?.rule || {})

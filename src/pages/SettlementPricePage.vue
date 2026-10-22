@@ -1,9 +1,8 @@
 <template>
   <div class="settlement-page">
     <el-card>
-      <template #header><div class="heading"><div><h2>结算价格</h2><p>商用与板换共用结算规则；按核算月取不晚于当月的最新价格。</p></div><div>
+      <template #header><div class="heading"><div><h2>结算价格</h2><p>商用与板换共用结算规则；联动价统一引用商用财务已发布的铜锌基价。</p></div><div>
         <el-button v-if="returnTo" @click="router.push(returnTo)">返回报价核算</el-button>
-        <el-button v-hasPermi="['price:settlement-base:list']" @click="openBases">结算铜锌基价</el-button>
         <el-button v-hasPermi="['price:settlement:import']" type="primary" @click="importOpen = true">导入原稿</el-button>
       </div></div></template>
       <el-form inline @submit.prevent="search">
@@ -22,7 +21,7 @@
         <el-table-column label="取价方式" width="120"><template #default="{ row }">{{ modeLabel(row.mode) }}</template></el-table-column>
         <el-table-column label="物料单位" width="110"><template #default="{ row }">{{ row.rule.materialUnit || '按BOM单位' }}</template></el-table-column>
         <el-table-column label="原稿月份 / 版本" width="170"><template #default="{ row }">{{ row.rule.priceMonth }} / {{ row.rule.revisionNo }} <el-tag v-if="row.ruleCarriedForward" size="small">沿用</el-tag></template></el-table-column>
-        <el-table-column label="基价月份" width="145"><template #default="{ row }">{{ row.base?.priceMonth || '未使用' }} <el-tag v-if="row.baseCarriedForward" size="small">沿用</el-tag></template></el-table-column>
+        <el-table-column label="商用基价月份" width="145"><template #default="{ row }">{{ row.base?.priceMonth || '未使用' }} <el-tag v-if="row.baseCarriedForward" size="small">沿用</el-tag></template></el-table-column>
         <el-table-column label="操作" width="190" fixed="right"><template #default="{ row }">
           <el-button link type="primary" @click="showDetail(row)">依据 / 版本</el-button>
           <el-button v-if="row.rule.priceType === 'SETTLE_LINKED'" v-hasPermi="['price:settlement:edit']" link type="primary" @click="editWeights(row)">确认重量</el-button>
@@ -33,7 +32,7 @@
     <SettlementPriceDetail v-model="detailOpen" :entry="selected" />
     <el-dialog v-model="weightOpen" title="财务确认结算重量" width="550px" :close-on-click-modal="false" :before-close="closeWeight">
       <p>料号 {{ selected?.rule.materialCode }} · 原稿 {{ selected?.rule.priceMonth }} 第{{ selected?.rule.revisionNo }}版</p>
-      <el-alert title="完整确认铜重和锌重后，自动按独立结算基价计算。确实没有该金属请填0；原稿“凑数”值不能直接当作真实重量。" type="warning" :closable="false" />
+      <el-alert title="确认完整重量后，按商用财务已发布的铜锌基价计算。确实没有该金属请填0；空白表示尚未确认。" type="warning" :closable="false" />
       <el-form label-width="120px" :disabled="saving" class="edit-form">
         <el-form-item label="铜重（克）"><el-input v-model="weightForm.copper" aria-label="铜重（克）" /></el-form-item>
         <el-form-item label="锌重（克）"><el-input v-model="weightForm.zinc" aria-label="锌重（克）" /></el-form-item>
@@ -76,7 +75,6 @@ watch(() => route.fullPath, () => {
   priceType.value = ['SETTLE_FIXED', 'SETTLE_LINKED'].includes(route.query.priceType) ? route.query.priceType : ''
   load()
 }, { immediate: true })
-function openBases() { router.push({ path: '/price/settlement-base', query: { ...route.query, priceMonth: month.value } }) }
 function showDetail(row) { selected.value = row; detailOpen.value = true }
 function editWeights(row) {
   selected.value = row; weightError.value = ''
