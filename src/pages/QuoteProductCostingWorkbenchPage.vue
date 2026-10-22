@@ -126,6 +126,10 @@
 
     <AuxiliaryClassificationPanel v-if="!historyViewMode" :oa-no="oaNo" :item-id="itemId" :month="displayedPeriodMonth" :readonly="historyViewMode" :revision="classificationRevision" @classified="refreshWorkbench" />
 
+    <DrawingVerificationPanel v-if="/^\d{4}-\d{2}$/.test(displayedPeriodMonth)" :oa-no="oaNo" :item-id="itemId"
+      :accounting-month="displayedPeriodMonth" :readonly="historyViewMode || header.oaWorkflow?.canCost === false"
+      @state-change="onDrawingState" />
+
     <section ref="workspaceRef" class="workspace-band section-block">
       <div v-if="displayedCostVersion.id" class="workspace-meta">
         <span class="workspace-version">
@@ -1126,9 +1130,11 @@
 </template>
 
 <script setup>
-import { fetchQuoteCostingPreparation, prepareQuoteCosting } from '../api/quoteRequests'
+import { fetchQuoteCostingPreparation, prepareQuoteCosting, fetchDrawingVerificationWorkspace } from '../api/quoteRequests'
+import { useDrawingCostingContinuation } from '../composables/useDrawingCostingContinuation'
 import { useQuoteCostingPreparation } from '../composables/useQuoteCostingPreparation'
 import AuxiliaryClassificationPanel from '../components/technical-data/AuxiliaryClassificationPanel.vue'
+import DrawingVerificationPanel from '../components/quotation/DrawingVerificationPanel.vue'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -1214,6 +1220,20 @@ const historyVersionId = computed(() => {
   return Number.isInteger(value) && value > 0 ? value : null
 })
 const historyViewMode = computed(() => route.query.historyResult === 'quote' && Boolean(historyVersionId.value))
+const drawingContinuation = useDrawingCostingContinuation(computed(() => `${oaNo.value}:${itemId.value}:${historyVersionId.value || ''}`), {
+  fetchDrawing: (_, productId, month) => fetchDrawingVerificationWorkspace(oaNo.value, productId, month),
+  sessionKey: () => `${userStore.userId}:${userStore.businessUnitType}:${oaNo.value}:${itemId.value}:${historyVersionId.value || ''}`,
+  resume: () => submitProductCosting('DRAWING_CONFIRMED'),
+  onError: error => ElMessage.warning(error?.message || '图纸已确认，请按当前状态继续核算'),
+})
+let lastDrawingState = ''
+async function onDrawingState(workspace) {
+  const next = `${workspace.current?.localTaskId}:${workspace.current?.taskState}:${workspace.current?.consumptionState}`
+  const changed = lastDrawingState && lastDrawingState !== next
+  lastDrawingState = next
+  await drawingContinuation.accept(workspace)
+  if (changed && workspace.current?.taskState === 'RECEIVED') await refreshWorkbench()
+}
 // 历史入口同时承载首次报价和后续重新核算，必须把两类结果明确区分，避免用户误认版本。
 const historyResultLabel = computed(() => (
   route.query.historyResultKind === 'recalculation' ? '报价重新核算结果' : '原报价结果'
@@ -2596,10 +2616,12 @@ async function submitProductCosting(reason = 'USER_REQUEST') {
   costRunActionLoading.value = true
   costRunError.value = ''
   try {
-    const outcome = reason === 'USER_REQUEST'
+    const checkMaterials = ['USER_REQUEST', 'DRAWING_CONFIRMED'].includes(reason)
+    const outcome = checkMaterials
       ? await materials.submit({ itemId: Number(itemId.value), periodMonth: workbench.value.periodMonth }) : null
-    if (reason === 'USER_REQUEST' && !outcome) return
-    const result = reason === 'USER_REQUEST'
+    if (checkMaterials && !outcome) return
+    if (outcome) await drawingContinuation.remember(outcome, { itemId: Number(itemId.value), periodMonth: workbench.value.periodMonth })
+    const result = checkMaterials
       ? outcome.product || outcome.checks?.find(check => String(check.oaFormItemId) === itemId.value)
       : await submitQuoteProductCostRun(oaNo.value, itemId.value, { periodMonth: workbench.value.periodMonth, reason })
     await loadWorkbench({ resetTab: false, loadChildren: true })

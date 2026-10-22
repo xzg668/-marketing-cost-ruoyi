@@ -46,6 +46,7 @@
       :description="detail.oaWorkflow.syncError || detail.oaWorkflow.reason || undefined" />
 
     <QuoteCostingPreparationPanel :oa-no="oaNo" :state="materialState" :checks="materialChecks" :error="materialError" @refresh="materials.refresh" />
+    <el-alert v-if="drawingReviewCount" :title="`${drawingReviewCount} 个产品的电子图库有差异，请在产品明细中点击“去修正”。`" type="warning" :closable="false" show-icon />
 
 
     <el-descriptions class="quote-summary" :column="3" border>
@@ -73,7 +74,7 @@
       <el-tab-pane label="产品明细" name="items">
         <el-table
           ref="itemsTableRef"
-          :data="detail.items || []"
+          :data="productRows"
           border
           row-key="id"
           class="items-table"
@@ -154,7 +155,15 @@
               <div v-if="finalCosts.get(String(row.id))?.status === 'STALE'" class="state-message">待重新核算</div>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="210" fixed="right">
+          <el-table-column label="电子图库" width="170" fixed="right">
+            <template #default="{ row }">
+              <DrawingVerificationPanel v-if="row.electronicDrawingAccountingMonth" inline
+                :oa-no="oaNo" :item-id="row.id" :accounting-month="row.electronicDrawingAccountingMonth"
+                :readonly="detail.oaWorkflow?.canCost === false" @state-change="onDrawingState" />
+              <span v-else>—</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="160" fixed="right">
             <template #default="{ row }">
               <div class="row-actions">
                 <el-button v-if="needsCostRecalculation(row)" link type="primary"
@@ -163,7 +172,7 @@
                   {{ '重新核算本产品' }}
                 </el-button>
                 <el-button
-                  v-else-if="row.workflow?.actionEnabled"
+                  v-else-if="row.workflow?.actionEnabled && !isDrawingReview(row)"
                   link
                   :type="operationType(row.workflow?.nextAction)"
                   :disabled="['START_COSTING', 'RESTART_COSTING'].includes(row.workflow?.nextAction) && detail.oaWorkflow?.canCost === false"
@@ -341,13 +350,16 @@
 </template>
 
 <script setup>
-import { fetchQuoteCostingPreparation, prepareQuoteCosting } from '../api/quoteRequests'
+import { fetchQuoteCostingPreparation, prepareQuoteCosting, fetchDrawingVerificationWorkspace } from '../api/quoteRequests'
+import { useDrawingCostingContinuation } from '../composables/useDrawingCostingContinuation'
+import { useUserStore } from '../store/modules/user'
 import { fetchAuxiliaryClassifications } from '../api/auxiliaryClassification'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import QuoteFinalSubmissionPanel from '../components/quotation/QuoteFinalSubmissionPanel.vue'
+import DrawingVerificationPanel from '../components/quotation/DrawingVerificationPanel.vue'
 import {
   confirmQuoteRequestClassification,
   fetchQuoteFinalSubmission,
@@ -374,6 +386,7 @@ import {
 
 const route = useRoute()
 const router = useRouter()
+const user = useUserStore()
 const oaNo = computed(() => String(route.params.oaNo || ''))
 const materials = useQuoteCostingPreparation(oaNo, {
   fetch: fetchQuoteCostingPreparation, submit: prepareQuoteCosting,
@@ -385,6 +398,31 @@ const confirming = ref(false)
 const actionLoadingId = ref('')
 const activeTab = ref('items')
 const detail = ref({})
+const drawingStates = reactive({})
+const productRows = computed(() => withQuoteItemWorkflow(detail.value, drawingStates).items)
+const drawingReviewCount = computed(() => productRows.value.filter(isDrawingReview).length)
+function isDrawingReview(row) { return row.workflow?.currentStatus === 'E_DRAWING_WAIT_REVIEW' }
+const drawingContinuation = useDrawingCostingContinuation(oaNo, {
+  fetchDrawing: fetchDrawingVerificationWorkspace,
+  sessionKey: () => `${user.userId}:${user.businessUnitType}:${oaNo.value}`,
+  resume: async options => {
+    if (detail.value.oaWorkflow?.canCost === false) return
+    if (options.itemId) {
+      const row = detail.value.items?.find(item => String(item.id) === String(options.itemId))
+      if (row) await submitSingleProductCosting(row, 'DRAWING_CONFIRMED', options.periodMonth)
+    } else await submitWholeQuoteCosting(options)
+  },
+  onError: error => ElMessage.warning(error?.message || '图纸已确认，请按当前状态继续核算'),
+})
+async function onDrawingState(workspace) {
+  const previous = drawingStates[workspace.itemId]?.current
+  drawingStates[workspace.itemId] = workspace
+  await drawingContinuation.accept(workspace)
+  if (previous && workspace.current?.taskState === 'RECEIVED'
+      && (previous.taskState !== 'RECEIVED' || previous.consumptionState !== workspace.current.consumptionState)) {
+    await refreshQuoteState(false)
+  }
+}
 const itemsTableRef = ref()
 const finalSubmission = useQuoteFinalSubmission(oaNo, { fetch: fetchQuoteFinalSubmission, submit: confirmQuoteFinalSubmission })
 const { state: finalState, loading: finalLoading, sending: finalSending, error: finalError, canSubmit: canSubmitFinal, costsByItem: finalCosts } = finalSubmission
@@ -480,9 +518,11 @@ async function continueElectronicDrawingCosting() {
 const { batchRun, batchSubmitting, loadBatchProgress, submitWholeQuoteCosting, captureScope } =
   useQuoteBatchCosting(oaNo, {
     fetchProgress: fetchCurrentQuoteBatchCostRun,
-    submitBatch: async () => {
-      const outcome = await materials.submit()
+    submitBatch: async (_, options) => {
+      const preparationOptions = options?.periodMonth ? { periodMonth: options.periodMonth } : {}
+      const outcome = await materials.submit(preparationOptions)
       if (!outcome) return null
+      await drawingContinuation.remember(outcome, preparationOptions)
       if (!outcome.batch) {
         ElMessage.warning(outcome.preparation.message)
         const base = await fetchQuoteRequestDetail(oaNo.value)
@@ -671,14 +711,16 @@ async function restartCosting(row) {
   if (row?.workflow?.nextAction !== 'RESTART_COSTING') return ElMessage.warning('当前产品无需重新核算')
   return submitSingleProductCosting(row, 'INPUT_CHANGED')
 }
-async function submitSingleProductCosting(row, reason) {
+async function submitSingleProductCosting(row, reason, periodMonth) {
   if (actionLoadingId.value) return
   const scope = captureScope()
   actionLoadingId.value = rowActionKey(row)
   try {
     // 电子图库自动接续沿用已经采用的技术版本，不自动认可新补录内容。
-    const outcome = reason === 'ELECTRONIC_DRAWING_RESOLVED' ? null : await materials.submit({ itemId: row.id })
+    const options = { itemId: row.id, ...(periodMonth ? { periodMonth } : {}) }
+    const outcome = reason === 'ELECTRONIC_DRAWING_RESOLVED' ? null : await materials.submit(options)
     if (reason !== 'ELECTRONIC_DRAWING_RESOLVED' && !outcome) return
+    if (outcome) await drawingContinuation.remember(outcome, options)
     const result = reason === 'ELECTRONIC_DRAWING_RESOLVED'
       ? await submitQuoteProductCostRun(scope.oaNo, row.id, { reason }) : outcome?.product
     if (outcome && !result) {
@@ -689,6 +731,7 @@ async function submitSingleProductCosting(row, reason) {
     if (!scope.isCurrent()) return
     if (result?.pipelineStatus === 'SUCCESS') {
       ElMessage.success(result.reusedSuccess ? '当前结果已是最新，无需重复核算' : '本产品核算完成')
+      if (reason === 'DRAWING_CONFIRMED') { await loadDetail(); return }
       openCostingWorkbench(row, { tab: 'COST_RUN' })
       return
     }
@@ -728,7 +771,10 @@ function costingStepTab(step, errorCode = '') {
 }
 function rowActionKey(row) { return `row:${row?.id || ''}` }
 function operationType(action) { return action === 'VIEW_COSTING_GAP' ? 'warning' : 'primary' }
-function rowClassName({ row }) { return String(route.query.itemId || '') === String(row.id) ? 'return-row' : '' }
+function rowClassName({ row }) {
+  if (isDrawingReview(row)) return 'drawing-review-row'
+  return String(route.query.itemId || '') === String(row.id) ? 'return-row' : ''
+}
 async function locateReturnRow() {
   if (!route.query.itemId) return
   await nextTick()
@@ -737,6 +783,7 @@ async function locateReturnRow() {
 }
 
 watch(oaNo, () => {
+  Object.keys(drawingStates).forEach(key => delete drawingStates[key])
   electronicDrawingContinuationHandled = false
   checking.value = false
   actionLoadingId.value = ''
@@ -747,6 +794,7 @@ onMounted(loadDetail)
 </script>
 
 <style scoped>
+.items-table :deep(.drawing-review-row td.el-table__cell) { background: #fff9ef; }
 .quote-page {
   display: flex;
   flex-direction: column;

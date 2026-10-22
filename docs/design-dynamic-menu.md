@@ -185,7 +185,7 @@
 |---|---|---|
 | 后端批量写入中途失败，菜单树半完整 | 低 | 独立 menuId 段；失败即回滚（删 1000+ 段） |
 | 切换 `Sidebar.vue` 后 UI 变化 | 低 | 阶段 A 完成后用三账号验证 `/auth/routers` 结构跟 menu.js 完全一致；不一致不切换 |
-| 部分 component 路径前端找不到对应文件 | 中 | `permission.js` 叶子加载失败会用 `PlaceholderPage` 兜底 + 控制台 warn；补 `componentAliasMap` 即可 |
+| 部分 component 路径前端找不到对应文件 | 中 | 2026-10-13 起过滤失效菜单和空目录并记录警告，旧地址进入 404；不生成示例数据或扩大授权菜单范围 |
 | 业务代码里硬编码的 URL 跳转失效 | 低 | 保留静态 staticRoutes 里的详情路由（带参数那些） |
 | 未考虑的隐藏菜单点不通 | 低 | 阶段 D 的 perm 对齐单独处理；短期 bu_director 通配兜底 |
 

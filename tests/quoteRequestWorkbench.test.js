@@ -432,7 +432,7 @@ describe('T11 报价单接入页面契约', () => {
   it('T10 整单核算使用单个 OA 接口并被动轮询轻量进度', () => {
     assert.match(detailPageContent, /wholeLabel/)
     assert.match(detailPageContent, /submitWholeQuoteCosting/)
-    assert.match(detailPageContent, /submitBatch: async[\s\S]*materials.submit\(\)/)
+    assert.match(detailPageContent, /submitBatch: async[\s\S]*materials.submit\(preparationOptions\)/)
     assert.match(detailPageContent, /fetchCurrentQuoteBatchCostRun/)
     assert.match(detailPageContent, /useQuoteBatchCosting\(oaNo/)
     assert.match(detailPageContent, /成功 \{\{ batchRun\.successCount/)

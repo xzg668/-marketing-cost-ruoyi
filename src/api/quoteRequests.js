@@ -9,6 +9,22 @@ export const fetchQuoteRequests = (params) =>
 export const fetchQuoteRequestDetail = (oaNo) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}`)
 
+const drawingWorkspacePath = (oaNo, itemId) =>
+  `/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/drawing-verifications`
+
+export const fetchDrawingVerificationWorkspace = (oaNo, itemId, accountingMonth) =>
+  request(drawingWorkspacePath(oaNo, itemId), { params: { accountingMonth }, suppressErrorToast: true })
+
+export const fetchDrawingVerificationResult = (oaNo, itemId, accountingMonth, resultId) =>
+  request(`${drawingWorkspacePath(oaNo, itemId)}/results/${encodePath(resultId)}`, {
+    params: { accountingMonth }, suppressErrorToast: true,
+  })
+
+export const operateDrawingVerification = (oaNo, itemId, accountingMonth, body) =>
+  request(drawingWorkspacePath(oaNo, itemId), {
+    method: 'POST', params: { accountingMonth }, body, timeout: 600000, suppressErrorToast: true,
+  })
+
 export const fetchElectronicDrawingMaterialResolution = (taskId, accountingMonth) =>
   request(`/api/v1/quote-requests/electronic-drawing/tasks/${encodePath(taskId)}/material-resolution`, {
     params: { accountingMonth },

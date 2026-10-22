@@ -9,14 +9,14 @@
       <el-alert v-if="state.message" :title="state.message" :type="state.acquired ? 'success' : 'warning'" :closable="false" show-icon />
       <el-alert v-if="state.sourceChanged" title="当前图库来源已有变化。下表保留本次保存或提交的明细，重新检查后才能采用新来源。" type="warning" :closable="false" />
       <div v-if="canEdit" class="recheck-controls">
-        <p>先在电子图库维护本产品明细，再勾选并重新检查。系统取得有效明细后，可继续下一项。</p>
+        <p>检查本产品的图库结果。有差异时由报价员在报价单打开编辑页确认；确认后的明细作为后续报价依据。</p>
         <el-select v-if="drawingOptions.length > 1" v-model="drawingNo" aria-label="本产品图号" placeholder="选择料品档案查到的图号" @change="changed">
           <el-option v-for="option in drawingOptions" :key="option.drawingNo" :value="option.drawingNo" :label="`${option.drawingNo} · ${option.materialNo || option.name || 'OA 提供'}`" />
         </el-select>
         <p v-else-if="drawingOptions.length">本次检查图号：<b>{{ drawingOptions[0].drawingNo }}</b></p>
-        <el-alert v-else title="OA 未提供图号，料品档案也未查到本产品图号，请先核实来源资料。" type="warning" :closable="false" />
+        <el-alert v-else title="料品档案未查到本产品图号，请核实料号，或型号和规格。" type="warning" :closable="false" />
         <div class="recheck-actions">
-          <el-checkbox v-model="maintained" :disabled="busy" @change="changed">已在电子图库维护本产品明细</el-checkbox>
+          <el-checkbox v-model="maintained" :disabled="busy" @change="changed">确认检查本产品图库结果</el-checkbox>
         </div>
       </div>
       <div v-if="state.drawing?.nodes?.length" class="drawing-details">

@@ -23,26 +23,27 @@ const BOM_STATUS_LABELS = {
   NOT_CHECKED: 'BOM待检查',
 }
 
-export function withQuoteItemWorkflow(detail) {
+export function withQuoteItemWorkflow(detail, drawingStates = {}) {
   return {
     ...(detail || {}),
     items: (detail?.items || []).map((item) => ({
       ...item,
-      workflow: quoteItemWorkflow(item),
+      workflow: quoteItemWorkflow(item, drawingStates[item.id]),
     })),
   }
 }
 
-export function quoteItemWorkflow(item) {
+export function quoteItemWorkflow(item, drawingWorkspace) {
   const workspace = item?.costingWorkspace || null
   const workspaceStatus = String(workspace?.workspaceStatus || '').toUpperCase()
   const bomStatus = String(item?.bomStatus?.bomStatus || 'NOT_CHECKED').toUpperCase()
   const bomReady = READY_BOM_STATUSES.has(bomStatus)
   const calculated = item?.calcStatus === '已核算' || Boolean(item?.confirmedCostVersionId)
   const historyPriceCount = carriedForwardPriceCount(workspace?.carriedForwardPriceCount)
+  const drawing = drawingBomProgress(item, drawingWorkspace)
   const base = {
-    bomStatus: bomReady ? 'AVAILABLE' : bomStatus,
-    bomStatusLabel: BOM_STATUS_LABELS[bomStatus] || 'BOM状态已保存',
+    bomStatus: drawing?.bomStatus || (bomReady ? 'AVAILABLE' : bomStatus),
+    bomStatusLabel: drawing?.bomStatusLabel || BOM_STATUS_LABELS[bomStatus] || 'BOM状态已保存',
     assigneeName: item?.technicianName || '',
   }
 
@@ -56,21 +57,29 @@ export function quoteItemWorkflow(item) {
     return state(base, 'PENDING', '在核算工作台确认', 'COSTING', '核算中',
       'VIEW_COSTING_PROGRESS', '查看进度', '核算任务正在处理')
   }
+  if (drawing?.pending) {
+    return state(base, 'PENDING', '待检查', drawing.currentStatus, drawing.currentStatusLabel,
+      drawing.nextAction, drawing.nextActionLabel, drawing.message)
+  }
   if (workspaceStatus === 'BOM_READY') {
     return state(base, 'PENDING', '在核算工作台处理', 'READY_FOR_COSTING', '可核算',
       'START_COSTING', '核算本产品', '当前月报价物料已生成，可继续价格检查与核算')
   }
   if (workspaceStatus === 'WAIT_BOM') {
-    const mappingPending = String(item?.electronicDrawingStage || '').toUpperCase() === 'MAPPING_PENDING'
-      && item?.electronicDrawingWorkflowId
+    if (drawing) {
+      const gapMessage = unresolvedBomGapMessage(workspace)
+      if (drawing.ready && !gapMessage) return readyDrawingWorkflow(base)
+      return state(base, 'PENDING', '待检查', 'BOM_IN_PROGRESS', '待完善BOM资料',
+        'VIEW_COSTING_GAP', '查看缺口', gapMessage || drawing.message)
+    }
     return state(
       base,
       'PENDING_BOM',
-      mappingPending ? '电子图库物料待匹配' : '待BOM补齐后检查',
+      '待BOM补齐后检查',
       'MISSING_BOM',
-      mappingPending ? '待匹配电子图库料号' : '待补BOM',
-      mappingPending ? 'RESOLVE_ELECTRONIC_DRAWING_MATERIAL' : 'VIEW_COSTING_GAP',
-      mappingPending ? '选择U9料号' : '查看缺口',
+      '待补BOM',
+      'VIEW_COSTING_GAP',
+      '查看缺口',
       workspace?.lastErrorMessage || '当前产品缺少可用于核算的BOM',
     )
   }
@@ -104,6 +113,13 @@ export function quoteItemWorkflow(item) {
         ? `${historyPriceCount}项沿用最近一次已审批价格`
         : '当前成功结果可直接查看')
   }
+  if (drawing) {
+    if (!drawing.ready) {
+      return state(base, 'PENDING', '待检查', drawing.currentStatus, drawing.currentStatusLabel,
+        drawing.nextAction, drawing.nextActionLabel, drawing.message)
+    }
+    return readyDrawingWorkflow(base)
+  }
 
   const missingBom = ['NO_BOM', 'ENTRY_PENDING', 'EXPIRED'].includes(bomStatus)
   const bomInProgress = ['ENTRY_IN_PROGRESS', 'SYNCING'].includes(bomStatus)
@@ -117,6 +133,64 @@ export function quoteItemWorkflow(item) {
     missingBom || bomInProgress ? '查看缺口' : '核算本产品',
     item?.bomStatus?.errorMessage || '显示报价与核算工作区已保存的状态',
   )
+}
+
+/** 图库进度只修正展示，不把“已接收明细”等同于“BOM或价格已就绪”。 */
+function drawingBomProgress(item, workspace) {
+  const sameItem = workspace && String(workspace.itemId) === String(item?.id)
+    && (!item?.electronicDrawingAccountingMonth || workspace.accountingMonth === item.electronicDrawingAccountingMonth)
+  const current = sameItem ? workspace.current : null
+  if (item?.bomStatus?.bomStatus === 'U9_BOM_EXISTS'
+      || (current?.taskState === 'RECEIVED' && current.consumptionState === 'NOT_READY')) return null
+  const stage = String(sameItem ? workspace.workflowStage || '' : item?.electronicDrawingStage || '').toUpperCase()
+  const progress = (bomStatus, bomStatusLabel, currentStatus, currentStatusLabel, message, nextAction = null, nextActionLabel = '') =>
+    ({ bomStatus, bomStatusLabel, currentStatus, currentStatusLabel, message, nextAction, nextActionLabel, pending: true })
+  if (current?.taskState === 'WAIT_REVIEW' || (!current && stage === 'E_DRAWING_WAIT_REVIEW')) {
+    return progress('E_DRAWING_WAIT_REVIEW', '待图纸确认', 'E_DRAWING_WAIT_REVIEW', '待图纸确认',
+      '电子图库明细有差异，请在电子图库栏点击“去修正”，确认结果接收后继续处理。')
+  }
+  if (current?.taskState === 'REQUESTING' || (!current && stage === 'QUERYING_E_DRAWING')) {
+    return progress('BOM_IN_PROGRESS', '图库获取中', 'BOM_IN_PROGRESS', '图库获取中', '正在获取电子图库明细。')
+  }
+  if (current?.taskState === 'FAILED') {
+    return progress('E_DRAWING_FAILED', '图库获取失败', 'E_DRAWING_FAILED', '图库获取失败',
+      current.errorMessage || '电子图库获取失败，请在电子图库栏重新获取。')
+  }
+  if (current?.taskState === 'SUPERSEDED') return null
+  if (current?.taskState === 'RECEIVED' && current.consumptionState === 'FAILED') {
+    return progress('E_DRAWING_RECEIVED', '已有图库明细', 'E_DRAWING_FAILED', '图库处理失败',
+      current.errorMessage || '图库明细已保存，后续处理失败，请查看原因。', 'VIEW_COSTING_GAP', '查看原因')
+  }
+  if (current?.taskState === 'RECEIVED' && current.consumptionState === 'PENDING') {
+    return progress('E_DRAWING_RECEIVED', '图库明细已接收', 'BOM_IN_PROGRESS', '图库处理中',
+      '已接收电子图库明细，正在匹配料号和准备BOM。')
+  }
+  if (stage === 'MAPPING_PENDING') {
+    const canResolve = Boolean(item?.electronicDrawingWorkflowId)
+    return progress('E_DRAWING_RECEIVED', '已有图库明细', 'MAPPING_PENDING', '待匹配料号',
+      '电子图库明细已取得，请确认对应的U9料号。',
+      canResolve ? 'RESOLVE_ELECTRONIC_DRAWING_MATERIAL' : 'VIEW_COSTING_GAP', canResolve ? '选择U9料号' : '查看缺口')
+  }
+  if (['E_DRAWING_COMPOSED', 'E_DRAWING_PUBLISHED'].includes(stage)) {
+    return { bomStatus: 'AVAILABLE', bomStatusLabel: '电子图库BOM已就绪', ready: true, pending: false }
+  }
+  if (current?.taskState === 'RECEIVED' || ['E_DRAWING_RECEIVED', 'PARSING', 'MATCHING', 'MATERIALS_MATCHED', 'COMPOSING', 'VALIDATION_FAILED'].includes(stage)) {
+    return { ...progress('E_DRAWING_RECEIVED', '已有图库明细', 'BOM_IN_PROGRESS', '待完善图库资料',
+      '电子图库明细已取得，请继续检查料号及BOM资料。', 'VIEW_COSTING_GAP', '查看缺口'), pending: false }
+  }
+  return null
+}
+
+function unresolvedBomGapMessage(workspace) {
+  const message = workspace?.lastErrorMessage || ''
+  // 仅替换已被图库接替的U9根BOM缺失提示；真实子BOM或其他缺口原样保留。
+  if (message && !/^未在 lp_bom_raw_hierarchy 找到正式 BOM/.test(message)) return message
+  return null
+}
+
+function readyDrawingWorkflow(base) {
+  return state(base, 'PENDING', '待检查', 'READY_FOR_COSTING', '可继续核算',
+    'START_COSTING', '核算本产品', '电子图库BOM已就绪，可继续后续资料检查与核算')
 }
 
 function state(

@@ -95,7 +95,7 @@ export function useQuoteBatchCosting(oaNo, {
     }
   }
 
-  async function submitWholeQuoteCosting() {
+  async function submitWholeQuoteCosting(options = {}) {
     const scope = captureScope()
     if (!scope.oaNo || !scope.isCurrent() || batchSubmitting.value || batchRun.value?.active) return
     stopTimer()
@@ -103,7 +103,7 @@ export function useQuoteBatchCosting(oaNo, {
     const isCurrent = () => scope.isCurrent() && id === requestId
     batchSubmitting.value = true
     try {
-      const next = await submitBatch(scope.oaNo, { mode: 'ALL' })
+      const next = await submitBatch(scope.oaNo, { mode: 'ALL', ...(options.periodMonth ? { periodMonth: options.periodMonth } : {}) })
       if (!isCurrent() || !next) return
       onSubmitted(next)
       await acceptProgress(next, scope, isCurrent, true)
