@@ -90,10 +90,6 @@ const staticRoutes = [
         redirect: to => ({ path: '/price/settlement', query: { ...to.query, priceType: 'SETTLE_FIXED' } }),
       },
       {
-        path: '/price/settlement-base',
-        redirect: to => ({ path: '/price/settlement', query: to.query }),
-      },
-      {
         path: '/price/settle',
         redirect: to => ({ path: '/price/settlement', query: to.query }),
       },

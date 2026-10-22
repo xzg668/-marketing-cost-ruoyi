@@ -3,7 +3,6 @@ import { downloadAuthenticatedBlob } from '../utils/auxiliaryClassification'
 const prices = '/api/v1/settlement-prices'
 export const fetchSettlementPrices = (params) => request(`${prices}/pricing`, { params })
 export const fetchSettlementHistory = (id) => request(`${prices}/${id}/history`)
-export const confirmSettlementWeights = (id, body) => request(`${prices}/${id}/weights`, { method: 'PATCH', body })
 export const downloadSettlementOriginal = (row) => downloadAuthenticatedBlob(`${prices}/${row.id}/original`, row.sourceFileName)
 const upload = (file, month, fingerprint) => {
   const body = new FormData()

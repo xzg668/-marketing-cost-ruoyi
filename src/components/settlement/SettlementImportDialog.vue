@@ -8,7 +8,7 @@
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
     <section v-if="preview" aria-label="导入预览">
       <p>来源 {{ preview.workbook.sourceRows.length }} 行，合并为 {{ preview.workbook.rules.length }} 条价格；结算固定价 {{ fixedCount }} 条，结算联动价 {{ preview.workbook.rules.length - fixedCount }} 条。</p>
-      <el-alert title="新版四位小数公式采用原稿重量，空白锌重按0克计算并保留原始空白；铜重缺失时须先确认重量。原稿重量变化时生成新版本，同一原稿重导保留后续人工确认。" type="info" :closable="false" />
+      <el-alert title="新版四位小数公式采用原稿重量，空白锌重按0克计算并保留原始空白；铜重缺失时请修正原稿后重新导入。原稿重量变化时生成新版本，同一原稿重导保留已有版本。" type="info" :closable="false" />
       <el-table :data="preview.workbook.rules" height="280" size="small">
         <el-table-column prop="materialCode" label="料号" width="130" />
         <el-table-column label="类型" width="120"><template #default="{ row }">{{ typeLabel(row.priceType) }}</template></el-table-column>

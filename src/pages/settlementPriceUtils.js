@@ -8,23 +8,9 @@ export function settlementMonth(query = {}) {
 export function settlementReturnTo(value) {
   return typeof value === 'string' && /^\/(quote|cost|ingest\/quote-requests)\//.test(value) && !/[\\\r\n]/.test(value) ? value : ''
 }
-export function decimalInput(value) {
-  const text = String(value ?? '').trim()
-  if (!/^\d{1,12}(\.\d{1,12})?$/.test(text)) throw new Error('请填写非负数，最多12位小数；空白不表示零')
-  return text
-}
-const reason = (value) => {
-  const text = String(value || '').trim()
-  if (!text) throw new Error('请填写财务确认依据')
-  return text
-}
-export const weightChange = (form, revision) => ({
-  copperWeightG: decimalInput(form.copper), zincWeightG: decimalInput(form.zinc),
-  reason: reason(form.reason), expectedRevision: revision,
-})
 export function importWeightStatus(rule) {
   if (rule.priceType !== 'SETTLE_LINKED') return '固定价无需重量'
-  if (rule.formula?.version !== 'SETTLEMENT_CU_ZN_ROUND4_V2' || rule.weights?.originalCopperG == null) return '待确认完整重量'
+  if (rule.formula?.version !== 'SETTLEMENT_CU_ZN_ROUND4_V2' || rule.weights?.originalCopperG == null) return '原稿重量待补齐'
   return rule.weights.originalZincG == null ? '原稿锌重空白，按0计算' : '采用本次原稿重量'
 }
 export function settlementFinanceScheme(base) {

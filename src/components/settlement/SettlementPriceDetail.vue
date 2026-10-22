@@ -11,7 +11,7 @@
         <el-descriptions-item label="原稿月份">{{ rule.priceMonth }} / 第{{ rule.revisionNo }}版</el-descriptions-item>
         <el-descriptions-item label="物料单位">{{ rule.materialUnit || '按BOM物料单位' }}</el-descriptions-item>
         <el-descriptions-item label="原稿给定价">{{ displayDecimal(rule.givenPrice) }}</el-descriptions-item>
-        <el-descriptions-item label="重量状态">{{ rule.weightsConfirmed ? '财务已确认' : '未确认' }}</el-descriptions-item>
+        <el-descriptions-item v-if="rule.priceType === 'SETTLE_LINKED'" label="计算重量状态">{{ rule.weightsConfirmed ? '可计算' : '原稿重量待补齐' }}</el-descriptions-item>
       </el-descriptions>
       <template v-if="rule.priceType === 'SETTLE_LINKED'">
         <h3>联动计算依据</h3>
@@ -25,7 +25,7 @@
           <el-descriptions-item v-if="entry.base?.financial" label="财务发布人">{{ entry.base.financial.publishedBy }}</el-descriptions-item>
           <el-descriptions-item v-if="entry.base?.financial" label="基价原稿" :span="2">{{ entry.base.financial.fileName }}</el-descriptions-item>
           <el-descriptions-item label="原表参考铜 / 锌">{{ displayDecimal(rule.referenceCu) }} / {{ displayDecimal(rule.referenceZn) }} 元/千克</el-descriptions-item>
-          <el-descriptions-item label="重量确认依据" :span="2">{{ rule.weightConfirmationNote || '尚未确认完整重量' }}</el-descriptions-item>
+          <el-descriptions-item label="重量取值依据" :span="2">{{ rule.weightConfirmationNote || '请修正原稿后重新导入' }}</el-descriptions-item>
         </el-descriptions>
         <p>保存的公式：{{ rule.expression }}</p>
       </template>
@@ -44,7 +44,7 @@
         <el-table-column prop="revisionNo" label="版本" width="65" />
         <el-table-column prop="createdBy" label="维护人" />
         <el-table-column prop="createdAt" label="时间" width="180" />
-        <el-table-column prop="weightConfirmationNote" label="重量确认依据" />
+        <el-table-column prop="weightConfirmationNote" label="重量取值依据" />
       </el-table>
     </template>
   </el-drawer>
@@ -57,7 +57,7 @@ const visible = defineModel({ type: Boolean })
 const props = defineProps({ entry: Object })
 const rule = computed(() => props.entry?.rule || {})
 const history = ref([]), error = ref(''), loading = ref(false)
-const fields = { plannedPrice: '计划价', markupRatio: '加成系数', budgetCu: '预算铜价（元/千克）', budgetZn: '预算锌价（元/千克）', originalCopperWeightG: '原稿铜重（克）', originalZincWeightG: '原稿锌重（克）', copperWeightG: '确认铜重（克）', zincWeightG: '确认锌重（克）', taxDivisor: '税率除数' }
+const fields = { plannedPrice: '计划价', markupRatio: '加成系数', budgetCu: '预算铜价（元/千克）', budgetZn: '预算锌价（元/千克）', originalCopperWeightG: '原稿铜重（克）', originalZincWeightG: '原稿锌重（克）', copperWeightG: '计算铜重（克）', zincWeightG: '计算锌重（克）', taxDivisor: '税率除数' }
 let sequence = 0
 watch(() => [visible.value, rule.value.id], async ([open, id]) => {
   const request = ++sequence
