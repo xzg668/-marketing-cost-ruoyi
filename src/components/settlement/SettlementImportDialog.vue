@@ -48,7 +48,10 @@ async function confirm() {
   busy.value = true; error.value = ''
   try {
     const result = await importSettlement(file.value, month.value, preview.value.fingerprint)
-    ElMessage.success(`导入完成：新增${result.inserted}条，修订${result.revised}条，未变化${result.unchanged}条`)
+    const generated = result.effectivePrices
+    const message = `导入完成：新增${result.inserted}条，修订${result.revised}条，未变化${result.unchanged}条；生成${generated.generated}条月度结算价格`
+    if (generated.pending) ElMessage.warning(`${message}，另有${generated.pending}条缺少重量或适用基价，请补齐后报价`)
+    else ElMessage.success(message)
     visible.value = false; emit('imported', month.value)
   } catch (e) { error.value = e.message; preview.value = null }
   finally { busy.value = false }

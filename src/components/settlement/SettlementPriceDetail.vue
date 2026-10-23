@@ -8,6 +8,8 @@
         <el-descriptions-item label="规格型号" :span="2">{{ rule.specModel || '—' }}</el-descriptions-item>
         <el-descriptions-item label="当前单价">{{ displayDecimal(entry.unitPrice) }}</el-descriptions-item>
         <el-descriptions-item label="取价方式">{{ modeLabel(entry.mode) }}</el-descriptions-item>
+        <el-descriptions-item label="结果月份 / 版本">{{ entry.effectivePrice?.priceMonth ? `${entry.effectivePrice.priceMonth} / ${entry.effectivePrice.revisionNo}` : '待生成' }}</el-descriptions-item>
+        <el-descriptions-item label="生成时间">{{ entry.effectivePrice?.createdAt || '—' }}</el-descriptions-item>
         <el-descriptions-item label="原稿月份">{{ rule.priceMonth }} / 第{{ rule.revisionNo }}版</el-descriptions-item>
         <el-descriptions-item label="物料单位">{{ rule.materialUnit || '按BOM物料单位' }}</el-descriptions-item>
         <el-descriptions-item label="原稿给定价">{{ displayDecimal(rule.givenPrice) }}</el-descriptions-item>
@@ -37,7 +39,15 @@
         <el-table-column label="原稿备注"><template #default="{ row }">{{ row.cells?.J?.text }} {{ row.cells?.M?.text }}</template></el-table-column>
         <el-table-column label="原始公式"><template #default="{ row }">{{ row.cells?.L?.text || row.resolvedSourceFormula || '—' }}</template></el-table-column>
       </el-table>
-      <h3>修订记录</h3>
+      <h3>月度结算价格记录</h3>
+      <el-table v-loading="loading" :data="monthlyHistory" size="small" border>
+        <el-table-column prop="priceMonth" label="结果月份" width="95" />
+        <el-table-column prop="revisionNo" label="版本" width="60" />
+        <el-table-column label="单价"><template #default="{ row }">{{ displayDecimal(row.unitPrice) }}</template></el-table-column>
+        <el-table-column label="原稿月份 / 版本"><template #default="{ row }">{{ row.ruleMonth }} / {{ row.ruleRevision }}</template></el-table-column>
+        <el-table-column label="基价月份 / 版本"><template #default="{ row }">{{ row.financeMonth ? `${row.financeMonth} / ${row.financeRevision}` : '未使用' }}</template></el-table-column>
+      </el-table>
+      <h3>原稿修订记录</h3>
       <el-alert v-if="error" :title="error" type="error" :closable="false" />
       <el-table v-loading="loading" :data="history" size="small">
         <el-table-column prop="priceMonth" label="月份" />
@@ -51,19 +61,19 @@
 </template>
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { fetchSettlementHistory, downloadSettlementOriginal } from '../../api/settlementPrices'
+import { fetchSettlementHistory, fetchSettlementEffectiveHistory, downloadSettlementOriginal } from '../../api/settlementPrices'
 import { displayDecimal, modeLabel, typeLabel, settlementFinanceScheme } from '../../pages/settlementPriceUtils'
 const visible = defineModel({ type: Boolean })
-const props = defineProps({ entry: Object })
+const props = defineProps({ entry: Object, priceMonth: String })
 const rule = computed(() => props.entry?.rule || {})
-const history = ref([]), error = ref(''), loading = ref(false)
+const history = ref([]), monthlyHistory = ref([]), error = ref(''), loading = ref(false)
 const fields = { plannedPrice: '计划价', markupRatio: '加成系数', budgetCu: '预算铜价（元/千克）', budgetZn: '预算锌价（元/千克）', originalCopperWeightG: '原稿铜重（克）', originalZincWeightG: '原稿锌重（克）', copperWeightG: '计算铜重（克）', zincWeightG: '计算锌重（克）', taxDivisor: '税率除数' }
 let sequence = 0
-watch(() => [visible.value, rule.value.id], async ([open, id]) => {
+watch(() => [visible.value, rule.value.id, props.priceMonth], async ([open, id]) => {
   const request = ++sequence
   if (!open || !id) return
-  history.value = []; error.value = ''; loading.value = true
-  try { const rows = await fetchSettlementHistory(id); if (request === sequence) history.value = rows }
+  history.value = []; monthlyHistory.value = []; error.value = ''; loading.value = true
+  try { const [rows, months] = await Promise.all([fetchSettlementHistory(id), fetchSettlementEffectiveHistory(id, props.priceMonth)]); if (request === sequence) { history.value = rows; monthlyHistory.value = months } }
   catch (e) { if (request === sequence) error.value = e.message }
   finally { if (request === sequence) loading.value = false }
 })

@@ -1,7 +1,7 @@
 <template>
   <div class="settlement-page">
     <el-card>
-      <template #header><div class="heading"><div><h2>结算价格</h2><p>商用与板换共用结算规则；联动价统一引用商用财务已发布的铜锌基价。</p></div><div>
+      <template #header><div class="heading"><div><h2>结算价格</h2><p>商用与板换共用结算规则；发布商用基价或导入原稿时，生成并保存对应月份的结算价格。</p></div><div>
         <el-button v-if="returnTo" @click="router.push(returnTo)">返回报价核算</el-button>
         <el-button v-hasPermi="['price:settlement:import']" type="primary" @click="importOpen = true">导入原稿</el-button>
       </div></div></template>
@@ -20,6 +20,7 @@
         <el-table-column label="当前单价（元）" width="170"><template #default="{ row }"><strong v-if="!row.failureCode">{{ displayDecimal(row.unitPrice) }}</strong><el-tooltip v-else :content="row.message"><el-tag type="danger">取价失败</el-tag></el-tooltip></template></el-table-column>
         <el-table-column label="取价方式" width="120"><template #default="{ row }">{{ modeLabel(row.mode) }}</template></el-table-column>
         <el-table-column label="物料单位" width="110"><template #default="{ row }">{{ row.rule.materialUnit || '按BOM单位' }}</template></el-table-column>
+        <el-table-column label="结果月份 / 版本" width="165"><template #default="{ row }">{{ row.effectivePrice?.priceMonth ? `${row.effectivePrice.priceMonth} / ${row.effectivePrice.revisionNo}` : '待生成' }} <el-tag v-if="row.effectivePrice?.priceMonth < month" size="small">沿用</el-tag></template></el-table-column>
         <el-table-column label="原稿月份 / 版本" width="170"><template #default="{ row }">{{ row.rule.priceMonth }} / {{ row.rule.revisionNo }} <el-tag v-if="row.ruleCarriedForward" size="small">沿用</el-tag></template></el-table-column>
         <el-table-column label="商用基价月份" width="145"><template #default="{ row }">{{ row.base?.priceMonth || '未使用' }} <el-tag v-if="row.baseCarriedForward" size="small">沿用</el-tag></template></el-table-column>
         <el-table-column label="操作" width="120" fixed="right"><template #default="{ row }">
@@ -28,7 +29,7 @@
       </el-table>
     </el-card>
     <SettlementImportDialog v-model="importOpen" :price-month="month" @imported="imported" />
-    <SettlementPriceDetail v-model="detailOpen" :entry="selected" />
+    <SettlementPriceDetail v-model="detailOpen" :entry="selected" :price-month="month" />
   </div>
 </template>
 <script setup>
