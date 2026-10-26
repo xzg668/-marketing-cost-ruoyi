@@ -3,6 +3,12 @@ import assert from 'node:assert/strict'
 import { priceDraft, pricePayload } from '../src/utils/technicalDataPrice.js'
 
 const requirements = [{ itemKey: 'x', status: 'MISSING' }, { itemKey: 'public', status: 'AVAILABLE' }]
+test('owned source revision sends the edited input while an available public price stays read only', () => {
+  const rows = [{ itemKey: 'source', status: 'REVISION' }, { itemKey: 'public', status: 'AVAILABLE' }]
+  const draft = priceDraft({ entryMode: 'FIXED', unitPrice: '18.25' })
+  assert.deepEqual(pricePayload({ source: draft, public: draft }, rows, 4, 'revision').items,
+    [{ itemKey: 'source', entryMode: 'FIXED', notes: null, unitPrice: '18.25' }])
+})
 test('fixed payload excludes stale formula and reference and retains decimal text', () => {
   const draft = priceDraft({ entryMode: 'FIXED', unitPrice: '12.123456789', formula: 'old', reference: { id: 1 } })
   const payload = pricePayload({ x: draft }, requirements, 3, 'basis')

@@ -106,17 +106,17 @@ test('source uncertainty remains visible and an incomplete draft is never shown 
   assert.equal(modulePresentation(product({ PROFILE: 'READY' }), 'PROFILE').label, '已填完整')
 })
 
-test('profile source fields are optional while property and fee selection are required', () => {
+test('profile requires property but fees and the legacy switch are optional', () => {
   const input = { productProperty: '非标品', hasAdditionalFees: false, expectedVersion: 0 }
   assert.equal(validateTechnicalDataProfile(input), '')
   assert.notEqual(validateTechnicalDataProfile({ ...input, productProperty: '自制件' }), '')
-  assert.notEqual(validateTechnicalDataProfile({ ...input, hasAdditionalFees: null }), '')
+  assert.equal(validateTechnicalDataProfile({ ...input, hasAdditionalFees: null }), '')
 })
 
-test('included fees must each be a positive unit amount or explicit no-fee slash', () => {
+test('each optional fee accepts empty, nonnegative amount or explicit no-fee slash', () => {
   const input = { productProperty: '非标品', hasAdditionalFees: true, unitMouldFee: '0.30', unitToolingFee: '/', unitCertificationFee: '/', expectedVersion: 0 }
   assert.equal(validateTechnicalDataProfile(input), '')
-  for (const value of ['', '0', '-1', 'NaN', '1e4', '0.0000001', '1000000000000']) {
+  for (const value of ['-1', 'NaN', '1e4', '0.0000001', '1000000000000']) {
     assert.notEqual(validateTechnicalDataProfile({ ...input, unitMouldFee: value }), '', value)
   }
   assert.equal(validateTechnicalDataProfile({ ...input, hasAdditionalFees: false, unitCertificationFee: '' }), '')

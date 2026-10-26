@@ -1,4 +1,5 @@
 import { request } from './http'
+import { downloadAuthenticatedBlob } from '../utils/auxiliaryClassification'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 const encodePath = (value) => encodeURIComponent(String(value || '').trim())
@@ -141,24 +142,14 @@ export const fetchCurrentQuoteProductCostRunTask = (oaNo, itemId, params = {}) =
 export const costRunVersionExportUrl = (oaNo, itemId, versionId) =>
   `/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/cost-run/versions/${encodePath(versionId)}/export`
 
-export const exportQuoteCostRunVersion = async (oaNo, itemId, versionId) => {
-  const url = costRunVersionExportUrl(oaNo, itemId, versionId)
+export const exportQuoteCostRunVersion = async (oaNo, itemId, versionId, options) => {
+  if (!oaNo || !itemId || !versionId) throw new Error('导出需要明确的报价产品和成本版本')
+  const filename = `cost-run_${oaNo}_${itemId}_${versionId}.xlsx`.replace(/[\\/:*?"<>|]/g, '_')
   const token = localStorage.getItem('token')
-  const response = await fetch(`${API_BASE_URL}${url}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  return downloadAuthenticatedBlob(costRunVersionExportUrl(oaNo, itemId, versionId), filename, {
+    ...options,
+    isCurrent: () => token === localStorage.getItem('token') && (options?.isCurrent?.() ?? true),
   })
-  if (!response.ok) {
-    throw new Error(await response.text() || '导出成本核算版本失败')
-  }
-  const blob = await response.blob()
-  const downloadUrl = window.URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = downloadUrl
-  link.download = `cost-run_${oaNo}_${itemId}_${versionId}.xlsx`
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
-  window.URL.revokeObjectURL(downloadUrl)
 }
 
 export const confirmQuoteRequestClassification = (oaNo, body) =>

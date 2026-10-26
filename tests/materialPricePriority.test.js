@@ -1,27 +1,23 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { businessPricingMonth, movePricePriority, priceTypeLabel, validatePricePriority } from '../src/pages/materialPricePriorityUtils.js'
+import { businessPricingMonth, financePriceOrder, priceTypeOptions, priceTypeLabel } from '../src/pages/materialPricePriorityUtils.js'
 
 const defaultOrder = ['LINKED', 'SETTLE_LINKED', 'RANGE', 'SETTLE_FIXED', 'FIXED']
 
-test('财务可将固定价逐步移到首位，保持完整顺序且不改写当前配置', () => {
-  let order = defaultOrder
-  for (let index = 4; index > 0; index--) order = movePricePriority(order, index, -1)
-  assert.deepEqual(order, ['FIXED', 'LINKED', 'SETTLE_LINKED', 'RANGE', 'SETTLE_FIXED'])
-  assert.equal(defaultOrder[0], 'LINKED')
-  assert.equal(validatePricePriority(order), '')
-  assert.equal(validatePricePriority(defaultOrder), '')
-  assert.deepEqual(movePricePriority(order, 0, -1), order)
-  assert.deepEqual(movePricePriority(order, 4, 1), order)
-  assert.deepEqual(movePricePriority(order, 0, 1), ['LINKED', 'FIXED', 'SETTLE_LINKED', 'RANGE', 'SETTLE_FIXED'])
+test('财务单选指定类型，持久化首项始终是该类型，其余默认顺序保持稳定', () => {
+  for (const type of defaultOrder) {
+    const stored = financePriceOrder(type)
+    assert.equal(stored[0], type)
+    assert.equal(stored.length, 5)
+    assert.equal(new Set(stored).size, 5)
+    assert.deepEqual(stored.slice(1), defaultOrder.filter(value => value !== type))
+  }
+  assert.deepEqual(priceTypeOptions.map(option => option.value), defaultOrder)
 })
 
-test('拒绝遗漏、重复、未知类型和旧单类型配置', () => {
-  for (const order of [null, 'LINKED', [], defaultOrder.slice(1), [...defaultOrder, 'FIXED'],
-    ['LINKED', 'LINKED', 'RANGE', 'SETTLE_FIXED', 'FIXED'],
-    ['LINKED', 'MAKE', 'RANGE', 'SETTLE_FIXED', 'FIXED']]) {
-    assert.ok(validatePricePriority(order))
-  }
+test('指定类型不接受未知类型或自动来源，订单和阶梯只作自动后备', () => {
+  for (const type of [null, '', 'MAKE', 'ODS_ORDER', 'ODS_TIER', []])
+    assert.throws(() => financePriceOrder(type), /请选择有效的价格类型/)
 })
 
 test('月份使用业务时区，跨月跨年不受浏览器时区影响', () => {
@@ -34,5 +30,7 @@ test('结算来源与普通来源分别显示，其他真实来源保持原名',
   assert.equal(priceTypeLabel('SETTLE_LINKED'), '结算联动价')
   assert.equal(priceTypeLabel('SETTLE_FIXED'), '结算固定价')
   assert.equal(priceTypeLabel('FIXED'), '固定价')
+  assert.equal(priceTypeLabel('ODS_ORDER'), '订单价')
+  assert.equal(priceTypeLabel('ODS_TIER'), '阶梯价')
   assert.equal(priceTypeLabel('技术补录'), '技术补录')
 })

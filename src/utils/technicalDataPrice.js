@@ -20,7 +20,7 @@ const decimal = value => {
 }
 
 export function pricePayload(drafts, requirements, expectedVersion, requirementsFingerprint) {
-  const items = requirements.filter(row => row.status === 'MISSING').map(row => {
+  const items = requirements.filter(row => ['MISSING', 'REVISION'].includes(row.status)).map(row => {
     const value = drafts[row.itemKey] || priceDraft()
     const item = { itemKey: row.itemKey, entryMode: value.entryMode, notes: value.notes.trim() || null }
     if (value.entryMode === 'FIXED') return { ...item, unitPrice: decimal(value.unitPrice) }

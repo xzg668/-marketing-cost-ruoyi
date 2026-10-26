@@ -126,7 +126,7 @@
 
     <AuxiliaryClassificationPanel v-if="!historyViewMode" :oa-no="oaNo" :item-id="itemId" :month="displayedPeriodMonth" :readonly="historyViewMode" :revision="classificationRevision" @classified="refreshWorkbench" />
 
-    <DrawingVerificationPanel v-if="/^\d{4}-\d{2}$/.test(displayedPeriodMonth)" :oa-no="oaNo" :item-id="itemId"
+    <DrawingVerificationPanel v-if="!historyViewMode && /^\d{4}-\d{2}$/.test(displayedPeriodMonth)" :oa-no="oaNo" :item-id="itemId"
       :accounting-month="displayedPeriodMonth" :readonly="historyViewMode || header.oaWorkflow?.canCost === false"
       @state-change="onDrawingState" />
 
@@ -976,20 +976,7 @@
               title="存在旧的未完成试算，请重新核算生成成功版本"
             />
 
-            <div v-if="displayedCostVersion.id" class="status-strip cost-totals">
-              <div class="metric">
-                <span>财务正常成本</span>
-                <strong>{{ formatMoney(displayedCostVersion.totalCost) }}</strong>
-              </div>
-              <div class="metric">
-                <span>材料费差额</span>
-                <strong>{{ formatSignedMoney(displayedCostVersion.cuMaterialAdjustment) }}</strong>
-              </div>
-              <div class="metric">
-                <span>最终成本</span>
-                <strong>{{ formatMoney(displayedCostVersion.finalQuoteAmount) }}</strong>
-              </div>
-            </div>
+            <JjbSheet v-if="costRun.sheet" :sheet="costRun.sheet" @trace="openSheetTrace" />
 
             <el-table
               :data="costRunVersions"
@@ -1021,7 +1008,7 @@
                 </template>
               </el-table-column>
               <el-table-column label="最终成本" width="130" align="right">
-                <template #default="{ row }">{{ formatMoney(row.finalQuoteAmount) }}</template>
+                <template #default="{ row }">{{ typeof row.finalQuoteAmount === 'string' ? savedMoney(row.finalQuoteAmount) : '历史未记录' }}</template>
               </el-table-column>
               <el-table-column prop="partItemCount" label="部品行数" width="100" align="right" />
               <el-table-column prop="costItemCount" label="费用项数" width="100" align="right" />
@@ -1122,6 +1109,7 @@
     <CostRunTraceDrawer
       v-model="traceDrawerVisible"
       :cost-run-no="traceVersion?.costRunNo || ''"
+      :initial-trace="traceVersion?.initialTrace || null"
       :version-no="traceVersion?.displayVersionNo || traceVersion?.versionNo || ''"
     />
 
@@ -1142,6 +1130,8 @@ import { ArrowLeft, Refresh } from '@element-plus/icons-vue'
 import BomNodeDetailDrawer from '../components/BomNodeDetailDrawer.vue'
 import BasePagination from '../components/BasePagination.vue'
 import CostRunTraceDrawer from '../components/CostRunTraceDrawer.vue'
+import JjbSheet from '../components/JjbSheet.vue'
+import { savedMoney } from '../utils/jjbSheet'
 import QuoteBomAlternativeDrawer from '../components/QuoteBomAlternativeDrawer.vue'
 import { fetchMonthlyRepriceActiveLock } from '../api/monthlyReprice'
 import { useUserStore } from '../store/modules/user'
@@ -1208,18 +1198,18 @@ const userStore = useUserStore()
 
 const oaNo = computed(() => String(route.params.oaNo || ''))
 const itemId = computed(() => String(route.params.itemId || ''))
-// 返回报价单时路由会先清空产品编号，停止产品范围的资料查询。
-const preparationOaNo = computed(() => itemId.value ? oaNo.value : '')
-const materials = useQuoteCostingPreparation(preparationOaNo, {
-  fetch: (number) => fetchQuoteCostingPreparation(number, { itemId: Number(itemId.value) }),
-  submit: prepareQuoteCosting,
-}, computed(() => `${oaNo.value}:${itemId.value}`))
-const { state: materialState, checks: materialChecks, error: materialError, disabled: materialDisabled } = materials
 const historyVersionId = computed(() => {
   const value = Number(route.query.versionId)
   return Number.isInteger(value) && value > 0 ? value : null
 })
 const historyViewMode = computed(() => route.query.historyResult === 'quote' && Boolean(historyVersionId.value))
+// 返回报价单时路由会先清空产品编号，停止产品范围的资料查询。
+const preparationOaNo = computed(() => !historyViewMode.value && itemId.value ? oaNo.value : '')
+const materials = useQuoteCostingPreparation(preparationOaNo, {
+  fetch: (number) => fetchQuoteCostingPreparation(number, { itemId: Number(itemId.value) }),
+  submit: prepareQuoteCosting,
+}, computed(() => `${oaNo.value}:${itemId.value}`))
+const { state: materialState, checks: materialChecks, error: materialError, disabled: materialDisabled } = materials
 const drawingContinuation = useDrawingCostingContinuation(computed(() => `${oaNo.value}:${itemId.value}:${historyVersionId.value || ''}`), {
   fetchDrawing: (_, productId, month) => fetchDrawingVerificationWorkspace(oaNo.value, productId, month),
   sessionKey: () => `${userStore.userId}:${userStore.businessUnitType}:${oaNo.value}:${itemId.value}:${historyVersionId.value || ''}`,
@@ -1636,7 +1626,7 @@ const inputGapGuideText = computed(() => {
 })
 
 async function loadWorkbench(options = {}) {
-  await materials.refresh()
+  if (!historyViewMode.value) await materials.refresh()
   const { resetTab = false, loadChildren = true } = options
   if (!oaNo.value || !itemId.value) return
   loading.value = true
@@ -2030,7 +2020,9 @@ async function loadPricePrepare(showError = true) {
   }
 }
 
+let costRunReadRequest = 0
 async function loadCostRun(showError = true) {
+  const request = ++costRunReadRequest
   if (!oaNo.value || !itemId.value) return
   costRunLoading.value = true
   costRunError.value = ''
@@ -2039,14 +2031,16 @@ async function loadCostRun(showError = true) {
       ? { versionId: historyVersionId.value }
       : { periodMonth: workbench.value.periodMonth }
     const response = await fetchQuoteCostRun(oaNo.value, itemId.value, params)
+    if (request !== costRunReadRequest) return
     await applyCostRunResponse(response)
   } catch (error) {
+    if (request !== costRunReadRequest) return
     const message = error?.message || '获取成本核算失败'
     resetCostRunResult()
     costRunError.value = message
     if (showError) ElMessage.error(message)
   } finally {
-    costRunLoading.value = false
+    if (request === costRunReadRequest) costRunLoading.value = false
   }
 }
 
@@ -2063,6 +2057,7 @@ function resetCostRunResult() {
 
 async function selectCostRunVersion(row) {
   if (!row?.id || row.id === selectedCostRunVersionId.value) return
+  const request = ++costRunReadRequest
   costRunLoading.value = true
   costRunError.value = ''
   selectedCostRunVersionId.value = row.id
@@ -2070,14 +2065,16 @@ async function selectCostRunVersion(row) {
     const response = await fetchQuoteCostRun(oaNo.value, itemId.value, {
       versionId: row.id,
     })
+    if (request !== costRunReadRequest) return
     await applyCostRunResponse(response)
   } catch (error) {
+    if (request !== costRunReadRequest) return
     const message = error?.message || '获取历史成本版本失败'
     costRunError.value = message
     selectedCostRunVersionId.value = displayedCostVersion.value.id ?? null
     ElMessage.error(message)
   } finally {
-    costRunLoading.value = false
+    if (request === costRunReadRequest) costRunLoading.value = false
   }
 }
 
@@ -2502,6 +2499,9 @@ function priceSourceSupplementText(tab) {
   if (!priceSourceChecked.value) {
     return '系统将自动检查价格源；如果价格源已维护完整，会同时生成最终价格'
   }
+  if (!priceSourceReady.value) {
+    return pricePrepare.value.readiness?.message || '本次价格尚未就绪，请查看缺口并补齐资料'
+  }
   return '价格源已齐全，可生成最终价格'
 }
 
@@ -2700,8 +2700,14 @@ function openCostRunDetail(row = null) {
       customerDrawing: item.value.customerDrawing || '',
       costRunNo: displayVersion.costRunNo || '',
       versionNo: displayVersion.versionNo || displayVersion.costRunNo || '',
+      versionId: displayVersion.id,
     },
   })
+}
+
+function openSheetTrace(row) {
+  traceVersion.value = { ...displayedCostVersion.value, initialTrace: { rowKey: row.key, partItemId: row.partItemIds?.[0], costItemId: row.costItemIds?.[0], costCode: row.code } }
+  traceDrawerVisible.value = true
 }
 
 async function openCostRunTrace(row) {
@@ -3140,6 +3146,8 @@ async function initializeWorkbench() {
 }
 
 watch([oaNo, itemId, historyVersionId], () => {
+  ++costRunReadRequest
+  resetCostRunResult()
   initializeWorkbench()
 })
 

@@ -3,18 +3,12 @@
     <section class="page-toolbar">
       <div class="page-title">
         <h1>价格准备</h1>
-        <p>成本核算前置准备</p>
+        <p>查询准备记录和缺口；价格准备请进入报价单的单产品核算工作台</p>
       </div>
       <div class="toolbar-actions">
         <el-button :icon="RefreshRight" :loading="loadingAny" @click="refreshAll">刷新</el-button>
-        <el-button
-          v-hasPermi="['cost:price-prepare:generate']"
-          type="primary"
-          :icon="Operation"
-          :loading="generating"
-          @click="openGenerateDialog"
-        >
-          生成
+        <el-button type="primary" :disabled="!selectedCandidate" @click="openQuotation">
+          打开报价单
         </el-button>
       </div>
     </section>
@@ -61,10 +55,8 @@
     <section class="table-panel">
       <div class="section-title">
         <strong>候选行</strong>
-        <span>已选择 {{ selectedCandidates.length }} 行</span>
       </div>
       <el-table
-        ref="candidateTableRef"
         :data="candidateRows"
         border
         stripe
@@ -72,10 +64,8 @@
         v-loading="candidateLoading"
         row-key="candidateKey"
         class="prepare-table"
-        @selection-change="handleCandidateSelection"
         @row-click="selectCandidate"
       >
-        <el-table-column type="selection" width="48" reserve-selection />
         <el-table-column prop="oaNo" label="OA单号" width="160" fixed show-overflow-tooltip />
         <el-table-column prop="topProductCode" label="成品料号" min-width="150" show-overflow-tooltip />
         <el-table-column prop="productName" label="产品名称" min-width="160" show-overflow-tooltip />
@@ -282,67 +272,6 @@
       </el-tabs>
     </section>
 
-    <el-dialog v-model="generateDialogVisible" title="生成价格准备" width="760px">
-      <el-form :model="generateForm" label-width="92px">
-        <el-form-item label="候选行">
-          <el-cascader
-            v-model="generateForm.targetKeys"
-            :options="candidateTreeOptions"
-            :props="candidateCascaderProps"
-            filterable
-            clearable
-            collapse-tags
-            collapse-tags-tooltip
-            :loading="dialogCandidatesLoading"
-            placeholder="选择 OA + 成品料号"
-            style="width: 100%"
-            @visible-change="handleGenerateCascaderVisible"
-          />
-        </el-form-item>
-        <el-form-item label="期间">
-          <el-date-picker
-            v-model="generateForm.periodMonth"
-            type="month"
-            format="YYYY-MM"
-            value-format="YYYY-MM"
-            disabled
-            placeholder="当前核算月"
-            style="width: 100%"
-          />
-        </el-form-item>
-        <el-collapse class="advanced-generate">
-          <el-collapse-item title="高级：粘贴 OA 单号" name="paste">
-            <el-form-item label="OA单号">
-              <el-input
-                v-model="generateForm.oaNosText"
-                type="textarea"
-                :rows="4"
-                clearable
-                placeholder="未选择候选行时，可粘贴多行 OA 单号"
-              />
-            </el-form-item>
-          </el-collapse-item>
-        </el-collapse>
-      </el-form>
-      <el-table v-if="bulkResultRows.length" :data="bulkResultRows" border stripe size="small" class="bulk-result-table">
-        <el-table-column prop="oaNo" label="OA单号" min-width="140" show-overflow-tooltip />
-        <el-table-column prop="topProductCode" label="成品料号" min-width="140" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.topProductCode || '-' }}</template>
-        </el-table-column>
-        <el-table-column prop="gapCount" label="缺口" width="80" align="right" />
-        <el-table-column label="状态" width="105">
-          <template #default="{ row }">
-            <el-tag size="small" :type="summaryStatusTag(row.status)">{{ summaryStatusLabel(row.status) }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="message" label="说明" min-width="180" show-overflow-tooltip />
-      </el-table>
-      <template #footer>
-        <el-button @click="generateDialogVisible = false">关闭</el-button>
-        <el-button type="primary" :loading="generating" @click="submitGenerate">生成</el-button>
-      </template>
-    </el-dialog>
-
     <el-dialog v-model="noScrapConfirmDialogVisible" title="确认无废料，按0处理" width="560px">
       <el-alert
         class="no-scrap-impact-alert"
@@ -426,7 +355,6 @@ import {
   fetchPricePrepareItems,
   confirmPricePrepareNoScrap,
   revokePricePrepareNoScrap,
-  generatePricePrepareBulk,
   normalizePricePreparePage,
 } from '../../../api/pricePrepare.js'
 import { useUserStore } from '../../../store/modules/user'
@@ -434,14 +362,10 @@ import { useUserStore } from '../../../store/modules/user'
 const userStore = useUserStore()
 const router = useRouter()
 const activeTab = ref('items')
-const candidateTableRef = ref(null)
 const candidateRows = ref([])
-const dialogCandidateRows = ref([])
-const selectedCandidates = ref([])
 const selectedCandidate = ref(null)
 const itemRows = ref([])
 const gapRows = ref([])
-const bulkResultRows = ref([])
 
 const candidateTotal = ref(0)
 const itemTotal = ref(0)
@@ -454,11 +378,8 @@ const itemPageSize = ref(20)
 const gapPageSize = ref(20)
 
 const candidateLoading = ref(false)
-const dialogCandidatesLoading = ref(false)
 const itemLoading = ref(false)
 const gapLoading = ref(false)
-const generating = ref(false)
-const generateDialogVisible = ref(false)
 const noScrapConfirmDialogVisible = ref(false)
 const noScrapConfirming = ref(false)
 const noScrapRevokeDialogVisible = ref(false)
@@ -481,7 +402,6 @@ const candidateFilters = reactive({
 })
 const itemFilters = reactive({ materialCode: '', itemType: '', status: '' })
 const gapFilters = reactive({ materialCode: '', gapMaterialCode: '', itemType: '', gapType: '' })
-const generateForm = reactive({ targetKeys: [], oaNosText: '', periodMonth: '' })
 const noScrapConfirmForm = reactive({ confirmReason: '' })
 const noScrapRevokeForm = reactive({ revokeReason: '' })
 const noScrapConfirmContext = reactive({
@@ -513,48 +433,6 @@ const gapTypeMap = optionMap(PRICE_PREPARE_GAP_TYPE_OPTIONS)
 const pushStatusMap = optionMap(PRICE_PREPARE_GAP_PUSH_STATUS_OPTIONS)
 const summaryStatusMap = optionMap(PRICE_PREPARE_SUMMARY_STATUS_OPTIONS)
 
-const selectedTargetKeySet = computed(() => new Set(generateForm.targetKeys))
-const candidateCascaderProps = {
-  multiple: true,
-  emitPath: false,
-}
-const candidatePoolRows = computed(() => {
-  const byKey = new Map()
-  for (const row of [...selectedCandidates.value, ...candidateRows.value, ...dialogCandidateRows.value]) {
-    if (row?.oaNo && row?.topProductCode) {
-      byKey.set(candidateKey(row), enrichCandidate(row))
-    }
-  }
-  return Array.from(byKey.values())
-})
-const candidateTreeOptions = computed(() => {
-  const byOa = new Map()
-  for (const row of candidatePoolRows.value) {
-    const oaNo = row.oaNo
-    if (!byOa.has(oaNo)) {
-      byOa.set(oaNo, {
-        value: oaNo,
-        label: `${oaNo} / ${row.customer || '-'}`,
-        children: [],
-      })
-    }
-    byOa.get(oaNo).children.push({
-      value: candidateKey(row),
-      label: `${row.topProductCode} / ${row.productName || '-'} / ${summaryStatusLabel(row.prepareStatus)}`,
-    })
-  }
-  return Array.from(byOa.values())
-})
-const candidateOptions = computed(() => {
-  const selected = selectedCandidates.value.map(toCandidateOption)
-  const all = candidatePoolRows.value.map(toCandidateOption)
-  const byKey = new Map()
-  for (const option of [...selected, ...all]) {
-    if (option?.key) byKey.set(option.key, option)
-  }
-  return Array.from(byKey.values())
-})
-
 const currentMonthText = () => {
   const date = new Date()
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
@@ -562,12 +440,6 @@ const currentMonthText = () => {
 
 const candidateKey = (row) => `${row?.oaNo || ''}__${row?.topProductCode || ''}`
 const enrichCandidate = (row) => ({ ...row, candidateKey: candidateKey(row) })
-const toTarget = (row) => ({ oaNo: row.oaNo, topProductCode: row.topProductCode })
-const toCandidateOption = (row) => ({
-  key: candidateKey(row),
-  label: `${row.oaNo} / ${row.topProductCode} / ${row.customer || '-'} / ${summaryStatusLabel(row.prepareStatus)}`,
-})
-
 const labelFrom = (map, value) => map.value[value]?.label || value || '-'
 const tagFrom = (map, value, fallback = 'info') => map.value[value]?.tag || fallback
 const itemTypeLabel = (type) => labelFrom(itemTypeMap, type)
@@ -832,41 +704,6 @@ const fetchCandidates = async () => {
   }
 }
 
-const fetchGenerateCandidates = async () => {
-  dialogCandidatesLoading.value = true
-  try {
-    const baseParams = {
-      keyword: candidateFilters.keyword,
-      periodMonth: currentMonthText(),
-      calcStatus: candidateFilters.calcStatus,
-      prepareStatus: candidateFilters.prepareStatus,
-      onlyPending: candidateFilters.onlyPending,
-      page: 1,
-      pageSize: 500,
-    }
-    const preferredScope = candidateFilters.ownerScope || 'MINE'
-    let page = normalizePricePreparePage(await fetchPricePrepareCandidates({
-      ...baseParams,
-      ownerScope: preferredScope,
-    }))
-    if (!page.list.length && preferredScope !== 'ALL') {
-      try {
-        page = normalizePricePreparePage(await fetchPricePrepareCandidates({
-          ...baseParams,
-          ownerScope: 'ALL',
-        }))
-      } catch (error) {
-        // 无 list-all 权限时保持我的候选结果，不打断弹窗操作。
-      }
-    }
-    dialogCandidateRows.value = page.list.map(enrichCandidate)
-  } catch (error) {
-    ElMessage.error(error?.message || '查询生成候选失败')
-  } finally {
-    dialogCandidatesLoading.value = false
-  }
-}
-
 const buildItemParams = () => ({
   ...itemFilters,
   oaNo: selectedCandidate.value?.oaNo,
@@ -934,10 +771,6 @@ const refreshAll = async () => {
   await Promise.all([fetchItems(), fetchGaps()])
 }
 
-const handleCandidateSelection = (rows) => {
-  selectedCandidates.value = rows
-}
-
 const selectCandidate = async (row) => {
   selectedCandidate.value = row
   itemPage.value = 1
@@ -948,10 +781,8 @@ const selectCandidate = async (row) => {
 const applyCandidateFilters = async () => {
   candidatePage.value = 1
   selectedCandidate.value = null
-  selectedCandidates.value = []
   itemRows.value = []
   gapRows.value = []
-  candidateTableRef.value?.clearSelection?.()
   await fetchCandidates()
 }
 
@@ -990,65 +821,10 @@ const handleTabChange = () => {
   fetchActiveRows()
 }
 
-const openGenerateDialog = async () => {
-  const initialTargets = selectedCandidates.value.length
-    ? selectedCandidates.value
-    : (selectedCandidate.value ? [selectedCandidate.value] : [])
-  Object.assign(generateForm, {
-    targetKeys: initialTargets.map(candidateKey),
-    oaNosText: '',
-    periodMonth: currentMonthText(),
-  })
-  bulkResultRows.value = []
-  generateDialogVisible.value = true
-  await fetchGenerateCandidates()
-}
-
-const handleGenerateCascaderVisible = (visible) => {
-  if (visible && !dialogCandidateRows.value.length && !dialogCandidatesLoading.value) {
-    fetchGenerateCandidates()
-  }
-}
-
-const parseOaNos = (text) => Array.from(new Set(
-  String(text || '')
-    .split(/[\s,，;；]+/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-))
-
-const selectedTargets = () => {
-  const byKey = new Map(candidateOptions.value.map((option) => [option.key, option]))
-  const rowsByKey = new Map(candidatePoolRows.value.map((row) => [candidateKey(row), row]))
-  return Array.from(selectedTargetKeySet.value)
-    .filter((key) => byKey.has(key))
-    .map((key) => rowsByKey.get(key))
-    .filter((row) => row?.oaNo && row?.topProductCode)
-    .map(toTarget)
-}
-
-const submitGenerate = async () => {
-  const targets = selectedTargets()
-  const oaNos = parseOaNos(generateForm.oaNosText)
-  if (!targets.length && !oaNos.length) {
-    ElMessage.warning('请选择候选行或输入 OA 单号')
-    return
-  }
-  generating.value = true
-  try {
-    const result = await generatePricePrepareBulk({
-      targets: targets.length ? targets : undefined,
-      oaNos: targets.length ? undefined : oaNos,
-      periodMonth: currentMonthText(),
-    })
-    bulkResultRows.value = Array.isArray(result?.records) ? result.records : []
-    ElMessage.success(`生成完成：成功 ${result?.successCount || 0} 个，失败 ${result?.failedCount || 0} 个`)
-    await refreshAll()
-  } catch (error) {
-    ElMessage.error(error?.message || '生成价格准备失败')
-  } finally {
-    generating.value = false
-  }
+const openQuotation = () => {
+  const oaNo = selectedCandidate.value?.oaNo
+  if (!oaNo) return
+  router.push({ name: 'ingest-quote-request-detail', params: { oaNo } })
 }
 
 watch([candidatePage, candidatePageSize], fetchCandidates)
@@ -1156,10 +932,6 @@ onMounted(fetchCandidates)
 }
 
 .prepare-table,
-.bulk-result-table {
-  width: 100%;
-}
-
 .tab-filter-row {
   margin-bottom: 10px;
 }
@@ -1212,15 +984,6 @@ onMounted(fetchCandidates)
 .no-scrap-impact-alert,
 .no-scrap-context {
   margin-bottom: 14px;
-}
-
-.advanced-generate {
-  border-top: 0;
-  border-bottom: 0;
-}
-
-.bulk-result-table {
-  margin-top: 12px;
 }
 
 @media (max-width: 900px) {

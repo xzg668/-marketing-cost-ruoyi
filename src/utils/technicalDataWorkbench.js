@@ -16,13 +16,11 @@ export const PRODUCT_PROPERTY_OPTIONS = Object.freeze(['标准品', '非标品']
 
 export function validateTechnicalDataProfile(profile) {
   if (!PRODUCT_PROPERTY_OPTIONS.includes(profile?.productProperty)) return '请选择产品属性'
-  if (typeof profile?.hasAdditionalFees !== 'boolean') return '请选择是否含新增工装模具认证费'
-  for (const [field, label] of [['unitMouldFee', '模具费'], ['unitToolingFee', '工装费'], ['unitCertificationFee', '认证费']]) {
+  for (const [field, label] of [['unitMouldFee', '模具费'], ['unitCertificationFee', '认证费'], ['unitDepreciationFee', '折旧费'], ['unitToolingFee', '工装夹具费']]) {
     const text = String(profile?.[field] ?? '').trim()
-    if (text === '/' || (!text && !profile.hasAdditionalFees)) continue
-    if (!text) return `${label}请填写单件金额或 /`
-    if (!/^[0-9]{1,12}(\.[0-9]{1,6})?$/.test(text) || Number(text) <= 0) {
-      return `${label}须为正金额或 /，最多 12 位整数、6 位小数`
+    if (text === '/' || !text) continue
+    if (!/^[0-9]{1,12}(\.[0-9]{1,6})?$/.test(text)) {
+      return `${label}须为非负金额或 /，最多 12 位整数、6 位小数`
     }
   }
   if (!Number.isInteger(profile?.expectedVersion) || profile.expectedVersion < 0) return '当前数据版本无效，请刷新后重试'

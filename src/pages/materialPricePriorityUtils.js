@@ -6,7 +6,7 @@ const PRICE_TYPES = {
   FIXED: '固定价',
 }
 
-export const priceTypeLabel = type => PRICE_TYPES[type] || type
+export const priceTypeLabel = type => ({ ODS_ORDER: '订单价', ODS_TIER: '阶梯价' }[type] || PRICE_TYPES[type] || type)
 
 export function businessPricingMonth(date = new Date()) {
   const parts = new Intl.DateTimeFormat('en', {
@@ -15,21 +15,10 @@ export function businessPricingMonth(date = new Date()) {
   return `${parts.find(part => part.type === 'year').value}-${parts.find(part => part.type === 'month').value}`
 }
 
-export function validatePricePriority(order) {
-  if (!Array.isArray(order) || order.length !== 5 || new Set(order).size !== 5
-      || order.some(type => !Object.hasOwn(PRICE_TYPES, type))) {
-    return '请完整排列五种取价类型，不能重复或遗漏'
-  }
-  return ''
-}
+export const priceTypeOptions = Object.entries(PRICE_TYPES).map(([value, label]) => ({ value, label }))
 
-export function movePricePriority(order, index, direction) {
-  const moved = [...order]
-  const target = index + direction
-  if (!Number.isInteger(index) || ![-1, 1].includes(direction)
-      || index < 0 || index >= moved.length || target < 0 || target >= moved.length) return moved
-  const current = moved[index]
-  moved[index] = moved[target]
-  moved[target] = current
-  return moved
+// Existing storage has five rows; its first manual type now expresses an exclusive finance choice.
+export function financePriceOrder(type) {
+  if (!Object.hasOwn(PRICE_TYPES, type)) throw new Error('请选择有效的价格类型')
+  return [type, ...Object.keys(PRICE_TYPES).filter(value => value !== type)]
 }

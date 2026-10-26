@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { PLATE_MATERIAL_OPTIONS, profileDraft, validatePlateMaterial, technicalProfilePayload, refreshProfilePlateMaterial, plateMaterialSummary } from '../src/utils/technicalDataPlateMaterial.js'
 
 const manual = { mode: 'MANUAL_REQUIRED', value: null, revision: 'master-v1', source: { materialMasterIds: [1] }, historical: false }
-const profile = { productProperty: '非标品', hasAdditionalFees: true, unitMouldFee: '0.3', unitToolingFee: '/', unitCertificationFee: '/', expectedVersion: 2, plateMaterial: manual }
+const profile = { productProperty: '非标品', hasAdditionalFees: true, unitMouldFee: '0.3', unitToolingFee: '/', unitCertificationFee: '/', unitDepreciationFee: '1.234567', expectedVersion: 2, plateMaterial: manual }
 
 test('six manual choices are valid, empty/old missing-L label invalid; hidden never requires a value', () => {
   assert.deepEqual(PLATE_MATERIAL_OPTIONS, ['水氟SUS304', '水氟316L', '氟氟SUS304', '氟氟316L', '水水SUS304', '水水316L'])
@@ -17,7 +17,7 @@ test('six manual choices are valid, empty/old missing-L label invalid; hidden ne
 test('request only submits value and revision; never sends client mode, source, department or organization', () => {
   const body = technicalProfilePayload({ ...profile, department: 'fake', plateMaterial: { ...manual, value: '氟氟316L' } })
   assert.deepEqual(body, { productProperty: '非标品', hasAdditionalFees: true, unitMouldFee: '0.3',
-    unitToolingFee: '/', unitCertificationFee: '/', expectedVersion: 2, plateMaterial: '氟氟316L', expectedPlateMaterialRevision: 'master-v1' })
+    unitToolingFee: '/', unitCertificationFee: '/', unitDepreciationFee: '1.234567', expectedVersion: 2, plateMaterial: '氟氟316L', expectedPlateMaterialRevision: 'master-v1' })
   assert.equal(technicalProfilePayload({ ...profile, plateMaterial: { ...manual, mode: 'HIDDEN', value: '水水316L' } }).plateMaterial, null)
   assert.equal(technicalProfilePayload({ ...profile, plateMaterial: { ...manual, mode: 'CONFIG_LOCKED', value: '水水316L' } }).plateMaterial, '水水316L')
 })
@@ -33,6 +33,7 @@ test('source refresh preserves unsaved fields and manual choice, replaces rule a
   const latest = { ...profile, plateMaterial: { ...manual, revision: 'master-v2', value: '水水316L' } }
   const refreshed = refreshProfilePlateMaterial(draft, latest)
   assert.equal(refreshed.unitMouldFee, '7.123456')
+  assert.equal(refreshed.unitDepreciationFee, '1.234567')
   assert.equal(refreshed.productProperty, '标准品')
   assert.equal(refreshed.plateMaterial.value, '氟氟SUS304')
   assert.equal(refreshed.plateMaterial.revision, 'master-v2')

@@ -20,7 +20,9 @@
         title="该版本未生成底稿快照"
       />
 
-      <div class="trace-body">
+      <JjbEvidence v-if="sheet" :sheet="sheet" :initial-trace="initialTrace" />
+
+      <div v-if="!sheet?.identity.monthly" class="trace-body">
         <aside class="trace-list">
           <el-tabs v-model="activeGroup" stretch>
             <el-tab-pane label="部品价格" name="PART_PRICE" />
@@ -211,10 +213,13 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
+import JjbEvidence from './JjbEvidence.vue'
 import { ElMessage } from 'element-plus'
 import { fetchCostRunTraceDetail, fetchCostRunTraces } from '../api/costRunDetail'
-import { rangeFactorDisplayName, rangeTraceExplanation } from './costRunTraceDrawerUtils'
+import { formatTraceMoney as formatMoney, formatTraceValue as formatValue, rangeFactorDisplayName, rangeTraceExplanation } from './costRunTraceDrawerUtils'
 import { netLossPercent } from '../utils/netLossRate'
+
+const sheet = ref(null)
 
 const props = defineProps({
   modelValue: {
@@ -257,7 +262,7 @@ const groupedRows = computed(() => {
   }
   return rows.filter((row) => row.traceType === 'COST_ITEM' || row.traceType === 'TOTAL')
 })
-const emptySnapshotVisible = computed(() => !loading.value && props.costRunNo && traceRows.value.length === 0)
+const emptySnapshotVisible = computed(() => !loading.value && props.costRunNo && !sheet.value?.identity.monthly && traceRows.value.length === 0)
 const detailTitle = computed(() =>
   selectedDetail.value?.materialName
   || selectedDetail.value?.materialCode
@@ -399,16 +404,23 @@ watch(
   },
 )
 
+let traceRequest = 0
 async function loadTraces() {
+  const request = ++traceRequest
+  const runNo = props.costRunNo
   if (!props.costRunNo) {
     ElMessage.info('当前成本版本缺少核算批次')
     return
   }
   loading.value = true
   selectedDetail.value = null
+  sheet.value = null
   try {
-    const response = await fetchCostRunTraces(props.costRunNo)
+    const response = await fetchCostRunTraces(runNo)
+    if (request !== traceRequest || runNo !== props.costRunNo) return
+    sheet.value = response?.sheet || null
     traceRows.value = Array.isArray(response?.records) ? response.records : []
+    if (sheet.value?.identity.monthly) return
     if (traceRows.value.length === 0) {
       ElMessage.info('该版本未生成底稿快照')
       return
@@ -422,10 +434,11 @@ async function loadTraces() {
     activeGroup.value = matched ? traceGroup(matched) : 'PART_PRICE'
     await selectTrace(matched || traceRows.value[0])
   } catch (error) {
+    if (request !== traceRequest) return
     traceRows.value = []
     ElMessage.error(error?.message || '获取核算底稿失败')
   } finally {
-    loading.value = false
+    if (request === traceRequest) loading.value = false
   }
 }
 
@@ -434,7 +447,9 @@ async function selectTrace(row) {
   selectedId.value = row.id
   detailLoading.value = true
   try {
-    selectedDetail.value = await fetchCostRunTraceDetail(props.costRunNo, row.id)
+    const runNo = props.costRunNo
+    const detail = await fetchCostRunTraceDetail(runNo, row.id)
+    if (props.costRunNo === runNo && selectedId.value === row.id) selectedDetail.value = detail
   } catch (error) {
     ElMessage.error(error?.message || '获取底稿详情失败')
   } finally {
@@ -489,23 +504,6 @@ function traceTitle(row) {
 
 function traceSubTitle(row) {
   return row?.materialCode || row?.costCode || row?.summary || row?.traceKey || '-'
-}
-
-function formatMoney(value) {
-  const number = Number(value)
-  if (!Number.isFinite(number)) return '-'
-  return number.toFixed(6).replace(/\.?0+$/, '')
-}
-
-function formatValue(value) {
-  if (value === null || value === undefined || value === '') return '-'
-  if (typeof value === 'number') return formatMoney(value)
-  if (typeof value === 'string') {
-    const number = Number(value)
-    return Number.isFinite(number) && value.trim() !== '' ? formatMoney(number) : value
-  }
-  if (typeof value === 'boolean') return value ? '是' : '否'
-  return JSON.stringify(value)
 }
 
 function formatRate(value, costCode) {

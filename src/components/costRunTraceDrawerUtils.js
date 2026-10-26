@@ -8,6 +8,25 @@ const RANGE_FACTOR_NAMES = {
   SUS316L: '不锈钢316L',
 }
 
+export function formatTraceMoney(value) {
+  if (value === null || value === undefined || value === '') return '-'
+  if (typeof value === 'string' && /^-?\d+(?:\.\d{1,6}0*)?$/.test(value)) {
+    return value.includes('.') ? value.replace(/\.?0+$/, '') : value
+  }
+  const number = Number(value)
+  return Number.isFinite(number) ? number.toFixed(6).replace(/\.?0+$/, '') : '-'
+}
+
+export function formatTraceValue(value) {
+  if (value === null || value === undefined || value === '') return '-'
+  if (typeof value === 'number') return formatTraceMoney(value)
+  if (typeof value === 'string') {
+    return Number.isFinite(Number(value)) && value.trim() !== '' ? formatTraceMoney(value) : value
+  }
+  if (typeof value === 'boolean') return value ? '是' : '否'
+  return JSON.stringify(value)
+}
+
 export function parseTraceJson(value) {
   if (!value) return null
   if (typeof value === 'object') return value

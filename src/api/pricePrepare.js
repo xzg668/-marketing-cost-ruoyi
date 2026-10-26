@@ -51,20 +51,6 @@ export function normalizePricePreparePage(response) {
   }
 }
 
-export const generatePricePrepare = (body) =>
-  request(`${BASE_URL}/generate`, {
-    method: 'POST',
-    body,
-    timeout: 120000,
-  })
-
-export const generatePricePrepareBulk = (body) =>
-  request(`${BASE_URL}/generate-bulk`, {
-    method: 'POST',
-    body,
-    timeout: 300000,
-  })
-
 export const fetchPricePrepareBatches = (params) =>
   request(`${BASE_URL}/batches`, { params })
 

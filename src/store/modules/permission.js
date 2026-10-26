@@ -63,7 +63,7 @@ function loadView(component) {
  * - 叶子组件 → 从 src/views/{component}.vue 或 src/pages/{component}.vue 动态加载
  * - 页面文件已删除或配置无效的菜单不注册；空目录一并移除。
  * - 只使用后端授权菜单，不补全菜单，也不展示示例数据。
- * - route.name 统一用 dyn-{menuId} 避免与静态路由冲突、便于 logout 清理
+ * - route.name 默认使用 dyn-{menuId}；已授权家用询价节点采用冻结业务名，仍随父路由清理
  */
 function toRoute(node, isTop = true) {
   if (!node) return null
@@ -97,7 +97,9 @@ function toRoute(node, isTop = true) {
     meta: node.meta ? { ...node.meta } : {},
   }
   if (node.menuId != null) {
-    route.name = `dyn-${node.menuId}`
+    route.name = node.component === 'pages:HouseholdInquiryPage' && node.path === '/price/household-inquiry'
+      ? 'price-household-inquiry'
+      : `dyn-${node.menuId}`
     route.meta.menuId = node.menuId
   }
 

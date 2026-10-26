@@ -20,7 +20,7 @@
           <el-button @click="resetFilters">重置</el-button>
         </el-form-item>
       </el-form>
-      <p class="hint">结算联动价暂无数据，查不到时继续下一项。</p>
+      <p class="hint">未指定时按系统顺序自动取价；财务指定后仅使用该类型。已有适用月价继续复用。</p>
     </el-card>
 
     <el-card shadow="never">
@@ -36,10 +36,11 @@
         <el-table-column label="月份" width="100">
           <template #default="{ row }">{{ row.configuration.scope.period }}</template>
         </el-table-column>
-        <el-table-column label="取价顺序" min-width="330">
+        <el-table-column label="取价方式" min-width="330">
           <template #default="{ row }">
-            <div>{{ row.configuration.order.map(item => priceTypeLabel(item.type)).join(' → ') }}</div>
-            <span class="hint">{{ row.configuration.manual ? '财务调整' : '系统默认' }}</span>
+            <div v-if="row.configuration.manual">财务指定：{{ priceTypeLabel(row.configuration.order[0].type) }}</div>
+            <div v-else>{{ row.configuration.order.map(item => priceTypeLabel(item.type)).join(' → ') }} → 订单价 → 阶梯价 → 补录固定价</div>
+            <span class="hint">{{ row.configuration.manual ? '仅按指定类型取价' : '系统自动取价' }}</span>
           </template>
         </el-table-column>
         <el-table-column label="最近取价" min-width="190">
@@ -54,8 +55,8 @@
         </el-table-column>
         <el-table-column v-if="canEdit" label="操作" width="170" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" link :disabled="saving" @click="openEdit(row)">调整顺序</el-button>
-            <el-button link :disabled="saving || !row.configuration.manual" @click="restoreDefault(row)">恢复默认</el-button>
+            <el-button type="primary" link :disabled="saving" @click="openEdit(row)">指定类型</el-button>
+            <el-button link :disabled="saving || !row.configuration.manual" @click="restoreDefault(row)">恢复自动</el-button>
           </template>
         </el-table-column>
         <template #empty>
@@ -65,24 +66,19 @@
       <BasePagination v-model:current-page="currentPage" v-model:page-size="pageSize" :total="total" />
     </el-card>
 
-    <el-dialog v-model="dialogVisible" title="调整取价顺序" width="520px" :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving">
+    <el-dialog v-model="dialogVisible" title="指定价格类型" width="520px" :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving">
       <p v-if="editingRow" class="scope-label">
         {{ editingRow.configuration.scope.materialCode }} · {{ editingRow.configuration.scope.priceOrgCode }} · {{ editingRow.configuration.scope.period }}
       </p>
       <el-alert v-if="editError" :title="editError" type="error" :closable="false" show-icon />
-      <ol class="priority-list">
-        <li v-for="(type, index) in editOrder" :key="type">
-          <span>{{ index + 1 }}. {{ priceTypeLabel(type) }}</span>
-          <div>
-            <el-button size="small" :disabled="index === 0 || saving || conflict" @click="move(index, -1)">上移</el-button>
-            <el-button size="small" :disabled="index === editOrder.length - 1 || saving || conflict" @click="move(index, 1)">下移</el-button>
-          </div>
-        </li>
-      </ol>
+      <el-select v-model="selectedType" placeholder="请选择价格类型" :disabled="saving || conflict" style="width: 100%">
+        <el-option v-for="option in priceTypeOptions" :key="option.value" :label="option.label" :value="option.value" />
+      </el-select>
+      <p class="hint">指定类型没有适用价格时提示缺价，不自动改用其他类型。</p>
       <template #footer>
         <el-button :disabled="saving" @click="dialogVisible = false">取消</el-button>
         <el-button v-if="conflict" type="primary" @click="refreshConfiguration">刷新配置</el-button>
-        <el-button v-else type="primary" :loading="saving" @click="saveOrder">保存</el-button>
+        <el-button v-else type="primary" :loading="saving" @click="saveType">保存</el-button>
       </template>
     </el-dialog>
   </div>
@@ -95,7 +91,7 @@ import { ElMessage } from 'element-plus'
 import BasePagination from '../components/BasePagination.vue'
 import { useUserStore } from '../store/modules/user'
 import { fetchMaterialPriceTypes, updateMaterialPricePriority } from '../api/materialPriceTypes'
-import { businessPricingMonth, movePricePriority, priceTypeLabel, validatePricePriority } from './materialPricePriorityUtils'
+import { businessPricingMonth, financePriceOrder, priceTypeOptions, priceTypeLabel } from './materialPricePriorityUtils'
 
 const route = useRoute()
 const router = useRouter()
@@ -114,7 +110,7 @@ const loading = ref(false)
 const listError = ref('')
 const dialogVisible = ref(false)
 const editingRow = ref(null)
-const editOrder = ref([])
+const selectedType = ref('')
 const editError = ref('')
 const saving = ref(false)
 const conflict = ref(false)
@@ -174,28 +170,25 @@ function resetFilters() {
 
 function openEdit(row) {
   editingRow.value = row
-  editOrder.value = row.configuration.order.map(item => item.type)
+  selectedType.value = row.configuration.order[0].type
   editError.value = ''
   conflict.value = false
   dialogVisible.value = true
 }
 
-function move(index, direction) {
-  editOrder.value = movePricePriority(editOrder.value, index, direction)
-}
-
-async function saveOrder() {
+async function saveType() {
   if (saving.value || conflict.value || !editingRow.value) return
-  editError.value = validatePricePriority(editOrder.value)
-  if (editError.value) return
+  let order
+  try { order = financePriceOrder(selectedType.value); editError.value = '' }
+  catch (error) { editError.value = error.message; return }
   saving.value = true
   try {
     await updateMaterialPricePriority(editingRow.value.id, {
       expectedRevision: editingRow.value.configuration.revision,
-      order: [...editOrder.value],
+      order,
     })
     dialogVisible.value = false
-    ElMessage.success('取价顺序已保存，相关报价需重新准备价格')
+    ElMessage.success('指定价格类型已保存，相关报价需重新准备价格')
     await fetchList()
   } catch (error) {
     conflict.value = Number(error?.resultCode) === 409
@@ -218,7 +211,7 @@ async function restoreDefault(row) {
       expectedRevision: row.configuration.revision,
       restoreDefault: true,
     })
-    ElMessage.success('已恢复默认顺序，相关报价需重新准备价格')
+    ElMessage.success('已恢复自动取价，相关报价需重新准备价格')
     await fetchList()
   } catch (error) {
     ElMessage.error(error?.message || '恢复默认失败')
@@ -241,7 +234,5 @@ h2 { margin: 0; font-size: 18px; font-weight: 600; }
 .hint { color: #64748b; font-size: 12px; line-height: 1.7; }
 p.hint { margin: 0; }
 .scope-label { color: #475569; }
-.priority-list { list-style: none; padding: 0; }
-.priority-list li { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #e5e7eb; }
 .el-alert { margin-bottom: 12px; }
 </style>

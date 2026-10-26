@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import fs from 'node:fs'
 import path from 'node:path'
-import { rangeTraceExplanation, rangeTraceMeta } from '../src/components/costRunTraceDrawerUtils.js'
+import { formatTraceMoney, formatTraceValue, rangeTraceExplanation, rangeTraceMeta } from '../src/components/costRunTraceDrawerUtils.js'
 
 const DETAIL_PAGE_FILE = path.resolve(import.meta.dirname, '../src/pages/CostRunDetailPage.vue')
 const DRAWER_FILE = path.resolve(import.meta.dirname, '../src/components/CostRunTraceDrawer.vue')
@@ -13,32 +13,41 @@ const drawerContent = fs.readFileSync(DRAWER_FILE, 'utf-8')
 const apiContent = fs.readFileSync(API_FILE, 'utf-8')
 
 describe('T10 成本一览表核算底稿抽屉', () => {
+  it('保存金额的十进制文本不丢精度，空白与明确零分开', () => {
+    assert.equal(formatTraceMoney('999999999999.999999'), '999999999999.999999')
+    assert.equal(formatTraceMoney('999999999999.99999900'), '999999999999.999999')
+    assert.equal(formatTraceMoney('1.234567'), '1.234567')
+    assert.equal(formatTraceMoney('10.000000'), '10')
+    assert.equal(formatTraceMoney('0.000000'), '0')
+    assert.equal(formatTraceMoney(null), '-')
+    const variables = JSON.parse('{"amount":"999999999999.999999","source":"PROFILE"}')
+    assert.equal(formatTraceValue(variables.amount), '999999999999.999999')
+    assert.equal(formatTraceValue(variables.source), 'PROFILE')
+    assert.equal(formatTraceValue('0.00000000'), '0')
+    assert.equal(formatTraceValue(null), '-')
+  })
   it('详情页工具栏和金额列接入核算底稿抽屉', () => {
     assert.match(detailPageContent, /CostRunTraceDrawer/)
     assert.match(detailPageContent, />核算底稿</)
     assert.match(detailPageContent, /openTraceDrawer\(\)/)
-    assert.match(detailPageContent, /openPartTrace\(item\)/)
-    assert.match(detailPageContent, /openCostTrace\('DIRECT_LABOR'\)/)
-    assert.match(detailPageContent, /openCostTrace\('MGMT_EXP'\)/)
-    assert.match(detailPageContent, /openCostTrace\('TOTAL'\)/)
-    assert.match(detailPageContent, /class="trace-link/)
+    assert.match(detailPageContent, /<JjbSheet[^>]+@trace="openSheetTrace"/)
+    assert.match(detailPageContent, /rowKey: row.key/)
+    assert.match(detailPageContent, /partItemId: row.partItemIds/)
+    assert.match(detailPageContent, /costItemId: row.costItemIds/)
     assert.match(detailPageContent, /productCode \|\| route\.query\.materialCode/)
   })
 
-  it('上卷行显示父件和子件，底稿仍使用原始父件料号', () => {
-    assert.match(detailPageContent, /displayPartName: toText\(item\.displayPartName \|\| item\.partName\)/)
-    assert.match(detailPageContent, /displayPartCode: toText\(item\.displayPartCode \|\| item\.partCode\)/)
-    assert.match(detailPageContent, /displayDrawingNo: toText\(item\.displayPartDrawingNo \|\| item\.partDrawingNo\)/)
-    assert.match(detailPageContent, /class="part-identity">\{\{ item\.displayPartName \}\}/)
-    assert.match(detailPageContent, /partCode: item\?\.partCode/)
-    assert.match(detailPageContent, /wrapText: true/)
+  it('共用展示模型把保存行身份传到底稿，显示名称不改变定位', () => {
+    const body = detailPageContent.match(/function openSheetTrace\(row\) \{([\s\S]*?)\n\}/)[1]
+    let selected
+    const open = new Function('row', 'openTraceDrawer', body)
+    open({ key: 'saved-part-17', code: '显示子件', name: '父件 / 子件', partItemIds: [17], costItemIds: [21] }, value => { selected = value })
+    assert.deepEqual(selected, { rowKey: 'saved-part-17', partItemId: 17, costItemId: 21, costCode: '显示子件' })
   })
 
   it('完整成本表不展示也不导出运费', () => {
     assert.doesNotMatch(detailPageContent, /OTHER_EXP_FREIGHT/)
     assert.doesNotMatch(detailPageContent, />运费</)
-    assert.match(detailPageContent, /setCellValue\(rowIndexFinal\(40\), 1, '工装费'\)/)
-    assert.match(detailPageContent, /getOtherExpenseValueByName\('工装费'\)/)
   })
 
   it('底稿抽屉按 costRunNo 拉列表和详情并展示通用 JSON 区块', () => {

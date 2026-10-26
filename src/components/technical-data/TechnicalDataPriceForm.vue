@@ -11,7 +11,7 @@
         <button v-for="row in filteredRows" :key="row.itemKey" type="button" :class="{ active: selectedKey === row.itemKey }" @click="select(row)">
           <b>{{ row.materialNo }}</b><span>{{ row.name || '未提供名称' }}</span>
           <small>{{ row.status === 'AVAILABLE' ? `已有价格 ${row.unitPrice}` : row.status === 'ERROR' ? row.message : ownerLabel(row) }}</small>
-          <em v-if="drafts[row.itemKey] && row.status === 'MISSING'">{{ PRICE_MODES[drafts[row.itemKey].entryMode] }}</em>
+          <em v-if="drafts[row.itemKey] && ['MISSING', 'REVISION'].includes(row.status)">{{ PRICE_MODES[drafts[row.itemKey].entryMode] }}</em>
         </button>
         <el-empty v-if="!filteredRows.length" :description="rows.length ? '没有匹配的料件' : '当前没有需处理的料件'" :image-size="50" />
         </div>
@@ -28,6 +28,7 @@
         </template>
         <el-alert v-else-if="selected.status === 'ERROR'" type="error" :closable="false" :title="selected.message || '取价失败，请重新检查价格来源'" />
         <template v-else>
+        <el-alert v-if="selected.status === 'REVISION'" type="info" :closable="false" :title="selected.message" />
         <el-radio-group :model-value="draft.entryMode" :disabled="!itemEditable || busy" @change="changeMode">
           <el-radio-button v-for="(label, mode) in PRICE_MODES" :key="mode" :value="mode">{{ label }}</el-radio-button>
         </el-radio-group>
@@ -86,19 +87,19 @@ const selected = computed(() => rows.value.find(row => row.itemKey === selectedK
 const draft = computed(() => drafts.value[selectedKey.value])
 const publication = computed(() => workspace.value?.publications?.find(row => row.itemKey === selectedKey.value))
 const owner = row => workspace.value?.owners.find(value => value.materialNo === row.materialNo)
-const itemEditable = computed(() => canEdit.value && selected.value?.status === 'MISSING' && (!owner(selected.value) || owner(selected.value).productId === props.productId))
+const itemEditable = computed(() => canEdit.value && ['MISSING', 'REVISION'].includes(selected.value?.status) && (!owner(selected.value) || owner(selected.value).productId === props.productId))
 const signature = computed(() => JSON.stringify(drafts.value))
 let disposed = false, generation = 0
 watch(busy, value => emit('busy', value))
 watch(signature, value => emit('dirty', value !== original.value))
-const ownerLabel = row => row.status === 'RECORDED' ? '已提交资料' : owner(row) ? `${owner(row).assigneeName || '原技术员'}办理 · ${['SUBMITTED', 'APPROVED'].includes(owner(row).moduleStatus) ? '已提交，待可用性检查' : '等待原资料完成'}` : '需要补价'
+const ownerLabel = row => row.status === 'REVISION' ? '修改原补录来源' : row.status === 'RECORDED' ? '已提交资料' : owner(row) ? `${owner(row).assigneeName || '原技术员'}办理 · ${['SUBMITTED', 'APPROVED'].includes(owner(row).moduleStatus) ? '已提交，待可用性检查' : '等待原资料完成'}` : '需要补价'
 
 function restore(data) {
   workspace.value = data
   modeDrafts.value = {}
   const saved = Object.fromEntries((data.content?.items || []).map(row => [row.itemKey, row]))
   drafts.value = Object.fromEntries(rows.value.map(row => [row.itemKey, priceDraft(saved[row.itemKey])]))
-  if (!rows.value.some(row => row.itemKey === selectedKey.value)) selectedKey.value = rows.value.find(row => row.status === 'MISSING')?.itemKey || rows.value[0]?.itemKey || ''
+  if (!rows.value.some(row => row.itemKey === selectedKey.value)) selectedKey.value = rows.value.find(row => ['MISSING', 'REVISION'].includes(row.status))?.itemKey || rows.value[0]?.itemKey || ''
   original.value = signature.value
   emit('dirty', false)
 }

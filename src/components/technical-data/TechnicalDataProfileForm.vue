@@ -12,11 +12,6 @@
       </el-select>
       <small class="material-note">{{ plate.historical ? '本版本保存的板片材质' : plate.mode === 'CONFIG_LOCKED' ? '由型号—板片材质对照表自动带出，不可修改' : '请按实际产品选择板片材质' }}</small>
     </el-form-item>
-    <el-form-item label="是否含新增工装模具认证费" required>
-      <el-select v-model="draft.hasAdditionalFees" aria-label="是否含新增费用" placeholder="请选择">
-        <el-option label="是" :value="true" /><el-option label="否" :value="false" />
-      </el-select>
-    </el-form-item>
     </div>
     <p v-if="!plate && ['FROZEN', 'SUBMITTED', 'APPROVED'].includes(draft.versionStatus)" class="material-note">该历史版本未采集板片材质。</p>
     <el-alert v-if="plate?.sourceChanged" title="板片材质来源已变化，请核对当前判定后重新保存。" type="warning" :closable="false" show-icon>
@@ -28,9 +23,9 @@
       <el-button :loading="refreshing" :disabled="busy" @click="refreshMaterial">重新读取材质判定</el-button>
     </div>
     <h3>费用信息</h3>
-    <p class="fee-note">填写本产品每件计入成本的费用，无费用填 /。选“是”时三项必填；选“否”时可留空。</p>
+    <p class="fee-note">四项费用均可选填，按元/件直接计入本产品成本。未填写请留空；明确无费用可填 0 或 /。</p>
     <table class="fee-table"><thead><tr><th>费用项目</th><th>单件费用（元/件） / 无费用</th></tr></thead><tbody>
-      <tr v-for="fee in fees" :key="fee.field"><td>{{ fee.label }}<span v-if="draft.hasAdditionalFees" class="required"> *</span></td><td><el-input v-model="draft[fee.field]" :aria-label="fee.label" maxlength="24" placeholder="单件金额或 /" /></td></tr>
+      <tr v-for="fee in fees" :key="fee.field"><td>{{ fee.label }}</td><td><el-input v-model="draft[fee.field]" :aria-label="fee.label" maxlength="24" placeholder="单件金额或 /" /></td></tr>
     </tbody></table>
   </el-form>
 </template>
@@ -44,7 +39,7 @@ import { PLATE_MATERIAL_OPTIONS, profileDraft, validatePlateMaterial, refreshPro
 import { showErrorOnce } from '../../utils/errorHandler'
 
 const props = defineProps({ product: { type: Object, required: true }, taskId: { type: [String, Number], required: true }, editable: Boolean })
-const fees = [{ field: 'unitMouldFee', label: '模具费' }, { field: 'unitToolingFee', label: '工装费' }, { field: 'unitCertificationFee', label: '认证费' }]
+const fees = [{ field: 'unitMouldFee', label: '模具费' }, { field: 'unitCertificationFee', label: '认证费' }, { field: 'unitDepreciationFee', label: '折旧费' }, { field: 'unitToolingFee', label: '工装夹具费' }]
 const emit = defineEmits(['saved', 'dirty', 'busy'])
 const draft = ref({})
 const original = ref('{}')

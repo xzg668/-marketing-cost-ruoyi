@@ -26,6 +26,7 @@ export function technicalProfilePayload(profile) {
     unitToolingFee: profile.unitToolingFee,
     unitMouldFee: profile.unitMouldFee,
     unitCertificationFee: profile.unitCertificationFee,
+    unitDepreciationFee: profile.unitDepreciationFee,
     expectedVersion: profile.expectedVersion,
     plateMaterial: plate?.mode === 'HIDDEN' ? null : plate?.value,
     expectedPlateMaterialRevision: plate?.revision,
