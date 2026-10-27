@@ -474,14 +474,14 @@ async function loadDetail() {
   const requestedOaNo = scope.oaNo
   loading.value = true
   try {
+    const preparation = materials.refresh()
     const base = await fetchQuoteRequestDetail(requestedOaNo)
     if (!scope.isCurrent()) return
     detail.value = withQuoteItemWorkflow(base)
     loading.value = false
     await locateReturnRow()
     if (!scope.isCurrent()) return
-    await materials.refresh()
-    await loadBatchProgress()
+    await Promise.all([preparation, loadBatchProgress()])
     if (scope.isCurrent()) await continueElectronicDrawingCosting()
   } catch (error) {
     if (!scope.isCurrent()) return
@@ -534,10 +534,9 @@ const { batchRun, batchSubmitting, loadBatchProgress, submitWholeQuoteCosting, c
       return outcome.batch
     },
     refreshDetail: async (scope) => {
-      const base = await fetchQuoteRequestDetail(scope.oaNo)
+      const [base] = await Promise.all([fetchQuoteRequestDetail(scope.oaNo), materials.refresh()])
       if (!scope.isCurrent()) return
       detail.value = withQuoteItemWorkflow(base)
-      await materials.refresh()
     },
     onSubmitted: (next) => ElMessage.success(`整单核算已提交，共 ${next?.totalCount || 0} 个产品`),
     onError: (error) => ElMessage.error(error?.message || '整单核算提交失败'),
@@ -581,11 +580,11 @@ async function refreshQuoteState(showMessage = true) {
   const scope = captureScope()
   checking.value = true
   try {
+    const preparation = materials.refresh()
     const base = await fetchQuoteRequestDetail(scope.oaNo)
     if (!scope.isCurrent()) return
     detail.value = withQuoteItemWorkflow(base)
-    await materials.refresh()
-    await loadBatchProgress()
+    await Promise.all([preparation, loadBatchProgress()])
     if (scope.isCurrent() && showMessage) ElMessage.success('报价、技术资料与成本状态已刷新')
   } catch (error) {
     if (scope.isCurrent()) ElMessage.error(error?.message || '刷新产品状态失败')

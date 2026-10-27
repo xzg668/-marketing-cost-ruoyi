@@ -57,6 +57,7 @@ const buildLinkedItemsExcelForm = (file, pricingMonth, options = {}) => {
   const form = new FormData()
   form.append('file', file)
   form.append('pricingMonth', pricingMonth)
+  if (options.priceOrgCode) form.append('priceOrgCode', options.priceOrgCode)
   if (options.technicalContext) {
     for (const key of ['technicalVersionId', 'oaNo', 'oaFormItemId']) form.append(key, options.technicalContext[key])
   }

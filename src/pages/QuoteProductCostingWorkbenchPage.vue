@@ -1642,13 +1642,16 @@ const inputGapGuideText = computed(() => {
 })
 
 async function loadWorkbench(options = {}) {
-  if (!historyViewMode.value) await materials.refresh()
   const { resetTab = false, loadChildren = true } = options
   if (!oaNo.value || !itemId.value) return
   loading.value = true
   try {
     clearEffectiveBom()
-    workbench.value = await fetchQuoteCostingWorkbench(oaNo.value, itemId.value)
+    const [nextWorkbench] = await Promise.all([
+      fetchQuoteCostingWorkbench(oaNo.value, itemId.value),
+      historyViewMode.value ? Promise.resolve() : materials.refresh(),
+    ])
+    workbench.value = nextWorkbench
     if (historyViewMode.value) {
       activeTab.value = 'COST_RUN'
       resetCurrentInputTabs()
@@ -1712,11 +1715,9 @@ async function refreshAllTabData() {
     return
   }
   refreshingTabs.value = true
-  await loadAlternativeFeatureStatus(false)
   await Promise.allSettled([
-    alternativeFeatureEnabled.value
-      ? loadAlternativeGroups(false)
-      : Promise.resolve(),
+    loadAlternativeFeatureStatus(false).then(() => alternativeFeatureEnabled.value
+      ? loadAlternativeGroups(false) : undefined),
     pricingBomReadyForNextStep.value ? loadPriceType(false) : Promise.resolve(),
     loadPricePrepare(false),
     loadCostRun(false),

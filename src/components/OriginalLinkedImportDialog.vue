@@ -4,6 +4,10 @@
     @update:model-value="$emit('update:modelValue', $event)">
     <div class="import-context">
       <span>{{ pricingMonth }} · {{ businessUnitLabel(businessUnitType) }}</span>
+      <el-select v-model="priceOrgCode" aria-label="原稿未列组织时的适用组织" :disabled="busy" style="width: 230px" @change="previewFile">
+        <el-option label="原稿未列组织时：商用" value="210" />
+        <el-option label="原稿未列组织时：板换" value="220" />
+      </el-select>
       <el-upload ref="upload" :auto-upload="false" :limit="1" accept=".xlsx,.xls" :disabled="busy"
         :on-change="changed" :on-remove="removed" :on-exceed="replaceFile">
         <el-button :disabled="busy">选择原稿</el-button>
@@ -74,6 +78,7 @@ import { originalPublicationMessage, businessUnitLabel, originalActionLabel, ori
 const props = defineProps({ modelValue: Boolean, pricingMonth: String, businessUnitType: String })
 const emit = defineEmits(['update:modelValue', 'imported'])
 const upload = ref(null), file = ref(null), preview = ref(null), error = ref('')
+const priceOrgCode = ref('210')
 const previewing = ref(false), publishing = ref(false), tab = ref('prices')
 const busy = computed(() => previewing.value || publishing.value)
 const summary = computed(() => originalSummary(preview.value?.rows, preview.value?.errors))
@@ -88,7 +93,7 @@ const previewFile = async () => {
   const current = generation
   previewing.value = true
   try {
-    const result = await previewLinkedItemsExcel(file.value, props.pricingMonth, { businessUnitType: props.businessUnitType })
+    const result = await previewLinkedItemsExcel(file.value, props.pricingMonth, { businessUnitType: props.businessUnitType, priceOrgCode: priceOrgCode.value })
     if (current !== generation) return
     preview.value = result
     tab.value = result.canConfirm ? 'prices' : 'errors'
@@ -109,6 +114,7 @@ const publish = async () => {
   try {
     const result = await importLinkedItemsExcel(file.value, props.pricingMonth, {
       businessUnitType: props.businessUnitType,
+      priceOrgCode: priceOrgCode.value,
       previewFileSha256: preview.value.fileSha256, previewFingerprint: preview.value.previewFingerprint,
     })
     if (current !== generation) return
