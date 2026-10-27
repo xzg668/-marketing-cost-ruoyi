@@ -4,6 +4,27 @@ export const ELECTRONIC_DRAWING_SEARCH_TYPES = [
   { value: 'MATERIAL_NAME', label: '物料名称' },
 ]
 
+// 成品根节点仅用于展示报价产品；图库行仍使用已保存的父子关系和相对用量。
+export function buildDrawingSourceTree(items = [], product = {}) {
+  if (!items.length) return []
+  const bySequence = new Map(items.map(item => [item.sourceSequence, { ...item, children: [] }]))
+  const roots = []
+  for (const row of bySequence.values()) {
+    const parent = row.parentSourceSequence && bySequence.get(row.parentSourceSequence)
+    if (parent) parent.children.push(row)
+    else roots.push(row)
+  }
+  return [{
+    sourceSequence: 'QUOTE_PRODUCT',
+    isProductRoot: true,
+    materialNo: product.materialNo,
+    productName: product.productName,
+    sunlModel: product.sunlModel,
+    customerDrawing: product.customerDrawing,
+    children: roots,
+  }]
+}
+
 export function pendingElectronicDrawingItems(state) {
   return (state?.items || []).filter((item) => item?.requiresAction)
 }

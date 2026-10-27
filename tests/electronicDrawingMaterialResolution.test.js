@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import test from 'node:test'
 import {
   ELECTRONIC_DRAWING_SEARCH_TYPES,
+  buildDrawingSourceTree,
   buildElectronicDrawingResolutionRequest,
   isElectronicDrawingVersionConflict,
   nextUnselectedElectronicDrawingItem,
@@ -31,6 +32,30 @@ const state = {
     { sourceNodeId: 3, requiresAction: true, drawingCode: 'M8', sourceName: '六角螺母' },
   ],
 }
+
+test('图库树以报价成品为唯一根节点，保留原父子关系、重复图号的独立节点和用量', () => {
+  const rows = [
+    { sourceSequence: 'G1:R2', parentSourceSequence: 'G1:R1', drawingCode: 'PART', quantity: 3 },
+    { sourceSequence: 'G1:R1', parentSourceSequence: null, drawingCode: 'ASSY', quantity: 2 },
+    { sourceSequence: 'G1:R3', parentSourceSequence: null, drawingCode: 'PART', quantity: 4 },
+  ]
+  const original = structuredClone(rows)
+  const product = { materialNo: '1145100050625', productName: '压力变送器', sunlModel: 'YCQC15H802' }
+  const tree = buildDrawingSourceTree(rows, product)
+  assert.equal(tree.length, 1)
+  assert.equal(tree[0].isProductRoot, true)
+  assert.equal(tree[0].materialNo, product.materialNo)
+  assert.equal(tree[0].productName, product.productName)
+  const children = tree[0].children
+  assert.equal(children.length, 2)
+  assert.equal(children[0].sourceSequence, 'G1:R1')
+  assert.equal(children[0].quantity, 2)
+  assert.equal(children[0].children[0].sourceSequence, 'G1:R2')
+  assert.equal(children[0].children[0].quantity, 3)
+  assert.equal(children[1].quantity, 4)
+  assert.deepEqual(rows, original)
+  assert.deepEqual(buildDrawingSourceTree(), [])
+})
 
 test('只把未匹配和歧义物料放入财务选择清单，正常自动匹配项不出现', () => {
   assert.deepEqual(pendingElectronicDrawingItems(state).map((item) => item.sourceNodeId), [2, 3])

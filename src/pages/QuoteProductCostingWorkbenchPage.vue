@@ -160,8 +160,8 @@
           >
             <div class="pricing-bom-summary">
               <div>
-                <strong>计价 BOM</strong>
-                <span>{{ presentedEffectiveBom.nodes.length }} 个节点</span>
+                <strong>{{ showDrawingBomPreview ? '图库 BOM（待完善）' : '计价 BOM' }}</strong>
+                <span v-if="!showDrawingBomPreview">{{ presentedEffectiveBom.nodes.length }} 个节点</span>
               </div>
               <div class="pricing-bom-summary-status">
                 <el-tag v-if="effectiveBomPreviewActive" type="warning" effect="light">
@@ -172,7 +172,7 @@
                 </el-tag>
                 <span v-if="presentedEffectiveBom.alternativeSelections?.length">{{ effectiveAlternativeSummaryText }}</span>
               </div>
-              <div class="toolbar-actions">
+              <div v-if="!showDrawingBomPreview" class="toolbar-actions">
                 <el-button
                   v-if="alternativeFeatureEnabled"
                   v-hasPermi="['quote:costing:bom:alternative-select']"
@@ -190,7 +190,7 @@
             </div>
 
             <el-alert
-              v-if="effectiveBomBlocked"
+              v-if="effectiveBomBlocked && !showDrawingBomPreview"
               type="error"
               show-icon
               :closable="false"
@@ -215,7 +215,9 @@
               :title="presentedEffectiveBom.warnings.join('；')"
             />
 
-            <div class="pricing-bom-designer">
+            <DrawingBomPreview v-if="showDrawingBomPreview" :oa-no="oaNo" :item-id="itemId"
+              :product="item" :month="displayedPeriodMonth" :revision="drawingBomRevision" />
+            <div v-else class="pricing-bom-designer">
               <div class="pricing-bom-tree-column">
             <div class="bom-tree-panel" v-loading="effectiveBomLoading">
               <div v-if="!hasProductIdentity" class="empty-tip">当前产品行无料号、型号和图号</div>
@@ -1139,6 +1141,7 @@ import { useDrawingCostingContinuation } from '../composables/useDrawingCostingC
 import { useQuoteCostingPreparation } from '../composables/useQuoteCostingPreparation'
 import AuxiliaryClassificationPanel from '../components/technical-data/AuxiliaryClassificationPanel.vue'
 import DrawingVerificationPanel from '../components/quotation/DrawingVerificationPanel.vue'
+import DrawingBomPreview from '../components/quotation/DrawingBomPreview.vue'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -1233,8 +1236,10 @@ const drawingContinuation = useDrawingCostingContinuation(computed(() => `${oaNo
   onError: error => ElMessage.warning(error?.message || '图纸已确认，请按当前状态继续核算'),
 })
 let lastDrawingState = ''
+const drawingWorkspace = ref(null)
 async function onDrawingState(workspace) {
-  const next = `${workspace.current?.localTaskId}:${workspace.current?.taskState}:${workspace.current?.consumptionState}`
+  drawingWorkspace.value = workspace
+  const next = `${workspace.current?.localTaskId}:${workspace.current?.taskState}:${workspace.current?.consumptionState}:${workspace.workflowStage}:${workspace.sourceVersionId}`
   const changed = lastDrawingState && lastDrawingState !== next
   lastDrawingState = next
   await drawingContinuation.accept(workspace)
@@ -1402,10 +1407,18 @@ const bomTreeProps = {
   children: 'children',
 }
 const presentedEffectiveBom = computed(() => effectiveBomPreview.value || effectiveBom.value)
+const showDrawingBomPreview = computed(() => !historyViewMode.value
+  && String(drawingWorkspace.value?.itemId) === String(itemId.value)
+  && drawingWorkspace.value?.accountingMonth === displayedPeriodMonth.value
+  && drawingWorkspace.value?.current?.taskState === 'RECEIVED'
+  && drawingWorkspace.value?.sourceVersionId
+  && !presentedEffectiveBom.value.nodes.length)
+const drawingBomRevision = computed(() => `${drawingWorkspace.value?.sourceVersionId}:${drawingWorkspace.value?.workflowStage}:${classificationRevision.value}`)
 const effectiveBomPreviewActive = computed(() => Boolean(effectiveBomPreview.value))
 const effectiveBomTreeData = computed(() => buildQuoteEffectiveBomTree(presentedEffectiveBom.value.nodes))
 const effectiveBomDefaultExpandedKeys = computed(() => effectiveBomTreeData.value.map((node) => node.nodeKey))
 const effectiveBomStateInfo = computed(() => {
+  if (showDrawingBomPreview.value) return { label: '待完善图库资料', type: 'warning' }
   if (String(costingWorkspace.value.workspaceStatus || '').toUpperCase() === 'STALE') {
     return { label: '待重算', type: 'warning' }
   }
@@ -1602,6 +1615,7 @@ const costingStatusSummary = computed(() => {
   if (materialError.value) return '资料状态读取失败'
   if (costRunActionLoading.value || hasRunningCostVersion.value) return '正在核算'
   if (materialState.value?.canCost === false) return '暂不能核算'
+  if (showDrawingBomPreview.value) return '图库明细已接收，待完善物料后继续核算'
   if (hasPriceGaps.value) return `价格缺口 ${currentPriceSourceGapCount()} 项`
   if (costingWorkspace.value.workspaceStatus === 'WAIT_TECH_DATA') return '待补齐技术资料'
   return costRunWorkbenchStatusText.value
@@ -1734,7 +1748,8 @@ function resetCurrentInputTabs() {
 }
 
 async function loadAlternativeFeatureStatus(showError = true) {
-  if (!oaNo.value || !itemId.value) {
+  if (!oaNo.value || !itemId.value
+      || (!pricingBomReadyForNextStep.value && ['NO_BOM', 'ENTRY_PENDING'].includes(workbench.value.bomStatus?.bomStatus))) {
     alternativeFeatureEnabled.value = false
     alternativeSummary.value = emptyAlternativeSummary()
     return
@@ -2641,6 +2656,7 @@ async function submitProductCosting(reason = 'USER_REQUEST') {
     const result = checkMaterials
       ? outcome.product || outcome.checks?.find(check => String(check.oaFormItemId) === itemId.value)
       : await submitQuoteProductCostRun(oaNo.value, itemId.value, { periodMonth: workbench.value.periodMonth, reason })
+    classificationRevision.value++
     await loadWorkbench({ resetTab: false, loadChildren: true })
     if (outcome && !result) {
       ElMessage.warning(outcome.preparation.message)
@@ -2857,6 +2873,7 @@ function tabBadgeLabel(tab) {
     return effectiveBomStateInfo.value.label
   }
   if (code === 'QUOTE_BOM') {
+    if (showDrawingBomPreview.value) return '待生成计价明细'
     const workspaceStatus = String(costingWorkspace.value.workspaceStatus || '').toUpperCase()
     if (workspaceStatus === 'STALE') return '待重算'
     if (workspaceStatus === 'WAIT_BOM') return '缺 BOM'
@@ -2902,6 +2919,7 @@ function tabBadgeType(tab) {
     return effectiveBomStateInfo.value.type
   }
   if (code === 'QUOTE_BOM') {
+    if (showDrawingBomPreview.value) return 'warning'
     const workspaceStatus = String(costingWorkspace.value.workspaceStatus || '').toUpperCase()
     if (workspaceStatus === 'WAIT_BOM') return 'danger'
     if (workspaceStatus === 'STALE') return 'warning'
