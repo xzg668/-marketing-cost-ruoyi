@@ -4,6 +4,18 @@ export const priceUnitLabel = (unit) => ({
   'CNY/G': '元/克',
 }[unit] || unit)
 
+export function financePreviousMonthExport(scope) {
+  if (!['210', '220'].includes(scope?.priceOrgCode)) throw new Error('请选择商用或板换')
+  if (!/^[0-9]{4}-(0[1-9]|1[0-2])$/.test(scope?.priceMonth || '')) throw new Error('请选择有效月份')
+  let [year, month] = scope.priceMonth.split('-').map(Number)
+  if (--month === 0) { year--; month = 12 }
+  if (year < 1) throw new Error('请选择有效月份')
+  const sourceMonth = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}`
+  const organization = scope.priceOrgCode === '210' ? '商用' : '板换'
+  return { priceMonth: scope.priceMonth, priceOrgCode: scope.priceOrgCode, sourceMonth,
+    filename: `${organization}财务基价_${sourceMonth}_用于${scope.priceMonth}.xlsx` }
+}
+
 export const factorPricePerTon = (factor) => {
   if (!factor || factor.price == null) return ''
   const value = String(factor.price)

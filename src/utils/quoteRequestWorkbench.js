@@ -106,9 +106,6 @@ const optionGroups = {
 
 const normalizeText = (value) => String(value ?? '').trim()
 
-const includesText = (value, keyword) =>
-  !normalizeText(keyword) || normalizeText(value).toLowerCase().includes(normalizeText(keyword).toLowerCase())
-
 function normalizeCalcStatus(value) {
   const normalized = normalizeText(value || '未核算')
   return calcStatusAliases[normalized] || normalized
@@ -133,21 +130,6 @@ export function normalizeQuoteRequestPage(data) {
     list: Array.isArray(data?.list) ? data.list : [],
     total: Number(data?.total || 0),
   }
-}
-
-export function filterQuoteRequestRows(rows, filters = {}) {
-  return (Array.isArray(rows) ? rows : []).filter((row) => {
-    if (!includesText(row.oaNo, filters.oaNo)) return false
-    if (!includesText(row.processCode, filters.processCode)) return false
-    if (!includesText(row.customer, filters.customer)) return false
-    if (filters.sourceType && row.sourceType !== filters.sourceType) return false
-    if (filters.quoteScenario && row.quoteScenario !== filters.quoteScenario) return false
-    if (filters.classificationStatus && row.classificationStatus !== filters.classificationStatus) return false
-    if (filters.bomAggregateStatus && row.bomAggregateStatus !== filters.bomAggregateStatus) return false
-    if (filters.calcStatus && normalizeCalcStatus(row.calcStatus) !== filters.calcStatus) return false
-    if (filters.completionStatus && quoteRequestCompletionValue(row) !== filters.completionStatus) return false
-    return true
-  })
 }
 
 export function canConfirmClassification(row) {

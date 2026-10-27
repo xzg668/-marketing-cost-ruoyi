@@ -3,14 +3,9 @@
     <el-alert title="只读取「10月线圈询价」的料号、原报价成本P和两项费用率H。其他列保留为财务参考；发布来源不会改写已采用的月价。" type="info" :closable="false" />
     <el-form label-width="125px" class="source-form" :disabled="state.busy || locked" @submit.prevent="inspect">
       <el-form-item label="来源年月"><el-date-picker v-model="form.sourceMonth" type="month" value-format="YYYY-MM" placeholder="明确选择来源年月" /></el-form-item>
-      <div class="context-fields">
-        <el-form-item label="来源计价单位"><el-input v-model="form.unit" placeholder="财务确认的单位" /></el-form-item>
-        <el-form-item label="来源币种"><el-input v-model="form.currency" placeholder="如 CNY" maxlength="3" /></el-form-item>
-        <el-form-item label="来源税口径"><el-select v-model="form.taxBasis" placeholder="明确选择税口径" style="width:145px"><el-option label="不含税" value="EXCLUDED" /><el-option label="含税" value="INCLUDED" /></el-select></el-form-item>
-      </div>
       <el-form-item label="询价原件"><input aria-label="家用询价原件" type="file" accept=".xls,.xlsx" :disabled="state.busy || locked" @change="selectFile" /><span v-if="file" class="file-name">{{ file.name }}</span></el-form-item>
     </el-form>
-    <p class="hint">来源年月仅用于来源追溯，不决定核算月份；文件页签中的“10月”不能证明年份。单位、币种和税口径须依据财务说明填写。</p>
+    <p class="hint">固定格式：人民币（CNY）、元/件、不含税。来源年月仅用于来源追溯，不决定核算月份；文件页签中的“10月”不能证明年份。</p>
     <el-alert v-if="state.error || localError" :title="localError || state.error" type="error" :closable="false" role="alert" />
     <el-alert v-if="state.phase === 'UNCERTAIN'" :title="state.preview?.status === 'PUBLISHED' ? '原请求已发布，请读取当时的发布回执；当前来源请在列表重新查询。' : '发布结果尚未确认。原请求已保留，可关闭后继续核验；核验不会创建替代请求。'" type="warning" :closable="false" />
     <el-alert v-if="expired && state.phase !== 'UNCERTAIN' && state.phase !== 'DONE'" title="预览已过期，请重新预览后发布。" type="warning" :closable="false" />
@@ -61,7 +56,7 @@ const emit = defineEmits(['imported'])
 const session = shallowRef(null), file = shallowRef(null), localError = ref('')
 let alive = true, downloadSequence = 0
 watch(() => props.canDownload, () => { downloadSequence++ }, { flush: 'sync' })
-const form = ref({ sourceMonth: '', unit: '', currency: '', taxBasis: '' })
+const form = ref({ sourceMonth: '' })
 const empty = { phase: 'EMPTY', preview: null, result: null, error: '', busy: false }
 const state = computed(() => session.value?.state || empty)
 const locked = computed(() => Boolean(state.value.preview) || ['UNCERTAIN', 'PUBLISHING'].includes(state.value.phase))
@@ -71,12 +66,12 @@ const actionSummary = computed(() => ['CREATE', 'NEW_VERSION', 'UNCHANGED'].map(
 watch([visible, () => props.scope], async ([open, scope]) => {
   session.value?.dispose(); session.value = null
   if (!open || !scope) return
-  file.value = null; localError.value = ''; form.value = { sourceMonth: '', unit: '', currency: '', taxBasis: '' }
+  file.value = null; localError.value = ''; form.value = { sourceMonth: '' }
   const current = createInquiryImportSession({ api: householdImportApi, storage: sessionStorage, scope })
   session.value = current; await current.resume()
   if (session.value !== current) return
   const content = current.state.preview?.content
-  if (content) form.value = { sourceMonth: content.sourceMonth, ...content.priceContext }
+  if (content) form.value = { sourceMonth: content.sourceMonth }
 }, { immediate: true })
 function selectFile(event) { file.value = event.target.files?.[0] || null; localError.value = '' }
 async function inspect() { localError.value = ''; await session.value.inspect(file.value, form.value) }
@@ -98,5 +93,5 @@ async function close() {
 onBeforeUnmount(() => { alive = false; session.value?.dispose() })
 </script>
 <style scoped>
-.source-form { margin-top: 18px; }.context-fields { display: flex; flex-wrap: wrap; }.context-fields .el-form-item { width: 31%; margin-right: 2%; }.hint, .file-name, section p { color: #606266; font-size: 13px; }.file-name { margin-left: 12px; }.preview-section, .result-section { margin-top: 16px; }.el-alert { margin-bottom: 12px; }
+.source-form { margin-top: 18px; }.hint, .file-name, section p { color: #606266; font-size: 13px; }.file-name { margin-left: 12px; }.preview-section, .result-section { margin-top: 16px; }.el-alert { margin-bottom: 12px; }
 </style>

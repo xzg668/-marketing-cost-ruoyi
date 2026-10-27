@@ -1,4 +1,28 @@
+import { isSupplierRatioGap } from './priceSourceGaps.js'
+
 export const PRICE_MODES = { REFERENCE: '参考已有公式', MANUAL: '自行填写公式', FIXED: '固定不含税价' }
+
+// 只读查看使用本次真实缺口和 BOM 元数据，不创建任务，也不读取技术员未提交的草稿。
+export function priceEntryPreview(check, workbench) {
+  const materials = new Map(), issues = []
+  const bom = (workbench?.bomRows || []).flatMap(row => [row, ...(row.rollupComponents || [])])
+  for (const gap of check?.gaps?.records || []) {
+    if (gap.gapType !== 'MISSING_PRICE' || isSupplierRatioGap(gap, check.supplierPriceReviews || [])) continue
+    const code = gap.gapMaterialCode || gap.materialCode
+    if (!code || materials.has(code)) continue
+    const matches = bom.filter(row => (row.childCode || row.materialCode) === code)
+    const units = new Set(matches.map(row => row.unit).filter(Boolean))
+    const organizations = new Set(matches.map(row => row.priceOrgCode).filter(Boolean))
+    const unit = units.size === 1 ? [...units][0] : ''
+    const organizationCode = organizations.size === 1 ? [...organizations][0] : ''
+    if (!unit || !organizationCode) issues.push(`${code} 的单位或取价组织尚未明确，请在产品取价检查中核对。`)
+    materials.set(code, { itemKey: `preview:${code}`, materialNo: code, name: gap.materialName || '',
+      unit: unit || '待核实单位', organizationCode: organizationCode || '待核实组织',
+      status: 'MISSING', unitPrice: null, message: gap.message })
+  }
+  return { editable: false, historical: false, requirements: { items: [...materials.values()], issues },
+    content: null, owners: [], issues: [], publications: [] }
+}
 
 export function priceDraft(item = {}) {
   return { entryMode: item.entryMode || 'REFERENCE', unitPrice: item.unitPrice ?? '', formula: item.formula || '',

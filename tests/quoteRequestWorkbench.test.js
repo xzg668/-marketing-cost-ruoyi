@@ -8,7 +8,6 @@ import {
   QUOTE_REQUEST_COMPLETION_OPTIONS,
   SOURCE_TYPE_OPTIONS,
   canConfirmClassification,
-  filterQuoteRequestRows,
   hasNoBom,
   isCostReadyBomStatus,
   mergeBomStatusToDetail,
@@ -98,20 +97,6 @@ describe('T11 报价单接入工作台工具', () => {
     assert.equal(statusLabel('calcStatus', 'CALCULATED'), '已核算')
     assert.equal(statusLabel('calcStatus', 'CALCULATING'), '试算中')
     assert.equal(statusLabel('calcStatus', 'PENDING'), '未核算')
-  })
-
-  it('支持报价单号、流程、来源、客户、场景、分类、BOM、核算状态筛选', () => {
-    assert.equal(filterQuoteRequestRows(rows, { oaNo: '001' }).length, 1)
-    assert.equal(filterQuoteRequestRows(rows, { processCode: 'FI-SR' }).length, 1)
-    assert.equal(filterQuoteRequestRows(rows, { sourceType: 'WEAVER_OA' }).length, 1)
-    assert.equal(filterQuoteRequestRows(rows, { customer: '华南' }).length, 1)
-    assert.equal(filterQuoteRequestRows(rows, { quoteScenario: 'UNKNOWN' }).length, 1)
-    assert.equal(filterQuoteRequestRows(rows, { classificationStatus: 'PENDING' }).length, 1)
-    assert.equal(filterQuoteRequestRows(rows, { bomAggregateStatus: 'NO_BOM' }).length, 1)
-    assert.equal(filterQuoteRequestRows(rows, { calcStatus: '已核算' }).length, 1)
-    assert.equal(filterQuoteRequestRows([{ calcStatus: 'CALCULATED' }], { calcStatus: '已核算' }).length, 1)
-    assert.equal(filterQuoteRequestRows(rows, { completionStatus: 'DONE' }).length, 1)
-    assert.equal(filterQuoteRequestRows(rows, { completionStatus: 'NOT_DONE' }).length, 1)
   })
 
   it('报价单完成状态只展示已完成和未完成', () => {

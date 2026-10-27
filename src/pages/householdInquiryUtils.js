@@ -15,11 +15,7 @@ export function inquiryPercent(value) {
 }
 export function inquiryMetadata(input) {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(input?.sourceMonth || '') || input.sourceMonth.startsWith('0000')) throw new Error('请明确选择来源年月，文件月份不代表核算月份')
-  const unit = String(input.unit || '').trim(), currency = String(input.currency || '').trim().toUpperCase()
-  if (!unit || unit.length > 255) throw new Error('请填写财务确认的来源计价单位')
-  if (!/^[A-Z]{3}$/.test(currency)) throw new Error('请填写来源币种，如 CNY')
-  if (!['EXCLUDED', 'INCLUDED'].includes(input.taxBasis)) throw new Error('请选择来源含税口径')
-  return { sourceMonth: input.sourceMonth, priceContext: { unit, currency, taxBasis: input.taxBasis } }
+  return { sourceMonth: input.sourceMonth }
 }
 export function inquiryPublishIdentity(preview) {
   if (!preview || ![preview.previewId, preview.publishRequestId].every(v => typeof v === 'string' && v.length > 0 && v.length <= 64) || !/^[a-f0-9]{64}$/.test(preview.previewFingerprint || '')) throw new Error('预览标识不完整，请重新预览')
@@ -35,7 +31,6 @@ export function inquiryPreviewForm(file, metadata) {
   const input = inquiryMetadata(metadata), body = new FormData()
   body.append('file', file)
   body.append('sourceMonth', input.sourceMonth)
-  body.append('priceContext', new Blob([JSON.stringify(input.priceContext)], { type: 'application/json' }))
   return body
 }
 export const inquiryActionLabel = action => ({ CREATE: '新建来源', NEW_VERSION: '新建版本', UNCHANGED: '同值保留版本' }[action] || action)

@@ -5,9 +5,12 @@
         <div class="page-heading">
           <div>
             <h2>财务基价</h2>
-            <p>发布基价时同步生成适用原稿的财务有效价；成功后即可使用。</p>
+            <p>选择要维护的月份，导出上月基价，修改后导入所选月份；商用与板换分别维护。</p>
           </div>
-          <el-button v-if="canImport" type="primary" @click="importVisible = true">导入财务基价表</el-button>
+          <div v-if="canImport" class="publication-actions">
+            <el-button :loading="exporting" :disabled="!exportSourceMonth || publishing" @click="exportPrevious">导出上月{{ scope.priceOrgCode === '220' ? '板换' : '商用' }}基价</el-button>
+            <el-button type="primary" :disabled="publishing" @click="importVisible = true">导入财务基价表</el-button>
+          </div>
         </div>
       </template>
       <el-form inline>
@@ -33,6 +36,7 @@
         </el-form-item>
         <el-form-item><el-button :loading="loading" @click="loadSnapshot">查询</el-button></el-form-item>
       </el-form>
+      <p v-if="canImport && exportSourceMonth" class="monthly-hint">导出来源：{{ exportSourceMonth }} 最后一次发布的全部基价；导入月份：{{ scope.priceMonth }}。发布时同步生成适用原稿的财务有效价，上月记录保留。</p>
       <el-alert v-if="loadError" :title="loadError" type="info" :closable="false" show-icon />
       <template v-if="snapshot">
         <div class="publication-summary">
@@ -71,10 +75,10 @@
     </el-card>
 
     <el-dialog v-model="importVisible" title="导入财务基价表" width="880px" :close-on-click-modal="false">
-      <p>{{ scope.priceOrgCode === '220' ? '板换' : '商用' }} · {{ scope.priceMonth }}</p>
+      <p>{{ scope.priceOrgCode === '220' ? '板换' : '商用' }} · 导入月份：{{ scope.priceMonth }}</p>
       <el-upload ref="financeUpload" :auto-upload="false" :limit="1" accept=".xls,.xlsx" :on-change="chooseFile" :on-exceed="replaceFile" :on-remove="removeFile" :disabled="publishing">
         <el-button>选择财务基价表</el-button>
-        <template #tip><div class="el-upload__tip">支持商用多方案基价表和板换基价表。预检后再确认发布。</div></template>
+        <template #tip><div class="el-upload__tip">支持修改后的上月导出文件，也支持原商用多方案基价表和板换基价表。请保留全部方案或招标/非招标列，预检后再确认发布。</div></template>
       </el-upload>
       <el-form label-width="110px" class="import-options">
         <el-form-item label="Sheet（可选）"><el-input v-model="importContext.sheetName" placeholder="多个匹配表时填写" @input="clearImportPreview" /></el-form-item>
@@ -122,12 +126,12 @@
 
 <script setup>
 import { financePublicationMessage } from '../components/originalPriceDisplay'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '../store/modules/user'
-import { fetchFinanceFactorSnapshot, previewFinanceFactors, publishFinanceFactors, previewFinanceCopper, publishFinanceCopper } from '../api/financeFactorPublications'
-import { displayFactorPrice, factorPricePerTon, priceUnitLabel, publicationCanConfirm, validateCopperAdjustment } from './financeFactorPublicationUtils'
+import { fetchFinanceFactorSnapshot, previewFinanceFactors, publishFinanceFactors, previewFinanceCopper, publishFinanceCopper, exportPreviousFinanceFactors } from '../api/financeFactorPublications'
+import { displayFactorPrice, factorPricePerTon, priceUnitLabel, publicationCanConfirm, validateCopperAdjustment, financePreviousMonthExport } from './financeFactorPublicationUtils'
 
 const user = useUserStore()
 const allowed = (permission) => user.permissions?.includes('*:*:*') || user.permissions?.includes(permission)
@@ -142,6 +146,19 @@ const scope = ref({ priceOrgCode: initialOrg, priceMonth: initialMonth, conditio
 const snapshot = ref(null)
 const loadError = ref('')
 const loading = ref(false)
+const exporting = ref(false)
+const exportSourceMonth = computed(() => { try { return financePreviousMonthExport(scope.value).sourceMonth } catch { return '' } })
+let alive = true
+const exportScope = () => JSON.stringify([scope.value.priceMonth, scope.value.priceOrgCode, user.userId, user.businessUnitType])
+async function exportPrevious() {
+  if (!canImport.value || exporting.value) return
+  const selected = exportScope()
+  const isCurrent = () => alive && canImport.value && selected === exportScope()
+  exporting.value = true
+  try { await exportPreviousFinanceFactors({ ...scope.value }, { isCurrent }) }
+  catch (error) { if (isCurrent()) ElMessage.error(error.message || '上月财务基价导出失败') }
+  finally { exporting.value = false }
+}
 const factorRows = computed(() => Object.values(snapshot.value?.factors || {}))
 const copper = computed(() => snapshot.value?.factors?.['AVG|1#CU'])
 const copperPerTon = computed(() => factorPricePerTon(copper.value))
@@ -268,10 +285,13 @@ async function confirmCopper() {
   finally { publishingCopper.value = false }
 }
 onMounted(loadSnapshot)
+onBeforeUnmount(() => { alive = false })
 </script>
 
 <style scoped>
 .finance-base-page { padding: 20px; }
+.publication-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.monthly-hint { color: #606266; font-size: 13px; line-height: 1.6; }
 .page-heading, .copper-summary { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .page-heading h2 { margin: 0 0 8px; font-size: 21px; }
 .page-heading p { margin: 0; color: #667085; font-size: 14px; }

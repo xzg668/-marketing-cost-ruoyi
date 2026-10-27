@@ -523,6 +523,22 @@
               </div>
             </div>
 
+            <el-collapse v-if="pricePrepareItems.length" class="price-check-details">
+              <el-collapse-item :title="`查看本次取价明细（${pricePrepareItems.length} 项）`" name="items">
+                <p>展示本次检查取得的单价、数量和价格来源；未取到价格的物料保留为空，具体原因见说明。</p>
+                <el-table :data="pricePrepareItems" border stripe max-height="360" class="price-check-table">
+                  <el-table-column prop="materialCode" label="料号" min-width="160" fixed="left" />
+                  <el-table-column prop="materialName" label="物料名称" min-width="170" />
+                  <el-table-column prop="quantity" label="数量" width="100" align="right" />
+                  <el-table-column label="单价" width="130" align="right"><template #default="{ row }">{{ formatSnapshotDecimal(row.unitPrice, 8) }}</template></el-table-column>
+                  <el-table-column label="金额" width="130" align="right"><template #default="{ row }">{{ formatSnapshotDecimal(row.amount, 8) }}</template></el-table-column>
+                  <el-table-column label="价格来源" min-width="150"><template #default="{ row }">{{ ({ MONTHLY_PRICE: '月度物料取价', FIXED: '固定价', LINKED: '联动价', RANGE: '区间价' })[row.priceSource] || row.priceSource || '—' }}</template></el-table-column>
+                  <el-table-column label="状态" min-width="160"><template #default="{ row }">{{ isSupplierRatioGap(row, pricePrepare.supplierPriceReviews || []) ? '供货比率待确认' : ({ READY: '已取到价格', MISSING_PRICE: '未取到价格', FAILED: '检查失败' })[row.status] || row.status }}</template></el-table-column>
+                  <el-table-column prop="message" label="说明" min-width="260" show-overflow-tooltip />
+                </el-table>
+              </el-collapse-item>
+            </el-collapse>
+
             <SupplierPriceReviewPanel
               :oa-no="oaNo"
               :item-id="itemId"
@@ -1459,8 +1475,8 @@ const visiblePricePrepareDifferences = computed(() => onlyDifferentPricePrepare.
 const pricePrepareDifferenceSummary = computed(() => pricePrepare.value.differenceSummary || {})
 const oaCuPricePerKg = computed(() => normalizeCuPricePerKg(header.value.copperPrice))
 const pricePrepareGaps = computed(() => Array.isArray(pricePrepare.value.gaps?.records) ? pricePrepare.value.gaps.records : [])
-const sourceMaintenanceGaps = computed(() => pricePrepareGaps.value.filter(row => !isSupplierRatioGap(row)))
-const priceSourceGapSummary = computed(() => summarizePriceSourceGaps(pricePrepareGaps.value))
+const sourceMaintenanceGaps = computed(() => pricePrepareGaps.value.filter(row => !isSupplierRatioGap(row, pricePrepare.value.supplierPriceReviews || [])))
+const priceSourceGapSummary = computed(() => summarizePriceSourceGaps(pricePrepareGaps.value, pricePrepare.value.supplierPriceReviews || []))
 const oaPricePrepareReady = computed(() => {
   const readiness = pricePrepare.value.readiness || {}
   const gapCount = Number(readiness.gapCount ?? pricePrepareGaps.value.length)

@@ -1,6 +1,9 @@
 /** 缺口按实际取价类型统计；供货比率审核和结构问题不冒充缺少单价。 */
-export function isSupplierRatioGap(row) {
+export function isSupplierRatioGap(row, reviews = []) {
   if (row?.reasonCode === 'SUPPLIER_RATIO_REVIEW_REQUIRED') return true
+  const materialCode = row?.gapMaterialCode || row?.materialCode
+  if (materialCode && reviews.some(review => review.status !== 'FALLBACK_HIGH'
+    && review.scope?.materialCode === materialCode)) return true
   // 旧包装缺口没有保存结构化原因，仅用于兼容展示已有批次。
   return row?.sourceTable === 'lp_package_component_price_detail'
     && String(row?.message || '').includes('供货比率不足，请确认是否有新增审核')
@@ -34,7 +37,7 @@ export function priceSourceGapKind(row) {
   return 'UNRESOLVED'
 }
 
-export function summarizePriceSourceGaps(gaps) {
+export function summarizePriceSourceGaps(gaps, reviews = []) {
   const rows = Array.isArray(gaps) ? gaps : []
   const summary = {
     all: rows.length,
@@ -50,7 +53,7 @@ export function summarizePriceSourceGaps(gaps) {
     unresolved: 0,
   }
   for (const row of rows) {
-    if (isSupplierRatioGap(row)) {
+    if (isSupplierRatioGap(row, reviews)) {
       summary.ratioReview += 1
       continue
     }

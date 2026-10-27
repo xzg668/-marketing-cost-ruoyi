@@ -1,6 +1,32 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { priceDraft, pricePayload } from '../src/utils/technicalDataPrice.js'
+import { priceDraft, pricePayload, priceEntryPreview } from '../src/utils/technicalDataPrice.js'
+
+test('unassigned form view uses actual gap units, excludes supplier review and contains no editable draft', () => {
+  const gap = { gapType: 'MISSING_PRICE', gapMaterialCode: '332030278', materialName: '绝缘套', message: '未取得可用价格' }
+  const check = { gaps: { records: [gap, gap,
+    { gapType: 'MISSING_PRICE', gapMaterialCode: '201350625' },
+    { gapType: 'MISSING_STRUCTURE', gapMaterialCode: 'OTHER' }] },
+    supplierPriceReviews: [{ status: 'PENDING', scope: { materialCode: '201350625' } }] }
+  const view = priceEntryPreview(check, { bomRows: [{ childCode: '332030278', unit: '只', priceOrgCode: '210' }] })
+  assert.equal(view.editable, false)
+  assert.equal(view.content, null)
+  assert.deepEqual(view.requirements.issues, [])
+  assert.equal(view.requirements.items.length, 1)
+  assert.deepEqual([view.requirements.items[0].materialNo, view.requirements.items[0].unit, view.requirements.items[0].organizationCode], ['332030278', '只', '210'])
+  assert.equal(view.requirements.items[0].unitPrice, null)
+})
+
+test('form view reports missing or ambiguous metadata instead of guessing a purchase unit or organization', () => {
+  const check = { gaps: { records: [{ gapType: 'MISSING_PRICE', gapMaterialCode: 'M' }] } }
+  for (const bomRows of [[], [{ childCode: 'M', unit: '只', priceOrgCode: '210' }, { childCode: 'M', unit: '千克', priceOrgCode: '220' }]]) {
+    const view = priceEntryPreview(check, { bomRows })
+    assert.equal(view.requirements.issues.length, 1)
+    assert.equal(view.requirements.items[0].unit, '待核实单位')
+    assert.equal(view.requirements.items[0].organizationCode, '待核实组织')
+    assert.equal(view.editable, false)
+  }
+})
 
 const requirements = [{ itemKey: 'x', status: 'MISSING' }, { itemKey: 'public', status: 'AVAILABLE' }]
 test('owned source revision sends the edited input while an available public price stays read only', () => {

@@ -61,7 +61,7 @@
     </div>
 
     <el-table
-      :data="displayRows"
+      :data="rows"
       border
       stripe
       scrollbar-always-on
@@ -111,7 +111,7 @@
         </template>
       </el-table-column>
       <template #empty>
-        <el-empty description="暂无报价单" />
+        <el-empty :description="loadError || '暂无报价单'" />
       </template>
     </el-table>
 
@@ -149,7 +149,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Refresh, Search, Upload } from '@element-plus/icons-vue'
@@ -163,7 +163,6 @@ import {
   QUOTE_SCENARIO_OPTIONS,
   SOURCE_TYPE_OPTIONS,
   canConfirmClassification,
-  filterQuoteRequestRows,
   formatDateTime,
   normalizeQuoteRequestPage,
   quoteRequestCompletionLabel,
@@ -189,6 +188,9 @@ const rows = ref([])
 const total = ref(0)
 const pageNo = ref(1)
 const pageSize = ref(20)
+const appliedFilters = ref({ ...filters })
+const loadError = ref('')
+let latestRequest = 0
 
 const confirmDialog = reactive({
   visible: false,
@@ -199,27 +201,28 @@ const confirmDialog = reactive({
   },
 })
 
-const displayRows = computed(() => filterQuoteRequestRows(rows.value, filters))
-
 async function loadRows() {
+  const requestId = ++latestRequest
   loading.value = true
+  loadError.value = ''
   try {
     const data = await fetchQuoteRequests({
       pageNo: pageNo.value,
       pageSize: pageSize.value,
-      oaNo: filters.oaNo,
-      processCode: filters.processCode,
-      sourceType: filters.sourceType,
+      ...appliedFilters.value,
     })
+    if (requestId !== latestRequest) return
     const page = normalizeQuoteRequestPage(data)
     rows.value = page.list
     total.value = page.total
   } catch (error) {
+    if (requestId !== latestRequest) return
     rows.value = []
     total.value = 0
-    ElMessage.error(error?.message || '获取报价单列表失败')
+    loadError.value = `查询失败：${error?.message || '获取报价单列表失败'}`
+    ElMessage.error(loadError.value)
   } finally {
-    loading.value = false
+    if (requestId === latestRequest) loading.value = false
   }
 }
 
@@ -232,8 +235,11 @@ function goDetail(oaNo) {
 }
 
 function applyFilters() {
-  pageNo.value = 1
-  loadRows()
+  appliedFilters.value = Object.fromEntries(
+    Object.entries(filters).map(([key, value]) => [key, String(value ?? '').trim()]),
+  )
+  if (pageNo.value !== 1) pageNo.value = 1
+  else loadRows()
 }
 
 function resetFilters() {

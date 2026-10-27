@@ -8,10 +8,10 @@ test('P按字符串原精度显示，H精确转换为百分数，不经浮点数
   assert.equal(inquiryDecimal(null), '')
   for (const invalid of [0.085, '1e3', '-1', 'NaN']) assert.throws(() => inquiryPercent(invalid))
 })
-test('来源年月及价格口径必须显式提供，不从文件名或日期推断', () => {
-  const input = { sourceMonth: '2026-10', unit: ' 件 ', currency: 'cny', taxBasis: 'EXCLUDED', businessUnitType: 'forged', unitPrice: '0' }
-  assert.deepEqual(inquiryMetadata(input), { sourceMonth: '2026-10', priceContext: { unit: '件', currency: 'CNY', taxBasis: 'EXCLUDED' } })
-  for (const change of [{ sourceMonth: '' }, { sourceMonth: '0000-10' }, { sourceMonth: '2026-13' }, { unit: '' }, { currency: '' }, { taxBasis: '' }]) assert.throws(() => inquiryMetadata({ ...input, ...change }))
+test('固定模板只需来源年月，不要求手填单位、币种或税口径', () => {
+  assert.deepEqual(inquiryMetadata({ sourceMonth: '2026-10' }), { sourceMonth: '2026-10' })
+  assert.deepEqual(inquiryMetadata({ sourceMonth: '2026-10', unit: '千克', currency: 'USD', taxBasis: 'INCLUDED' }), { sourceMonth: '2026-10' })
+  for (const sourceMonth of ['', '0000-10', '2026-13']) assert.throws(() => inquiryMetadata({ sourceMonth }))
 })
 test('发布仅取服务端预留三项身份，不重传价格、行集合或客户端组织', () => {
   const preview = { previewId: 'preview', publishRequestId: 'request', previewFingerprint: 'a'.repeat(64), rows: [{ price: '999' }], businessUnitType: 'forged' }
@@ -27,12 +27,13 @@ test('待核验请求按真实用户及业务单元隔离，不保存财务内�
   assert.throws(() => inquiryScope({ ...user, businessUnitType: '' }))
   assert.throws(() => inquiryScope({ ...user, userId: Number.MAX_SAFE_INTEGER + 1 }))
 })
-test('上传保留真实File与显式元数据，价格口径用JSON part', async () => {
+test('上传只传原件和来源年月，固定价格口径由服务端确定', () => {
   const file = new File([new Uint8Array([1, 2, 3])], 'source.xls')
-  const form = inquiryPreviewForm(file, { sourceMonth: '2026-10', unit: '件', currency: 'CNY', taxBasis: 'INCLUDED' })
+  const form = inquiryPreviewForm(file, { sourceMonth: '2026-10' })
   assert.equal(form.get('file').name, 'source.xls')
   assert.equal(form.get('sourceMonth'), '2026-10')
-  assert.deepEqual(JSON.parse(await form.get('priceContext').text()), { unit: '件', currency: 'CNY', taxBasis: 'INCLUDED' })
-  assert.equal(form.has('businessUnitType'), false)
+  assert.deepEqual([...form.keys()], ['file', 'sourceMonth'])
+  const forged = inquiryPreviewForm(file, { sourceMonth: '2026-10', unit: '千克', currency: 'USD', taxBasis: 'INCLUDED' })
+  assert.deepEqual([...forged.keys()], ['file', 'sourceMonth'])
   for (const bad of [null, new File([], 'source.xls'), new File(['x'], 'source.csv')]) assert.throws(() => inquiryPreviewForm(bad, {}))
 })

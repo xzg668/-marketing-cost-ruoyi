@@ -1,6 +1,14 @@
 import { request } from './http'
+import { downloadAuthenticatedBlob } from '../utils/auxiliaryClassification'
+import { financePreviousMonthExport } from '../pages/financeFactorPublicationUtils'
 
 const BASE_PATH = '/api/v1/finance-factor-publications'
+
+export const exportPreviousFinanceFactors = (scope, options) => {
+  const { priceMonth, priceOrgCode, filename } = financePreviousMonthExport(scope)
+  const query = new URLSearchParams({ priceMonth, priceOrgCode })
+  return downloadAuthenticatedBlob(`${BASE_PATH}/export-previous-month?${query}`, filename, options)
+}
 
 export const fetchFinanceFactorSnapshot = (params, copperOnly = false) =>
   request(`${BASE_PATH}${copperOnly ? '/cu' : ''}`, { params })

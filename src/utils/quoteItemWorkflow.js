@@ -33,6 +33,14 @@ export function withQuoteItemWorkflow(detail, drawingStates = {}) {
   }
 }
 
+// 历史成本待重算只影响核算动作；当前工作区的缺口仍应能独立查看。
+export function hasQuoteItemCostingGap(item) {
+  const workspace = item?.costingWorkspace
+  return ['WAIT_BOM', 'WAIT_TECH_DATA', 'WAIT_PRICE_TYPE', 'WAIT_PRICE', 'SYSTEM_FAILED']
+    .includes(String(workspace?.workspaceStatus || '').toUpperCase())
+    || item?.workflow?.nextAction === 'VIEW_COSTING_GAP'
+}
+
 export function quoteItemWorkflow(item, drawingWorkspace) {
   const workspace = item?.costingWorkspace || null
   const workspaceStatus = String(workspace?.workspaceStatus || '').toUpperCase()

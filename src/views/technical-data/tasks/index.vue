@@ -71,6 +71,7 @@
               <span v-if="moduleAction(row, module.code)" class="module-action">{{ moduleAction(row, module.code) }}</span>
             </button>
           </el-tooltip>
+          <el-button v-if="module.code === 'PRICE' && canManage && findModule(row.product, 'PRICE')?.required" link type="primary" @click="openPricePreview(row)">查看价格填写页</el-button>
         </template>
       </el-table-column>
       <el-table-column label="状态" width="140" fixed="right">
@@ -97,6 +98,8 @@
     </el-dialog>
     <TechnicalDataReturnDialog v-model="returnVisible" :task-ids="returnTaskIds" @changed="load" />
     <TechnicalDataDispatchDialog v-model="dispatchVisible" :rows="dispatchRows" :default-assignee="defaultAssignee" :default-assignee-person="selectedAssigneePerson" @dispatched="load" />
+    <TechnicalDataPriceGapDialog v-if="priceGapRow" :row="priceGapRow" @close="priceGapRow = null" @open-costing="openPriceCheck" @open-price-form="openPricePreview(priceGapRow)" />
+    <TechnicalDataPricePreviewDialog v-if="pricePreviewRow" :row="pricePreviewRow" @close="pricePreviewRow = null" />
     <el-dialog :model-value="!!inspectRow" title="本产品资料检查" width="900px" @close="inspectRow = null">
       <template v-if="inspectRow">
         <p>{{ inspectRow.product.materialNo || inspectRow.product.sourceModel }} · {{ inspectRow.product.productName }} · {{ inspectRow.accountingMonth }}</p>
@@ -127,6 +130,8 @@ import { submittedDocumentRows } from '../../../utils/technicalDataDocument'
 import TechnicalDataDispatchDialog from '../../../components/technical-data/TechnicalDataDispatchDialog.vue'
 import TechnicalDataReturnDialog from '../../../components/technical-data/TechnicalDataReturnDialog.vue'
 import TechnicalDataPersonSelect from '../../../components/technical-data/TechnicalDataPersonSelect.vue'
+import TechnicalDataPriceGapDialog from '../../../components/technical-data/TechnicalDataPriceGapDialog.vue'
+import TechnicalDataPricePreviewDialog from '../../../components/technical-data/TechnicalDataPricePreviewDialog.vue'
 import { showErrorOnce } from '../../../utils/errorHandler'
 import { TECHNICAL_DATA_MODULES, findModule, moduleName, modulePresentation, technicalModuleSummary, isTechnicalModuleStatusOnly, taskStatusLabel, taskStatusType, workbenchRowKey, canDispatchWorkbenchRow, workbenchDispatchRow } from '../../../utils/technicalDataWorkbench'
 
@@ -146,6 +151,8 @@ const emptySummary = () => ({ total: 0, pending: 0, submitting: 0, submitted: 0,
 const summary = ref(emptySummary())
 const dispatchVisible = ref(false), dispatchRows = ref([]), defaultAssignee = ref(null), selectedAssigneePerson = ref(null)
 const inspectRow = ref(null), rechecking = ref(false)
+const priceGapRow = ref(null)
+const pricePreviewRow = ref(null)
 const returnVisible = ref(false), returnTaskIds = ref([])
 const dispatchSelection = computed(() => selected.value.filter(canDispatchWorkbenchRow))
 const returnSelection = computed(() => selected.value.filter(canReturnRow))
@@ -235,6 +242,7 @@ function moduleReason(row, code) { return findModule(row.product, code)?.require
 function moduleAction(row, code) {
   if (!canViewSupplementOverview.value && !row.assignedModules.includes(code)) return ''
   if (isTechnicalModuleStatusOnly(row.product, code)) return ''
+  if (isUnassigned(row) && code === 'PRICE' && canManage.value && findModule(row.product, code)?.required) return '查看缺价明细'
   if (isUnassigned(row)) return findModule(row.product, code)?.required ? '' : '查看来源'
   if (row.editableModules.includes(code)) return findModule(row.product, code)?.moduleStatus === 'READY' ? '查看 / 修改' : ({ DRAWING_BOM: '登记 / 检查', MANUFACTURING: '填写原材料', PACKAGE: '引用 / 新增', AUXILIARY: '参考 / 上传', SOLDER: '参考 / 新增', SALARY: '参考 / 上传', NET_LOSS: '参考 / 填写', PRICE: '补录价格' })[code] || '填写'
   return '查看'
@@ -248,6 +256,7 @@ async function open(row, module) {
   if (submissionBusy.value) return
   if (module && !moduleAction(row, module)) return
   if (isUnassigned(row)) {
+    if (module === 'PRICE' && canManage.value && findModule(row.product, module)?.required) { priceGapRow.value = row; return }
     inspectRow.value = row
     return
   }
@@ -262,6 +271,15 @@ function closePanel() {
   return router.replace({ query })
 }
 function openCosting(row) { router.push(`/ingest/quote-requests/${encodeURIComponent(row.oaNo)}/items/${row.product.oaFormItemId}/costing`) }
+function openPricePreview(row) {
+  if (!row || !canManage.value || submissionBusy.value) return
+  priceGapRow.value = null; pricePreviewRow.value = row
+}
+function openPriceCheck() {
+  const row = priceGapRow.value
+  priceGapRow.value = null
+  router.push({ path: `/ingest/quote-requests/${encodeURIComponent(row.oaNo)}/items/${row.product.oaFormItemId}/costing`, query: { tab: 'PRICE_SOURCE_SUPPLEMENT' } })
+}
 function startDispatch(rows) {
   if (new Set(rows.map(row => row.oaNo)).size > 1) return ElMessage.warning('请勾选同一张 OA 单据的产品进行分派')
   if (new Set(rows.map(row => row.accountingMonth)).size > 1) return ElMessage.warning('请勾选同一核算月份的产品进行分派')

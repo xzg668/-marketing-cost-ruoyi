@@ -19,7 +19,7 @@
       <div v-if="selected && draft" class="price-editor">
         <h3>{{ selected.materialNo }} · {{ selected.name || '价格资料' }}</h3>
         <el-alert v-if="publication" :type="publication.status === 'AVAILABLE' ? 'success' : 'warning'" :closable="false" :title="publication.message" />
-        <el-button v-if="publication && ['FAILED','UNPUBLISHED'].includes(publication.status)" :disabled="busy" @click="recheck">重新检查补录价格</el-button>
+        <el-button v-if="canEdit && publication && ['FAILED','UNPUBLISHED'].includes(publication.status)" :disabled="busy" @click="recheck">重新检查补录价格</el-button>
         <p>不含税价格 · {{ selected.unit }} · {{ selected.organizationCode }}</p>
         <template v-if="selected.status === 'AVAILABLE'">
           <h3>已有不含税单价：{{ selected.unitPrice }} 元/{{ selected.unit }}</h3>
@@ -29,7 +29,7 @@
         <el-alert v-else-if="selected.status === 'ERROR'" type="error" :closable="false" :title="selected.message || '取价失败，请重新检查价格来源'" />
         <template v-else>
         <el-alert v-if="selected.status === 'REVISION'" type="info" :closable="false" :title="selected.message" />
-        <el-radio-group :model-value="draft.entryMode" :disabled="!itemEditable || busy" @change="changeMode">
+        <el-radio-group :model-value="draft.entryMode" :disabled="(!itemEditable && !previewData) || busy" @change="changeMode">
           <el-radio-button v-for="(label, mode) in PRICE_MODES" :key="mode" :value="mode">{{ label }}</el-radio-button>
         </el-radio-group>
         <template v-if="draft.entryMode === 'FIXED'">
@@ -71,7 +71,7 @@ import { fetchTechnicalDataPrice, fetchTechnicalDataPriceReferences, saveTechnic
 import { PRICE_MODES, priceDraft, pricePayload, switchPriceDraft } from '../../utils/technicalDataPrice'
 import { showErrorOnce } from '../../utils/errorHandler'
 
-const props = defineProps({ productId: { type: Number, required: true }, editable: Boolean, versionId: Number })
+const props = defineProps({ productId: Number, editable: Boolean, versionId: Number, previewData: Object })
 const emit = defineEmits(['dirty', 'busy', 'saved'])
 const workspace = ref(null), drafts = ref({}), selectedKey = ref(''), original = ref('')
 const modeDrafts = ref({})
@@ -80,7 +80,7 @@ const materialKeyword = ref('')
 const filteredRows = computed(() => rows.value.filter(row => `${row.materialNo} ${row.name || ''}`.toLowerCase().includes(materialKeyword.value.trim().toLowerCase())))
 const searchBy = ref('CODE'), keyword = ref(''), references = ref([])
 const parameterLabels = { blankWeight: '下料重', netWeight: '净重', processFee: '加工费', agentFee: '代理费' }
-const canEdit = computed(() => props.editable && workspace.value?.editable)
+const canEdit = computed(() => !props.previewData && props.editable && workspace.value?.editable)
 const busy = computed(() => loading.value || saving.value || searching.value)
 const rows = computed(() => workspace.value?.historical ? (workspace.value.content?.items || []).map(row => ({ ...row, status: 'RECORDED' })) : workspace.value?.requirements?.items || [])
 const selected = computed(() => rows.value.find(row => row.itemKey === selectedKey.value))
@@ -103,11 +103,14 @@ function restore(data) {
   original.value = signature.value
   emit('dirty', false)
 }
-watch(() => props.productId, async id => {
+watch(() => [props.productId, props.versionId, props.previewData], async ([id, , preview]) => {
   const current = ++generation
   loading.value = true
   workspace.value = null; referenceOpen.value = false; references.value = []; searching.value = false
-  try { const data = await fetchTechnicalDataPrice(id, props.versionId); if (!disposed && generation === current) restore(data) }
+  try {
+    const data = preview || await fetchTechnicalDataPrice(id, props.versionId)
+    if (!disposed && generation === current) restore(data)
+  }
   catch (error) { if (!disposed && generation === current) showErrorOnce(error, '价格资料加载失败') }
   finally { if (!disposed && generation === current) loading.value = false }
 }, { immediate: true })
@@ -130,6 +133,7 @@ function choose(reference) {
   referenceOpen.value = false
 }
 async function save(next) {
+  if (!canEdit.value) return
   const current = generation
   saving.value = true
   try {
@@ -142,6 +146,7 @@ async function save(next) {
   finally { saving.value = false }
 }
 async function recheck() {
+  if (!canEdit.value) return
   saving.value = true
   try { restore(await recheckTechnicalDataPrice(props.productId)) }
   catch (error) { showErrorOnce(error, '补录价格检查失败') }

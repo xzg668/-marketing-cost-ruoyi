@@ -45,7 +45,7 @@
       :title="'OA流程：' + detail.oaWorkflow.label"
       :description="detail.oaWorkflow.syncError || detail.oaWorkflow.reason || undefined" />
 
-    <QuoteCostingPreparationPanel :oa-no="oaNo" :state="materialState" :checks="materialChecks" :error="materialError" @refresh="materials.refresh" />
+    <QuoteCostingPreparationPanel :oa-no="oaNo" :state="materialState" :checks="materialChecks" :products="productRows" :error="materialError" @refresh="materials.refresh" @view-gap="openCostingGap" />
     <el-alert v-if="drawingReviewCount" :title="`${drawingReviewCount} 个产品的电子图库有差异，请在产品明细中点击“去修正”。`" type="warning" :closable="false" show-icon />
 
 
@@ -163,7 +163,7 @@
               <span v-else>—</span>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="160" fixed="right">
+          <el-table-column label="操作" width="200" fixed="right">
             <template #default="{ row }">
               <div class="row-actions">
                 <el-button v-if="needsCostRecalculation(row)" link type="primary"
@@ -172,7 +172,7 @@
                   {{ '重新核算本产品' }}
                 </el-button>
                 <el-button
-                  v-else-if="row.workflow?.actionEnabled && !isDrawingReview(row)"
+                  v-else-if="row.workflow?.actionEnabled && row.workflow?.nextAction !== 'VIEW_COSTING_GAP' && !isDrawingReview(row)"
                   link
                   :type="operationType(row.workflow?.nextAction)"
                   :disabled="['START_COSTING', 'RESTART_COSTING'].includes(row.workflow?.nextAction) && detail.oaWorkflow?.canCost === false"
@@ -180,6 +180,9 @@
                   @click="handleRowAction(row)"
                 >
                   {{ row.workflow?.nextActionLabel }}
+                </el-button>
+                <el-button v-if="hasQuoteItemCostingGap(row)" link type="warning" @click="openCostingGap(row)">
+                  查看缺口
                 </el-button>
                 <el-button
                   v-if="hasHistoricalCostResult(row) && (needsCostRecalculation(row) || row.workflow?.nextAction !== 'VIEW_COSTING_RESULT')"
@@ -374,7 +377,7 @@ import QuoteCostingPreparationPanel from '../components/quotation/QuoteCostingPr
 import { useQuoteFinalSubmission } from '../composables/useQuoteFinalSubmission'
 import { useQuoteCostingPreparation } from '../composables/useQuoteCostingPreparation'
 import { useQuoteBatchCosting } from '../composables/useQuoteBatchCosting'
-import { withQuoteItemWorkflow } from '../utils/quoteItemWorkflow'
+import { withQuoteItemWorkflow, hasQuoteItemCostingGap } from '../utils/quoteItemWorkflow'
 import { workflowStatusTagType } from '../utils/workflowStatus'
 import {
   QUOTE_SCENARIO_OPTIONS,
