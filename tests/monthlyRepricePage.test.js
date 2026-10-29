@@ -2,114 +2,29 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import fs from 'node:fs'
 import path from 'node:path'
-
-const ROOT = path.resolve(import.meta.dirname, '..')
-const API_FILE = path.join(ROOT, 'src/api/monthlyReprice.js')
-const PAGE_FILE = path.join(ROOT, 'src/pages/MonthlyRepricePage.vue')
-const VIEW_FILE = path.join(ROOT, 'src/views/settlement/monthly-adjustment/index.vue')
-const COST_RUN_PAGE_FILE = path.join(ROOT, 'src/pages/QuoteProductCostingWorkbenchPage.vue')
-const MENU_FILE = path.resolve(
-  ROOT,
-  '../marketing-cost-api/marketing-cost-biz/src/main/resources/db/V128__monthly_reprice_menu_seed.sql'
-)
-
-const apiContent = fs.readFileSync(API_FILE, 'utf-8')
-const pageContent = fs.readFileSync(PAGE_FILE, 'utf-8')
-const viewContent = fs.readFileSync(VIEW_FILE, 'utf-8')
-const costRunContent = fs.readFileSync(COST_RUN_PAGE_FILE, 'utf-8')
-const menuContent = fs.readFileSync(MENU_FILE, 'utf-8')
-
-describe('T11 月度调价页面契约', () => {
-  it('新增月度调价 API 封装，覆盖批次、进度、任务、结果、明细、审计和锁定状态', () => {
-    for (const name of [
-      'fetchMonthlyRepriceActiveLock',
-      'fetchMonthlyRepriceBatches',
-      'fetchMonthlyRepriceProgress',
-      'createMonthlyRepriceBatch',
-      'confirmMonthlyRepriceBatch',
-      'cancelMonthlyRepriceBatch',
-      'retryMonthlyRepriceFailedTasks',
-      'fetchMonthlyRepriceTasks',
-      'fetchMonthlyRepriceResults',
-      'fetchMonthlyRepricePartItems',
-      'fetchMonthlyRepriceCostItems',
-      'fetchMonthlyRepriceAuditLogs',
-    ]) {
-      assert.match(apiContent, new RegExp(`export const ${name}`))
-    }
-    assert.match(apiContent, /\/api\/v1\/monthly-reprice\/active-lock/)
-    assert.match(apiContent, /\/part-items/)
-    assert.match(apiContent, /\/cost-items/)
+const root=path.resolve(import.meta.dirname,'..')
+const api=fs.readFileSync(path.join(root,'src/api/monthlyReprice.js'),'utf8')
+const page=fs.readFileSync(path.join(root,'src/pages/MonthlyRepricePage.vue'),'utf8')
+describe('1130 调价入口与旧历史读取',()=>{
+  it('一键、重试及确认使用新契约，不再调用六个停用操作',()=>{
+    for(const route of ['/1130/current','/1130/start','/retry','/confirm']) assert.ok(api.includes(route))
+    for(const name of ['createMonthlyRepriceBatch','expandMonthlyRepriceBatch','prepareMonthlyRepriceLinkedPrice','cancelMonthlyRepriceBatch','retryMonthlyRepriceFailedTasks']) assert.ok(!api.includes(name))
   })
-
-  it('菜单组件指向真实月度调价页面，不再是占位页', () => {
-    assert.match(viewContent, /MonthlyRepricePage\.vue/)
-    assert.doesNotMatch(viewContent, /PlaceholderPage/)
+  it('按钮使用服务端真实总监资格，确认绑定当前检查版本',()=>{
+    assert.match(page,/view.canOperate/)
+    assert.match(page,/batch.status === 'WAIT_CONFIRM'/)
+    assert.match(page,/batch.value.checkedRevision/)
+    assert.doesNotMatch(page,/v-hasPermi|v-hasRole/)
   })
-
-  it('页面包含批次列表、结果查询、审计日志和详情 tabs', () => {
-    assert.match(pageContent, /label="批次列表"/)
-    assert.match(pageContent, /label="结果查询"/)
-    assert.match(pageContent, /label="审计日志"/)
-    assert.match(pageContent, /label="批次概览"/)
-    assert.match(pageContent, /label="核算任务"/)
-    assert.match(pageContent, /label="调价结果"/)
+  it('保留历史列表、结果分页及保存明细读取',()=>{
+    for(const name of ['fetchMonthlyRepriceBatches','fetchMonthlyRepriceResults','fetchMonthlyRepricePartItems','fetchMonthlyRepriceCostItems']) assert.ok(page.includes(name))
+    assert.match(page,/v.list/)
+    assert.match(page,/resultPage/)
   })
-
-  it('调价结果明细默认按产品成本计算一览表格式展示', () => {
-    assert.match(pageContent, /label="产品成本计算一览表"/)
-    assert.match(pageContent, />产品成本计算一览表</)
-    for (const label of [
-      '部品名',
-      '部品料号',
-      '部品图号',
-      '部品单价',
-      '部品用量',
-      '部品价格',
-      '材质',
-      '形态属性',
-      '价格来源',
-      '不含税总成本',
-    ]) {
-      assert.match(pageContent, new RegExp(label))
-    }
-    assert.match(pageContent, /drillDrawer\.tab = 'sheet'/)
-    assert.match(pageContent, /fetchMonthlyRepricePartItems\(repriceNo, resultId\)/)
-    assert.match(pageContent, /fetchMonthlyRepriceCostItems\(repriceNo, resultId\)/)
-  })
-
-  it('结果查询默认落到同月份同业务单元最新 CONFIRMED 批次', () => {
-    assert.match(pageContent, /status:\s*'CONFIRMED'/)
-    assert.match(pageContent, /sortBy:\s*'confirmedAt'/)
-    assert.match(pageContent, /sortDirection:\s*'desc'/)
-  })
-
-  it('发起弹窗只按月份和业务单元创建，并展示锁定提示', () => {
-    assert.doesNotMatch(pageContent, /fetchFactorAdjustBatches/)
-    assert.doesNotMatch(pageContent, /createForm\.adjustBatchId/)
-    assert.match(pageContent, /调价月份和业务单元必填/)
-    assert.match(pageContent, /prop="priceAsOfTime"/)
-    assert.match(pageContent, /本次操作会锁定所选业务单元/)
-    assert.match(pageContent, /月度调价结果不会覆盖原 OA 报价结果/)
-  })
-
-  it('确认按钮要求 WAIT_CONFIRM 且 failedCount 为 0', () => {
-    assert.match(pageContent, /row\?\.status === 'WAIT_CONFIRM'/)
-    assert.match(pageContent, /Number\(row\?\.failedCount \|\| 0\) === 0/)
-  })
-
-  it('唯一核算工作台接入月度调价锁定提示并置灰核算按钮', () => {
-    assert.match(costRunContent, /fetchMonthlyRepriceActiveLock/)
-    assert.match(costRunContent, /costRunRepriceLocked/)
-    assert.match(costRunContent, /:disabled="[^"\n]*\bcostRunRepriceLocked\b[^"\n]*"/)
-    assert.match(costRunContent, /当前业务单元正在月度调价/)
-  })
-
-  it('菜单挂在成本核算下，并提供 list/review/operate 权限', () => {
-    assert.match(menuContent, /503,\s*'月度调价',\s*500/)
-    assert.match(menuContent, /'price:monthly-reprice:list'/)
-    assert.match(menuContent, /'price:monthly-reprice:review'/)
-    assert.match(menuContent, /'price:monthly-reprice:operate'/)
-    assert.match(menuContent, /\(11,\s*503\),\s*\(11,\s*5031\)/)
+  it('业务单元切换和离开页面使迟到请求失效',()=>{
+    assert.match(page,/user.businessUnitType/)
+    assert.match(page,/current===epoch/)
+    assert.match(page,/onUnmounted/)
+    assert.match(page,/clearInterval/)
   })
 })

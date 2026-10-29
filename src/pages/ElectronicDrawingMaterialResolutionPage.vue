@@ -2,7 +2,7 @@
   <section class="resolution-page" v-loading="loading">
     <header class="page-head">
       <div>
-        <el-button class="back-button" link :icon="ArrowLeft" @click="returnToQuote()">返回报价单</el-button>
+        <el-button class="back-button" link :icon="ArrowLeft" @click="returnToQuote()">{{ returnToCosting ? '返回产品 BOM' : '返回报价单' }}</el-button>
         <h1>为电子图库物料选择 U9 料号</h1>
         <p>{{ oaNo }} · 图号 {{ state.electronicDrawingNo || '-' }}</p>
       </div>
@@ -13,17 +13,18 @@
     <el-alert v-else-if="state.sourceVersionId" class="ready-summary" type="success" :closable="false" show-icon>
       <template #title>图库已读取，按实际核算范围确认 U9 料号</template>
       共 {{ state.totalCount || 0 }} 个物料，{{ state.autoMatchedCount || 0 }} 个已自动匹配，
-      {{ state.manuallySelectedCount || 0 }} 个已保存；还剩 {{ pendingItems.length }} 个需要选择。
+      {{ state.manuallySelectedCount || 0 }} 个已保存；还剩 {{ pendingElectronicDrawingItems(state).length }} 个需要选择。
     </el-alert>
 
     <div v-if="pendingItems.length" class="resolution-workspace">
       <aside class="pending-panel">
         <div class="panel-title">
           <div>
-            <strong>待选择物料</strong>
-            <span>{{ selectedCount }}/{{ pendingItems.length }} 已选</span>
+            <strong>{{ isCorrecting ? '本单 BOM 修正' : '待选择物料' }}</strong>
+            <span v-if="!isCorrecting">{{ selectedCount }}/{{ pendingItems.length }} 已选</span>
           </div>
           <el-progress
+            v-if="!isCorrecting"
             type="circle"
             :width="52"
             :stroke-width="5"
@@ -47,7 +48,7 @@
             <em v-if="selectionDraft[item.sourceNodeId]">
               已选 {{ selectionDraft[item.sourceNodeId].materialCode }}
             </em>
-            <em v-else>待选择</em>
+            <em v-else>{{ isCorrecting ? '填写修正后的材料、用量和单位' : '待选择' }}</em>
           </span>
           <span class="item-state">{{ selectionDraft[item.sourceNodeId] ? '✓' : '›' }}</span>
         </button>
@@ -69,7 +70,37 @@
           </dl>
         </div>
 
-        <div v-if="currentSelection" class="selected-card">
+        <div v-if="activeItem.canModify && !isCorrecting" class="correction-entry">
+          <el-button @click="editMaterial(activeItem)">修正料号、用量或拆分材料</el-button>
+        </div>
+
+        <div v-if="isCorrecting" class="correction-card">
+          <h3>修正后采用的材料</h3>
+          <p>以下材料与原节点保持同级。分别填写相对父项的用量，单位由料品档案带出。</p>
+          <el-table :data="correctionLines" border>
+            <el-table-column label="料号 / 名称 / 属性" min-width="235">
+              <template #default="{ row }">
+                <strong>{{ row.materialCode || '尚未选料' }}</strong>
+                <div>{{ row.materialName || '请在下方搜索料品档案' }}</div>
+                <div>{{ optionDetail(row) }}</div>
+              </template>
+            </el-table-column>
+            <el-table-column label="用量" width="170"><template #default="{ row, $index }">
+              <el-input-number v-model="row.quantity" :min="0" :precision="8" :controls="false"
+                :aria-label="`第${$index + 1}条材料用量`" placeholder="填写用量" />
+            </template></el-table-column>
+            <el-table-column prop="unit" label="单位" width="70" />
+            <el-table-column label="操作" width="160"><template #default="{ $index }">
+              <el-button link type="primary" @click="selectCorrectionLine($index)">{{ activeLineIndex === $index ? '当前选料' : '选料 / 更换' }}</el-button>
+              <el-button v-if="correctionLines.length > 1" link type="danger" @click="removeCorrectionLine($index)">移除</el-button>
+            </template></el-table-column>
+          </el-table>
+          <el-button :disabled="correctionLines.length >= 30" @click="addCorrectionLine">添加并列材料</el-button>
+          <el-input v-model="correctionReason" type="textarea" :rows="2" maxlength="500" show-word-limit
+            aria-label="BOM修正原因" placeholder="填写核实后的修正原因" />
+        </div>
+
+        <div v-if="currentSelection && !isCorrecting" class="selected-card">
           <span>当前已选</span>
           <div>
             <strong>{{ currentSelection.materialName || '-' }}</strong>
@@ -160,13 +191,18 @@
           <el-table-column label="U9 料号" min-width="145"><template #default="{ row }">{{ row.resolvedMaterialCode || '无 U9 料号' }}</template></el-table-column>
           <el-table-column prop="processingMessage" label="处理结果" min-width="230" />
           <el-table-column label="操作" width="110"><template #default="{ row }">
-            <el-button v-if="row.canModify && row.resolvedMaterialCode && row.processingState !== 'EXCLUDED'" link type="primary" @click="editMaterial(row)">修改料号</el-button>
+            <el-button v-if="row.canModify" v-hasPermi="['ingest:quote:cost-run:execute']"
+              link type="primary" @click="editMaterial(row)">修正 BOM</el-button>
           </template></el-table-column>
         </el-table>
       </el-collapse-item>
     </el-collapse>
 
-    <footer v-if="pendingItems.length" class="save-bar">
+    <footer v-if="isCorrecting" class="save-bar">
+      <div><strong>修正为 {{ correctionLines.length }} 条材料</strong><span>保存后采用新版本，保留修正前记录。</span></div>
+      <el-button type="primary" size="large" :loading="saving" :disabled="!correctionReady" @click="saveCorrection">保存 BOM 修正</el-button>
+    </footer>
+    <footer v-else-if="pendingItems.length" class="save-bar">
       <div>
         <strong>已选择 {{ selectedCount }} 个</strong>
         <span v-if="selectedCount < pendingItems.length">可以先保存已选项，稍后继续处理剩余物料。</span>
@@ -193,6 +229,7 @@ import { ArrowLeft } from '@element-plus/icons-vue'
 import {
   fetchElectronicDrawingMaterialResolution,
   saveElectronicDrawingMaterialResolutions,
+  saveElectronicDrawingBomCorrection,
   searchElectronicDrawingMaterialOptions,
 } from '../api/quoteRequests'
 import {
@@ -209,6 +246,7 @@ const router = useRouter()
 const oaNo = computed(() => String(route.params.oaNo || ''))
 const itemId = computed(() => String(route.params.itemId || ''))
 const taskId = computed(() => String(route.params.taskId || ''))
+const returnToCosting = computed(() => route.query.returnTo === 'costing')
 const loading = ref(false)
 const loadError = ref('')
 const searching = ref(false)
@@ -222,22 +260,31 @@ const keyword = ref('')
 const options = ref([])
 const searchPerformed = ref(false)
 const editingNodeId = ref('')
+const correctionLines = ref([])
+const activeLineIndex = ref(0)
+const correctionReason = ref('')
+const isCorrecting = computed(() => Boolean(editingNodeId.value))
+const correctionReady = computed(() => correctionReason.value.trim() && correctionLines.value.length
+  && correctionLines.value.every(line => line.materialCode && Number(line.quantity) > 0 && line.unit))
 
 const pendingItems = computed(() => {
   const items = pendingElectronicDrawingItems(state.value)
   const editing = (state.value.items || []).find(item => String(item.sourceNodeId) === editingNodeId.value)
-  return editing && !items.some(item => sameNode(item, editing)) ? [...items, editing] : items
+  return editing ? [editing] : items
 })
 const processedItems = computed(() => (state.value.items || []).filter(item => !item.requiresAction))
 const activeItem = computed(() => pendingItems.value.find(
   (item) => String(item.sourceNodeId) === String(activeNodeId.value),
 ) || pendingItems.value[0] || null)
-const currentSelection = computed(() => selectionDraft[activeItem.value?.sourceNodeId] || (
+const currentSelection = computed(() => isCorrecting.value
+  ? correctionLines.value[activeLineIndex.value]
+  : selectionDraft[activeItem.value?.sourceNodeId] || (
   activeItem.value?.resolvedMaterialCode ? {
     materialCode: activeItem.value.resolvedMaterialCode,
     materialName: activeItem.value.resolvedMaterialName,
     materialSpec: activeItem.value.resolvedMaterialSpec,
     materialModel: activeItem.value.resolvedMaterialModel,
+    materialNature: activeItem.value.resolvedMaterialNature,
   } : null))
 const selectedCount = computed(() => pendingItems.value.filter(
   (item) => selectionDraft[item.sourceNodeId]?.materialCode,
@@ -269,6 +316,12 @@ async function loadState() {
       returnToQuote('resolved')
       return
     }
+    const requestedItem = state.value.items?.find(item =>
+      String(item.sourceNodeId) === String(route.query.sourceNodeId || ''))
+    if (requestedItem?.canModify) {
+      editMaterial(requestedItem)
+      return
+    }
     const stillActive = pendingItems.value.find(
       (item) => String(item.sourceNodeId) === String(activeNodeId.value),
     )
@@ -292,8 +345,55 @@ function selectItem(item) {
 }
 
 function editMaterial(item) {
+  if (!item.canModify) return
   editingNodeId.value = String(item.sourceNodeId)
   selectItem(item)
+  searchType.value = 'MATERIAL_CODE'
+  keyword.value = item.resolvedMaterialCode || ''
+  correctionLines.value = [{
+    materialCode: item.resolvedMaterialCode || '', materialName: item.resolvedMaterialName || '',
+    materialNature: item.resolvedMaterialNature || '', materialSpec: item.resolvedMaterialSpec || '',
+    quantity: item.quantityUnit ? item.quantity : null, unit: item.resolvedUnit || '',
+  }]
+  activeLineIndex.value = 0
+  correctionReason.value = ''
+}
+
+function selectCorrectionLine(index) {
+  activeLineIndex.value = index
+  searchType.value = 'MATERIAL_CODE'
+  keyword.value = correctionLines.value[index].materialCode || ''
+  options.value = []
+  searchPerformed.value = false
+}
+function addCorrectionLine() {
+  correctionLines.value.push({ materialCode: '', quantity: null, unit: '' })
+  selectCorrectionLine(correctionLines.value.length - 1)
+}
+function removeCorrectionLine(index) {
+  correctionLines.value.splice(index, 1)
+  selectCorrectionLine(Math.min(activeLineIndex.value, correctionLines.value.length - 1))
+}
+
+async function saveCorrection() {
+  if (!correctionReady.value || saving.value) return
+  saving.value = true
+  try {
+    await saveElectronicDrawingBomCorrection(taskId.value, {
+      expectedTaskVersion: state.value.taskVersion, expectedSourceVersionId: state.value.sourceVersionId,
+      sourceNodeId: activeItem.value.sourceNodeId, reason: correctionReason.value.trim(),
+      lines: correctionLines.value.map(line => ({ materialCode: line.materialCode, quantity: line.quantity, unit: line.unit })),
+    }, accountingMonth.value)
+    ElMessage.success('BOM 修正已保存，已切换到修正版')
+    await router.replace({ path: `/ingest/quote-requests/${encodeURIComponent(oaNo.value)}/items/${encodeURIComponent(itemId.value)}/costing`,
+      query: { accountingMonth: accountingMonth.value } })
+  } catch (error) {
+    if (isElectronicDrawingVersionConflict(error)) {
+      editingNodeId.value = ''
+      await loadState()
+      ElMessage.warning('BOM 版本已变化，请核对最新状态后重新修正')
+    } else ElMessage.error(error?.message || '修正保存失败，当前填写已保留')
+  } finally { saving.value = false }
 }
 
 function handleSearchTypeChange(value) {
@@ -327,6 +427,11 @@ async function searchOptions() {
 
 function chooseOption(option) {
   if (!activeItem.value || !option?.materialCode) return
+  if (isCorrecting.value) {
+    const quantity = correctionLines.value[activeLineIndex.value].quantity
+    correctionLines.value[activeLineIndex.value] = { ...option, quantity }
+    return
+  }
   selectionDraft[activeItem.value.sourceNodeId] = option
   const next = nextUnselectedElectronicDrawingItem(
     pendingItems.value,
@@ -369,7 +474,9 @@ async function saveSelections(recheck = false) {
 
 function returnToQuote(electronicDrawing) {
   router.replace({
-    path: `/ingest/quote-requests/${encodeURIComponent(oaNo.value)}`,
+    path: returnToCosting.value && !electronicDrawing
+      ? `/ingest/quote-requests/${encodeURIComponent(oaNo.value)}/items/${encodeURIComponent(itemId.value)}/costing`
+      : `/ingest/quote-requests/${encodeURIComponent(oaNo.value)}`,
     query: {
       itemId: itemId.value,
       ...(electronicDrawing ? { electronicDrawing } : {}),
@@ -387,7 +494,8 @@ function formatQuantity(value) {
 }
 
 function optionDetail(option) {
-  return [option?.materialSpec, option?.materialModel, option?.drawingNo, option?.materialNature]
+  return [option?.materialSpec, option?.materialModel, option?.drawingNo,
+    option?.materialNature === '制造件' ? '自制件' : option?.materialNature]
     .filter(Boolean)
     .join(' · ') || '暂无更多档案信息'
 }
@@ -431,6 +539,10 @@ onMounted(loadState)
 .pending-item.selected .item-state { color: #67c23a; }
 .selection-panel { padding: 22px; }
 .source-card { padding: 18px 20px; border: 1px solid #dce5ef; border-radius: 8px; background: #fafbfd; }
+.correction-card, .correction-entry { margin: 16px 0; }
+.correction-card p { color: #667085; }
+.correction-card .el-input-number { width: 140px; }
+.correction-card > .el-button, .correction-card > .el-textarea { margin-top: 12px; }
 .source-card__heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .source-card__heading span, .selected-card > span { color: #7b8799; font-size: 13px; font-weight: 600; }
 .source-card h2 { margin: 7px 0 0; color: #202939; font-size: 21px; }

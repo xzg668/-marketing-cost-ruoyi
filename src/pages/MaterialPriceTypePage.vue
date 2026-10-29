@@ -39,7 +39,7 @@
         <el-table-column label="取价方式" min-width="330">
           <template #default="{ row }">
             <div v-if="row.configuration.manual">财务指定：{{ priceTypeLabel(row.configuration.order[0].type) }}</div>
-            <div v-else>{{ row.configuration.order.map(item => priceTypeLabel(item.type)).join(' → ') }} → 订单价 → 阶梯价 → 补录固定价</div>
+            <div v-else>{{ row.configuration.order.map(item => priceTypeLabel(item.type)).join(' → ') }} → 阶梯价 → 订单价 → 补录固定价</div>
             <span class="hint">{{ row.configuration.manual ? '仅按指定类型取价' : '系统自动取价' }}</span>
           </template>
         </el-table-column>

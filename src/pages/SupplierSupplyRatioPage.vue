@@ -7,10 +7,12 @@
       </div>
       <div class="toolbar-actions">
         <el-button v-hasPermi="['base:supplier-supply-ratio:import']" :icon="Upload" @click="openImportDialog">导入 Excel</el-button>
+        <el-button @click="openChanges()">变更记录</el-button>
         <el-button type="primary" :icon="RefreshRight" @click="fetchRows">刷新</el-button>
       </div>
     </section>
 
+    <el-alert class="ratio-policy" title="仅导入新增或变动的物料/供应商关系；未出现的关系继续保留，相同内容不重复生成版本。0%表示退出供货，空白表示未填写。无需填写生效日期。" type="info" :closable="false" show-icon />
     <section class="query-panel">
       <el-form :model="filters" class="query-form" :inline="true" label-width="78px">
         <el-form-item label="物料代码">
@@ -25,6 +27,8 @@
         <el-form-item label="供应商">
           <el-input v-model="filters.supplierName" clearable placeholder="供应商名称" />
         </el-form-item>
+        <el-form-item label="供应商代码"><el-input v-model="filters.supplierCode" clearable placeholder="供应商代码" /></el-form-item>
+        <el-form-item label="导入批次"><el-input v-model="filters.sourceBatchNo" clearable placeholder="批次号" /></el-form-item>
         <el-form-item label="来源">
           <el-select v-model="filters.sourceType" clearable placeholder="全部" style="width: 120px">
             <el-option
@@ -37,8 +41,8 @@
         </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="filters.isActive" style="width: 120px">
-            <el-option label="当前有效" :value="1" />
-            <el-option label="历史失效" :value="0" />
+            <el-option label="当前版本" :value="1" />
+            <el-option label="历史版本" :value="0" />
           </el-select>
         </el-form-item>
         <el-form-item class="query-actions">
@@ -60,6 +64,7 @@
         <el-table-column label="供货比例" width="110" align="right">
           <template #default="{ row }">
             <span class="ratio-value">{{ formatPercent(row.supplyRatio) }}</span>
+            <el-tag v-if="row.supplyRatio !== null && Number(row.supplyRatio) === 0" size="small" type="info">退出供货</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="来源" width="95">
@@ -69,22 +74,20 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="sourceBatchNo" label="批次" min-width="170" show-overflow-tooltip />
+        <el-table-column prop="sourceBatchNo" label="批次" min-width="170" show-overflow-tooltip>
+          <template #default="{ row }"><el-button link type="primary" @click="openChanges(null, row.sourceBatchNo)">{{ row.sourceBatchNo || '—' }}</el-button></template>
+        </el-table-column>
+        <el-table-column prop="importFileName" label="导入文件" min-width="180" show-overflow-tooltip />
         <el-table-column prop="importedAt" label="导入时间" width="170" />
         <el-table-column label="状态" width="90">
           <template #default="{ row }">
-            <el-tag :type="row.isActive === 1 ? 'success' : 'info'">{{ row.isActive === 1 ? '有效' : '失效' }}</el-tag>
+            <el-tag :type="row.isActive === 1 ? 'success' : 'info'">{{ row.isActive === 1 ? '当前版本' : '历史版本' }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="updatedAt" label="更新时间" width="170" />
         <el-table-column label="操作" width="130" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="row.isActive === 1" v-hasPermi="['base:supplier-supply-ratio:edit']" type="primary" link @click="openEdit(row)">
-              编辑
-            </el-button>
-            <el-button v-if="row.isActive === 1" v-hasPermi="['base:supplier-supply-ratio:remove']" type="danger" link @click="removeRow(row)">
-              停用
-            </el-button>
+            <el-button type="primary" link @click="openChanges(row)">变更记录</el-button>
           </template>
         </el-table-column>
         <template #empty>
@@ -101,223 +104,89 @@
 
     <SupplierSupplyRatioImportDialog v-model="importDialogVisible" @imported="onRatioImported" />
 
-    <el-dialog v-model="editDialogVisible" title="编辑供货比例" width="560px">
-      <el-form :model="editForm" label-width="96px">
-        <el-form-item label="物料代码">
-          <el-input v-model="editForm.materialCode" disabled />
-        </el-form-item>
-        <el-form-item label="物料名称">
-          <el-input v-model="editForm.materialName" disabled />
-        </el-form-item>
-        <el-form-item label="型号">
-          <el-input v-model="editForm.specModel" disabled />
-        </el-form-item>
-        <el-form-item label="供应商">
-          <el-input v-model="editForm.supplierName" disabled />
-        </el-form-item>
-        <el-form-item label="供应商代码">
-          <el-input v-model="editForm.supplierCode" clearable />
-        </el-form-item>
-        <el-form-item label="单位">
-          <el-input v-model="editForm.unit" clearable />
-        </el-form-item>
-        <el-form-item label="形态属性">
-          <el-input v-model="editForm.materialShape" clearable />
-        </el-form-item>
-        <el-form-item label="供货比例">
-          <el-input-number
-            v-model="editForm.supplyRatioPercent"
-            :min="0"
-            :max="100"
-            :precision="2"
-            :step="1"
-            controls-position="right"
-            style="width: 180px"
-          />
-          <span class="percent-unit">%</span>
-        </el-form-item>
-        <el-form-item label="生效日期">
-          <el-date-picker v-model="editForm.effectiveFrom" type="date" value-format="YYYY-MM-DD" />
-        </el-form-item>
-        <el-form-item label="失效日期">
-          <el-date-picker v-model="editForm.effectiveTo" type="date" value-format="YYYY-MM-DD" />
-        </el-form-item>
+    <el-dialog v-model="changeDialogVisible" title="供货关系变更记录 / 批次明细" width="92%">
+      <el-form :inline="true" :model="changeFilters">
+        <el-form-item label="物料代码"><el-input v-model="changeFilters.materialCode" clearable /></el-form-item>
+        <el-form-item label="供应商代码"><el-input v-model="changeFilters.supplierCode" clearable /></el-form-item>
+        <el-form-item label="批次"><el-input v-model="changeFilters.batchNo" clearable /></el-form-item>
+        <el-button type="primary" @click="queryChanges">查询记录</el-button>
       </el-form>
-      <template #footer>
-        <el-button @click="editDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="submitEdit">保存</el-button>
-      </template>
+      <el-table :data="changeRows" border v-loading="changeLoading" max-height="560">
+        <el-table-column type="expand">
+          <template #default="{ row }">
+            <el-table :data="supplierRatioChangeFields(row)" size="small" border>
+              <el-table-column prop="label" label="变更内容" /><el-table-column prop="before" label="改前" /><el-table-column prop="after" label="改后" />
+            </el-table>
+          </template>
+        </el-table-column>
+        <el-table-column prop="materialCode" label="物料代码" width="140" />
+        <el-table-column prop="supplierCode" label="供应商代码" width="130" />
+        <el-table-column prop="supplierName" label="供应商" min-width="150" />
+        <el-table-column label="改前比例" width="110"><template #default="{ row }">{{ row.before ? formatPercent(row.before.supplyRatio) : '无原记录' }}</template></el-table-column>
+        <el-table-column label="改后比例" width="110"><template #default="{ row }">{{ formatPercent(row.after?.supplyRatio) }}</template></el-table-column>
+        <el-table-column label="版本关联" width="140"><template #default="{ row }">{{ row.previousVersionId ?? '新增' }} → {{ row.versionId }}</template></el-table-column>
+        <el-table-column prop="changedByName" label="操作人" width="130" />
+        <el-table-column prop="changedAt" label="导入时间" width="180" />
+        <el-table-column prop="importFileName" label="导入文件" min-width="200" />
+        <el-table-column prop="batchNo" label="导入批次" min-width="210" />
+        <template #empty><el-empty description="没有匹配的变更记录；历史版本可在主表切换查看" /></template>
+      </el-table>
+      <BasePagination v-model:current-page="changePage" v-model:page-size="changePageSize" :total="changeTotal" />
     </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { onMounted, reactive, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import {
-  RefreshLeft,
-  RefreshRight,
-  Search,
-  Upload,
-} from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { useRoute } from 'vue-router'
+import { RefreshLeft, RefreshRight, Search, Upload } from '@element-plus/icons-vue'
 import BasePagination from '../components/BasePagination.vue'
 import SupplierSupplyRatioImportDialog from '../components/SupplierSupplyRatioImportDialog.vue'
-import { decimalToPercent, percentToDecimal, formatPercent } from '../utils/supplierSupplyRatio'
-import {
-  deleteSupplierSupplyRatio,
-  fetchSupplierSupplyRatios,
-  normalizeSupplierSupplyRatioPage,
-  updateSupplierSupplyRatio,
-} from '../api/supplierSupplyRatios'
+import { formatPercent, normalizeSupplierRatioChange, supplierRatioChangeFields } from '../utils/supplierSupplyRatio'
+import { fetchSupplierSupplyRatios, fetchSupplierSupplyRatioChanges, normalizeSupplierSupplyRatioPage } from '../api/supplierSupplyRatios'
 
 const SOURCE_TYPE_OPTIONS = [
   { value: 'EXCEL', label: 'EXCEL', tag: 'primary' },
   { value: 'SRM', label: 'SRM', tag: 'success' },
   { value: 'MANUAL', label: 'MANUAL', tag: 'warning' },
 ]
-
-const filters = reactive({
-  materialCode: '',
-  materialName: '',
-  specModel: '',
-  supplierName: '',
-  sourceType: '',
-  isActive: 1,
-})
-const tableRows = ref([])
-const total = ref(0)
-const currentPage = ref(1)
-const pageSize = ref(20)
-const loading = ref(false)
-
-const importDialogVisible = ref(false)
-const editDialogVisible = ref(false)
-const saving = ref(false)
-const editingId = ref(null)
-const editForm = reactive({
-  materialCode: '',
-  materialName: '',
-  specModel: '',
-  supplierName: '',
-  supplierCode: '',
-  unit: '',
-  materialShape: '',
-  supplyRatioPercent: null,
-  effectiveFrom: '',
-  effectiveTo: '',
-})
-
-function sourceTagType(value) {
-  return SOURCE_TYPE_OPTIONS.find((option) => option.value === value)?.tag || ''
-}
-
-function queryParams() {
-  return {
-    materialCode: filters.materialCode.trim(),
-    materialName: filters.materialName.trim(),
-    specModel: filters.specModel.trim(),
-    supplierName: filters.supplierName.trim(),
-    sourceType: filters.sourceType,
-    isActive: filters.isActive,
-    page: currentPage.value,
-    pageSize: pageSize.value,
-  }
-}
-
+const initialFilters = () => ({ materialCode: '', materialName: '', specModel: '', supplierName: '', supplierCode: '', sourceBatchNo: '', sourceType: '', isActive: 1 })
+const filters = reactive(initialFilters())
+const tableRows = ref([]), total = ref(0), currentPage = ref(1), pageSize = ref(20), loading = ref(false)
+const importDialogVisible = ref(false), changeDialogVisible = ref(false), changeLoading = ref(false)
+const changeFilters = reactive({ materialCode: '', supplierCode: '', batchNo: '' })
+const changeRows = ref([]), changeTotal = ref(0), changePage = ref(1), changePageSize = ref(20)
+const sourceTagType = (value) => SOURCE_TYPE_OPTIONS.find((option) => option.value === value)?.tag || ''
 async function fetchRows() {
   loading.value = true
   try {
-    const page = normalizeSupplierSupplyRatioPage(await fetchSupplierSupplyRatios(queryParams()))
-    tableRows.value = page.list
-    total.value = page.total
-  } catch (error) {
-    ElMessage.error(error.message || '供应商供货比例查询失败')
-  } finally {
-    loading.value = false
-  }
+    const result = normalizeSupplierSupplyRatioPage(await fetchSupplierSupplyRatios({ ...filters, page: currentPage.value, pageSize: pageSize.value }))
+    tableRows.value = result.list; total.value = result.total
+  } catch (error) { ElMessage.error(error.message || '供应商供货比例查询失败') }
+  finally { loading.value = false }
 }
-
-function applyFilters() {
-  currentPage.value = 1
-  fetchRows()
-}
-
-function resetFilters() {
-  filters.materialCode = ''
-  filters.materialName = ''
-  filters.specModel = ''
-  filters.supplierName = ''
-  filters.sourceType = ''
-  filters.isActive = 1
-  applyFilters()
-}
-
-function openImportDialog() {
-  importDialogVisible.value = true
-}
-
-function onRatioImported() {
-  filters.isActive = 1
-  currentPage.value = 1
-  fetchRows()
-}
-
-function openEdit(row) {
-  editingId.value = row.id
-  editForm.materialCode = row.materialCode || ''
-  editForm.materialName = row.materialName || ''
-  editForm.specModel = row.specModel || ''
-  editForm.supplierName = row.supplierName || ''
-  editForm.supplierCode = row.supplierCode || ''
-  editForm.unit = row.unit || ''
-  editForm.materialShape = row.materialShape || ''
-  editForm.supplyRatioPercent = decimalToPercent(row.supplyRatio)
-  editForm.effectiveFrom = row.effectiveFrom || ''
-  editForm.effectiveTo = row.effectiveTo || ''
-  editDialogVisible.value = true
-}
-
-async function submitEdit() {
-  if (!editingId.value) {
-    return
-  }
-  saving.value = true
+function applyFilters() { currentPage.value = 1; fetchRows() }
+function resetFilters() { Object.assign(filters, initialFilters()); applyFilters() }
+function openImportDialog() { importDialogVisible.value = true }
+function onRatioImported() { filters.isActive = 1; applyFilters() }
+async function fetchChanges() {
+  changeLoading.value = true
   try {
-    await updateSupplierSupplyRatio(editingId.value, {
-      unit: editForm.unit,
-      materialShape: editForm.materialShape,
-      supplierCode: editForm.supplierCode,
-      supplyRatio: percentToDecimal(editForm.supplyRatioPercent),
-      effectiveFrom: editForm.effectiveFrom || null,
-      effectiveTo: editForm.effectiveTo || null,
-    })
-    ElMessage.success('供货比例已更新')
-    editDialogVisible.value = false
-    fetchRows()
-  } catch (error) {
-    ElMessage.error(error.message || '供货比例更新失败')
-  } finally {
-    saving.value = false
-  }
+    const result = normalizeSupplierSupplyRatioPage(await fetchSupplierSupplyRatioChanges({ ...changeFilters, page: changePage.value, pageSize: changePageSize.value }))
+    changeRows.value = result.list.map(normalizeSupplierRatioChange); changeTotal.value = result.total
+  } catch (error) { ElMessage.error(error.message || '供货关系变更记录查询失败') }
+  finally { changeLoading.value = false }
 }
-
-async function removeRow(row) {
-  try {
-    await ElMessageBox.confirm(
-      `确认停用 ${row.materialCode || ''} / ${row.supplierName || ''}？原记录将保留在历史数据中。`,
-      '停用供货比例',
-      { type: 'warning' }
-    )
-  } catch (error) {
-    return
-  }
-  await deleteSupplierSupplyRatio(row.id)
-  ElMessage.success('供货比例已停用，历史记录已保留')
-  fetchRows()
+function queryChanges() { changePage.value = 1; fetchChanges() }
+function openChanges(row, batchNo) {
+  Object.assign(changeFilters, { materialCode: row?.materialCode || '', supplierCode: row?.supplierCode || '', batchNo: batchNo || '' })
+  changeDialogVisible.value = true; queryChanges()
 }
-
 watch([currentPage, pageSize], fetchRows)
-onMounted(fetchRows)
+watch([changePage, changePageSize], fetchChanges)
+const route=useRoute()
+onMounted(()=>{fetchRows();if(route.query.changes==='1')openChanges()})
 </script>
 
 <style scoped>
@@ -390,9 +259,8 @@ onMounted(fetchRows)
   font-weight: 600;
 }
 
-.percent-unit {
-  margin-left: 8px;
-  color: #64748b;
+.ratio-policy {
+  margin-bottom: 14px;
 }
 
 @media (max-width: 860px) {

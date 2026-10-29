@@ -3,11 +3,11 @@
     <template v-if="workspace">
       <el-alert v-if="workspace.moduleStatus === 'NOT_REQUIRED'" type="info" :closable="false"
         :title="workspace.items.length ? '本产品已有工资来源，无需补录；以下为之前保存的补录记录。' : '本产品已有工资来源，无需补录。'" />
-      <template v-if="canEdit || workspace.items.length">
+      <template v-if="canEdit || previewData || workspace.items.length">
         <section v-for="type in ['DIRECT', 'INDIRECT']" :key="type" class="salary-card" :data-labor-type="type">
           <div class="card-heading">
             <h4>{{ type === 'DIRECT' ? '直接人工工资' : '辅助人员工资' }}</h4>
-            <el-radio-group v-if="type === 'DIRECT' && canEdit" v-model="mode" :disabled="busy" size="small">
+            <el-radio-group v-if="type === 'DIRECT' && (canEdit || previewData)" v-model="mode" :disabled="busy" size="small">
               <el-radio-button value="REFERENCE">参考料号</el-radio-button>
               <el-radio-button value="UPLOAD">上传工时表</el-radio-button>
             </el-radio-group>
@@ -15,10 +15,10 @@
           </div>
           <template v-if="type === 'DIRECT' && mode === 'UPLOAD'">
             <div class="upload-actions">
-              <el-button v-if="canEdit" :disabled="busy" @click="download('template')">下载模板</el-button>
-              <el-button v-if="canEdit" :loading="uploading" :disabled="busy && !uploading" @click="fileInput.click()">{{ form.upload ? '重新上传' : '选择 Excel' }}</el-button>
+              <el-button v-if="canEdit || previewData" :disabled="!!previewData || busy" @click="download('template')">下载模板</el-button>
+              <el-button v-if="canEdit || previewData" :loading="uploading" :disabled="!canEdit || busy" @click="fileInput.click()">{{ form.upload ? '重新上传' : '选择 Excel' }}</el-button>
               <input ref="fileInputs" type="file" accept=".xlsx" hidden @change="upload" />
-              <el-button v-if="savedFile && savedFile.fileSha256 === form.upload?.fileSha256" :disabled="busy" @click="download('file')">下载原文件</el-button>
+              <el-button v-if="savedFile && savedFile.fileSha256 === form.upload?.fileSha256" :disabled="!!previewData || busy" @click="download('file')">下载原文件</el-button>
             </div>
             <p v-if="form.upload" class="file-meta">{{ form.upload.fileName }} · {{ form.upload.items.length }} 条有效明细</p>
             <p class="hint">工时表单件工资按分计算，合计除以 100 后计入直接人工工资（元／只）。</p>
@@ -33,10 +33,10 @@
           </template>
           <template v-if="(type === 'DIRECT' && mode === 'REFERENCE') || (type === 'INDIRECT' && mode === 'UPLOAD')">
             <p v-if="canEdit" class="hint">{{ mode === 'REFERENCE' ? '选择一个参考成品，同时带出直接人工和辅助人员工资。' : '选择参考成品，带出辅助人员工资。' }}</p>
-            <template v-if="canEdit && picking">
+            <template v-if="(canEdit || previewData) && picking">
               <div class="search-bar">
-                <el-input v-model="keyword" placeholder="输入参考产品料号或型号" @keyup.enter="search" />
-                <el-button :loading="searching" :disabled="busy && !searching" @click="search">查询工资</el-button>
+                <el-input v-model="keyword" :disabled="!canEdit || busy" placeholder="输入参考产品料号或型号" @keyup.enter="search" />
+                <el-button :loading="searching" :disabled="!canEdit || busy" @click="search">查询工资</el-button>
               </div>
               <el-table v-if="searched" :data="references" border class="salary-references">
                 <el-table-column prop="materialNo" label="产品料号" min-width="150" />
@@ -44,14 +44,14 @@
                 <el-table-column v-if="mode === 'REFERENCE'" label="直接人工（元）" min-width="130"><template #default="{ row }">{{ salaryAmountText(row.direct?.amountYuan) }}</template></el-table-column>
                 <el-table-column label="辅助人员（元）" min-width="130"><template #default="{ row }">{{ salaryAmountText(row.indirect?.amountYuan) }}</template></el-table-column>
                 <el-table-column label="操作" min-width="150"><template #default="{ row }">
-                  <el-button v-if="!row.issues.length" link type="primary" :disabled="busy" @click="select(row)">选择</el-button>
+                  <el-button v-if="!row.issues.length" link type="primary" :disabled="!canEdit || busy" @click="select(row)">选择</el-button>
                   <small v-else class="invalid">{{ row.issues.join('；') }}</small>
                 </template></el-table-column>
                 <template #empty><el-empty description="未找到本年度、本业务单元的工资参考，请更换查询条件" /></template>
               </el-table>
             </template>
             <div v-if="selected" class="reference-meta"><b>{{ selected.materialNo }}</b><span>{{ selected.model }}</span>
-              <el-button v-if="canEdit && !picking" link type="primary" :disabled="busy" @click="picking = true">更换参考产品</el-button>
+              <el-button v-if="canEdit && !picking" link type="primary" :disabled="!canEdit || busy" @click="picking = true">更换参考产品</el-button>
             </div>
           </template>
           <p v-if="type === 'INDIRECT' && mode === 'REFERENCE'" class="hint">随直接人工参考，自动带出。</p>
@@ -76,7 +76,7 @@ import { fetchTechnicalDataSalary, fetchTechnicalDataSalaryReferences, saveTechn
 import { salaryAmountText, salaryReferencePayload, salaryUploadPayload, salaryTotal } from '../../utils/technicalDataSalary'
 import { showErrorOnce } from '../../utils/errorHandler'
 
-const props = defineProps({ productId: { type: Number, required: true }, editable: Boolean, versionId: Number })
+const props = defineProps({ productId: Number, editable: Boolean, versionId: Number, previewData: Object })
 const emit = defineEmits(['dirty', 'busy', 'saved'])
 const workspace = ref(null), mode = ref('REFERENCE'), originalKey = ref(''), keyword = ref(''), references = ref([])
 const loading = ref(false), saving = ref(false), searching = ref(false), uploading = ref(false), downloading = ref(false)
@@ -86,7 +86,7 @@ const form = computed(() => buffers[mode.value])
 const selected = computed(() => form.value.reference)
 const fileInput = computed(() => fileInputs.value[0])
 let generation = 0
-const canEdit = computed(() => props.editable && workspace.value?.editable)
+const canEdit = computed(() => !props.previewData && props.editable && workspace.value?.editable)
 const busy = computed(() => loading.value || saving.value || searching.value || uploading.value || downloading.value)
 const complete = computed(() => selected.value && (mode.value === 'REFERENCE' || (form.value.upload && !uploadIssues.value.length)))
 const savedFile = computed(() => workspace.value?.items.find(row => row.laborType === 'DIRECT')?.source?.upload)
@@ -113,14 +113,15 @@ function restore(data) {
   originalKey.value = currentKey.value
   emit('dirty', false)
 }
-watch(() => props.productId, async productId => {
+watch(() => [props.productId, props.versionId, props.previewData], async () => {
   const request = ++generation
   loading.value = true; workspace.value = null; references.value = []; keyword.value = ''
-  try { const data = await fetchTechnicalDataSalary(productId, props.versionId); if (request === generation) restore(data) }
+  try { const data = props.previewData || await fetchTechnicalDataSalary(props.productId, props.versionId); if (request === generation) restore(data) }
   catch (error) { if (request === generation) showErrorOnce(error, '工资资料加载失败') }
   finally { loading.value = false }
 }, { immediate: true })
 async function search() {
+  if (!canEdit.value) return
   if (!keyword.value.trim()) return ElMessage.warning('请输入参考成品料号或型号')
   if (busy.value) return
   const request = generation
@@ -145,6 +146,7 @@ async function upload(event) {
   } finally { uploading.value = false; event.target.value = '' }
 }
 async function download(kind) {
+  if (props.previewData) return
   if (busy.value) return
   downloading.value = true
   try { await downloadTechnicalDataSalary(props.productId, kind, kind === 'template' ? '工时模板2026第一版.xlsx' : savedFile.value.fileName, kind === 'file' ? workspace.value.draftVersionId : null) }

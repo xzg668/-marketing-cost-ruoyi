@@ -38,7 +38,7 @@ import { PRODUCT_PROPERTY_OPTIONS, validateTechnicalDataProfile } from '../../ut
 import { PLATE_MATERIAL_OPTIONS, profileDraft, validatePlateMaterial, refreshProfilePlateMaterial } from '../../utils/technicalDataPlateMaterial'
 import { showErrorOnce } from '../../utils/errorHandler'
 
-const props = defineProps({ product: { type: Object, required: true }, taskId: { type: [String, Number], required: true }, editable: Boolean })
+const props = defineProps({ product: { type: Object, required: true }, taskId: [String, Number], editable: Boolean })
 const fees = [{ field: 'unitMouldFee', label: '模具费' }, { field: 'unitCertificationFee', label: '认证费' }, { field: 'unitDepreciationFee', label: '折旧费' }, { field: 'unitToolingFee', label: '工装夹具费' }]
 const emit = defineEmits(['saved', 'dirty', 'busy'])
 const draft = ref({})

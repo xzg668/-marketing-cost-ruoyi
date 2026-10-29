@@ -10,22 +10,22 @@
       <p v-else-if="workspace.applicableRate?.sourceType === 'TECH_SUPPLEMENTAL'" class="hint">本产品无公共净损失率，采用已审批补录费率 {{ netLossPercent(workspace.applicableRate.rate) }}%。</p>
       <el-alert v-else-if="workspace.moduleStatus === 'NOT_REQUIRED' && workspace.publicSource?.status === 'MISSING'" title="当前已无可用公共净损失率，请重新复查资料。" type="warning" :closable="false" />
       <template v-if="workspace.content || workspace.moduleStatus !== 'NOT_REQUIRED'">
-      <el-radio-group v-if="canEdit" v-model="mode" :disabled="busy" class="modes">
+      <el-radio-group v-if="canEdit || previewData" v-model="mode" :disabled="busy" class="modes">
         <el-radio-button value="REFERENCE">参考</el-radio-button>
         <el-radio-button value="MANUAL">直接填写</el-radio-button>
       </el-radio-group>
       <p v-else class="hint">{{ mode === 'MANUAL' ? '直接填写' : '参考产品' }} · 只读</p>
       <template v-if="mode === 'REFERENCE'">
-        <div v-if="canEdit" class="search-bar">
-          <el-select v-model="searchBy" aria-label="查询方式" :disabled="busy"><el-option value="CODE" label="成品料号" /><el-option value="MODEL" label="型号" /></el-select>
-          <el-input v-model="keyword" aria-label="参考查询条件" :placeholder="searchBy === 'MODEL' ? '输入型号' : '输入成品料号'" :disabled="busy" @keyup.enter="search" />
-          <el-button :loading="searching" :disabled="busy && !searching" @click="search">查询</el-button>
+        <div v-if="canEdit || previewData" class="search-bar">
+          <el-select v-model="searchBy" aria-label="查询方式" :disabled="!canEdit || busy"><el-option value="CODE" label="成品料号" /><el-option value="MODEL" label="型号" /></el-select>
+          <el-input v-model="keyword" aria-label="参考查询条件" :placeholder="searchBy === 'MODEL' ? '输入型号' : '输入成品料号'" :disabled="!canEdit || busy" @keyup.enter="search" />
+          <el-button :loading="searching" :disabled="!canEdit || busy" @click="search">查询</el-button>
         </div>
         <el-table v-if="searched && canEdit" :data="references" border class="net-loss-references">
           <el-table-column label="成品料号" min-width="150"><template #default="{ row }">{{ row.source.materialNo }}</template></el-table-column>
           <el-table-column label="名称" min-width="150"><template #default="{ row }">{{ row.source.name || '—' }}</template></el-table-column>
           <el-table-column label="型号" min-width="150"><template #default="{ row }">{{ row.source.model || '—' }}</template></el-table-column>
-          <el-table-column label="操作" width="80"><template #default="{ row }"><el-button link type="primary" :disabled="busy" @click="choose(row)">选择</el-button></template></el-table-column>
+          <el-table-column label="操作" width="80"><template #default="{ row }"><el-button link type="primary" :disabled="!canEdit || busy" @click="choose(row)">选择</el-button></template></el-table-column>
           <template #empty><el-empty description="未找到成品，请更换查询条件" /></template>
         </el-table>
         <el-alert v-if="referenceIssue" :title="referenceIssue" type="warning" :closable="false" />
@@ -38,7 +38,7 @@
       </template>
       <div v-else class="manual-field">
         <label for="net-loss-percent">净损失率<span v-if="canEdit" class="required"> *</span></label>
-        <div v-if="canEdit" class="percent-input"><el-input id="net-loss-percent" v-model="percent" aria-label="净损失率" placeholder="填写百分数" :disabled="busy"><template #append>%</template></el-input></div>
+        <div v-if="canEdit || previewData" class="percent-input"><el-input id="net-loss-percent" v-model="percent" aria-label="净损失率" placeholder="填写百分数" :disabled="!canEdit || busy"><template #append>%</template></el-input></div>
         <p v-else class="rate-value">{{ percent === '' ? '尚未填写' : `${percent}%` }}</p>
         <small v-if="canEdit">可填 0，须小于 100%，最多三位小数。</small>
       </div>
@@ -55,12 +55,12 @@ import { fetchTechnicalDataNetLoss, fetchTechnicalDataNetLossReferences, saveTec
 import { netLossPercent, netLossPayload } from '../../utils/technicalDataNetLoss'
 import { showErrorOnce } from '../../utils/errorHandler'
 
-const props = defineProps({ productId: { type: Number, required: true }, editable: Boolean, versionId: Number })
+const props = defineProps({ productId: Number, editable: Boolean, versionId: Number, previewData: Object })
 const emit = defineEmits(['dirty', 'busy', 'saved'])
 const workspace = ref(null), mode = ref('REFERENCE'), percent = ref(''), reference = ref(null)
 const searchBy = ref('CODE'), keyword = ref(''), references = ref([]), searched = ref(false), referenceIssue = ref('')
 const loading = ref(false), searching = ref(false), saving = ref(false), original = ref('')
-const canEdit = computed(() => props.editable && workspace.value?.editable)
+const canEdit = computed(() => !props.previewData && props.editable && workspace.value?.editable)
 const busy = computed(() => loading.value || searching.value || saving.value)
 const signature = computed(() => JSON.stringify({ mode: mode.value, value: mode.value === 'REFERENCE' ? reference.value?.fingerprint ?? null : percent.value }))
 let disposed = false, generation = 0
@@ -79,15 +79,16 @@ function restore(data) {
   original.value = signature.value
   emit('dirty', false)
 }
-watch(() => props.productId, async productId => {
+watch(() => [props.productId, props.versionId, props.previewData], async () => {
   const current = ++generation
   loading.value = true
-  try { const result = await fetchTechnicalDataNetLoss(productId, props.versionId); if (!disposed && current === generation) restore(result) }
+  try { const result = props.previewData || await fetchTechnicalDataNetLoss(props.productId, props.versionId); if (!disposed && current === generation) restore(result) }
   catch (error) { if (!disposed && current === generation) showErrorOnce(error, '净损失率加载失败') }
   finally { if (!disposed && current === generation) loading.value = false }
 }, { immediate: true })
 
 async function search() {
+  if (!canEdit.value) return
   if (!keyword.value.trim()) return ElMessage.warning('请输入成品料号或型号')
   reference.value = null; referenceIssue.value = ''; references.value = []; searched.value = true; searching.value = true
   try { const result = await fetchTechnicalDataNetLossReferences(props.productId, searchBy.value, keyword.value.trim()); if (!disposed) references.value = result }
@@ -100,6 +101,7 @@ function choose(value) {
   if (!referenceIssue.value) reference.value = value
 }
 async function save(next) {
+  if (!canEdit.value || busy.value) return
   saving.value = true
   try {
     const data = await saveTechnicalDataNetLoss(props.productId, netLossPayload(mode.value, reference.value, percent.value, workspace.value.expectedVersion))

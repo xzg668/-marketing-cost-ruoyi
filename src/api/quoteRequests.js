@@ -46,6 +46,11 @@ export const saveElectronicDrawingMaterialResolutions = (taskId, body, accountin
     suppressErrorToast: true,
   })
 
+export const saveElectronicDrawingBomCorrection = (taskId, body, accountingMonth) =>
+  request(`/api/v1/quote-requests/electronic-drawing/tasks/${encodePath(taskId)}/bom-correction`, {
+    method: 'PUT', params: { accountingMonth }, body, suppressErrorToast: true,
+  })
+
 export const fetchQuoteCostingWorkbench = (oaNo, itemId) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/costing-workbench`)
 

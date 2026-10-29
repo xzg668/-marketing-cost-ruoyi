@@ -15,10 +15,11 @@
     <p v-if="current?.taskState === 'WAIT_REVIEW' && !editUrl" class="drawing-hint">编辑地址未返回，请联系管理员。</p>
     <p v-if="!inline && current?.taskState === 'FAILED'" class="drawing-hint">{{ current.errorMessage }}</p>
 
-    <el-dialog v-model="detailVisible" title="电子图库明细" width="min(1200px, 96vw)" top="5vh" append-to-body destroy-on-close>
+    <el-dialog v-model="detailVisible" title="电子图库原始明细" width="min(1200px, 96vw)" top="5vh" append-to-body destroy-on-close>
       <div v-loading="detailLoading" class="drawing-detail-content">
         <el-alert v-if="detailError" :title="detailError" type="error" :closable="false" />
         <template v-if="detail">
+          <el-alert title="这里保留图库返回的原始内容。财务在报价系统中修正的料号、用量及拆分材料，请在产品明细的“查看图库 BOM 修正”中查看。" type="info" :closable="false" />
           <p class="detail-adoption">{{ adoptionLabel }}</p>
           <p v-if="detail.summary.confirmedAt" class="drawing-empty">确认时间（北京时间）{{ drawingDateTime(detail.summary.confirmedAt) }}</p>
           <section v-if="selectedGroup" class="drawing-group">
@@ -85,7 +86,7 @@ const detailVisible = ref(false)
 const current = computed(() => state.value?.current)
 const canOperate = computed(() => !props.readonly && user.permissions.some(p => ['*:*:*', 'ingest:quote:cost-run:execute'].includes(p)))
 const editUrl = computed(() => drawingEditUrl(current.value))
-const adoptionLabel = computed(() => ({ MANUAL_CONFIRMED: '人工已确认，采用此明细', DIRECT_ACCEPTED: '零差异，直接采用', WAIT_REVIEW: '待人工确认' })[detail.value?.adoption])
+const adoptionLabel = computed(() => ({ MANUAL_CONFIRMED: '图库人工确认后的接收明细', DIRECT_ACCEPTED: '零差异接收的图库明细', WAIT_REVIEW: '待图库人工确认' })[detail.value?.adoption])
 const plmFields = ['drawingNo', 'plmVersion', 'departmentName', 'createTime', 'fileUrl', 'expireTime']
 const selectedDrawingNo = computed(() => state.value?.history?.find(task => task.localTaskId === detail.value?.localTaskId)?.drawingNo
   || (current.value?.localTaskId === detail.value?.localTaskId ? current.value?.drawingNo : ''))

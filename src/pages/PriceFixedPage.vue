@@ -19,6 +19,15 @@
           <el-button type="primary" @click="openCreate">新增</el-button>
         </div>
       </div>
+      <el-alert
+        title="SRM固定价：系统自动接入、无需财务操作"
+        type="success"
+        :closable="false"
+        show-icon
+        style="margin-bottom: 16px"
+      >
+        每日来源由系统接入，在此查看有效来源即可。财务无需为月度调价导入或手动刷新SRM价格；已采用月价继续按保存依据复用。
+      </el-alert>
       <!-- 固定采购价页面只展示 PURCHASE_FIXED，结算固定价后续独立页面维护。 -->
       <el-form :inline="true" label-width="90px">
         <el-form-item label="物料代码">

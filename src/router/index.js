@@ -122,9 +122,10 @@ function hasWorkbenchWithoutQuoteList() {
 }
 
 function resolveLandingPath() {
-  return hasWorkbenchWithoutQuoteList()
-    ? TECHNICAL_TASK_LIST_PATH
-    : QUOTE_REQUEST_LIST_PATH
+  const paths = new Set(router.getRoutes().map(route => route.path))
+  // 财务可能只有供货比例权限；首页只能选择实际已授权注册的业务页。
+  return [QUOTE_REQUEST_LIST_PATH, TECHNICAL_TASK_LIST_PATH, '/base/supplier-relation/supply-ratio']
+    .find(path => paths.has(path)) || '/404'
 }
 
 /**

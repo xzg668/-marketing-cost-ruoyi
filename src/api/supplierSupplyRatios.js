@@ -14,7 +14,7 @@ export function toSupplierSupplyRatioFormData({ file, businessUnitType = '', she
   const formData = new FormData()
   formData.append('file', file)
   if (sheetName) formData.append('sheetName', sheetName)
-  // 预留业务单元参数，后续 SRM 同步或多事业部导入时保持同一接口口径。
+  // 未传时使用当前登录业务单元；后端校验显式值不能跨业务单元。
   if (businessUnitType) {
     formData.append('businessUnitType', businessUnitType)
   }
@@ -30,13 +30,5 @@ export const importSupplierSupplyRatioExcel = (payload) =>
     body: toSupplierSupplyRatioFormData(payload),
   })
 
-export const updateSupplierSupplyRatio = (id, body) =>
-  request(`${BASE_URL}/${id}`, {
-    method: 'PATCH',
-    body,
-  })
-
-export const deleteSupplierSupplyRatio = (id) =>
-  request(`${BASE_URL}/${id}`, {
-    method: 'DELETE',
-  })
+export const fetchSupplierSupplyRatioChanges = (params) =>
+  request(`${BASE_URL}/changes`, { params })

@@ -130,6 +130,11 @@
       :accounting-month="displayedPeriodMonth" :readonly="historyViewMode || header.oaWorkflow?.canCost === false"
       @state-change="onDrawingState" />
 
+    <el-drawer v-model="drawingBomVisible" title="图库 BOM 与已保存的财务修正" size="90%" append-to-body destroy-on-close>
+      <DrawingBomPreview v-if="drawingBomVisible && drawingBomAvailable" :oa-no="oaNo" :item-id="itemId"
+        :product="item" :month="displayedPeriodMonth" :revision="drawingBomRevision" />
+    </el-drawer>
+
     <section ref="workspaceRef" class="workspace-band section-block">
       <div v-if="displayedCostVersion.id" class="workspace-meta">
         <span class="workspace-version">
@@ -173,6 +178,7 @@
                 <span v-if="presentedEffectiveBom.alternativeSelections?.length">{{ effectiveAlternativeSummaryText }}</span>
               </div>
               <div v-if="!showDrawingBomPreview" class="toolbar-actions">
+                <el-button v-if="drawingBomAvailable" type="primary" plain @click="drawingBomVisible = true">查看图库 BOM 修正</el-button>
                 <el-button
                   v-if="alternativeFeatureEnabled"
                   v-hasPermi="['quote:costing:bom:alternative-select']"
@@ -442,7 +448,7 @@
                 <el-input
                   v-model="priceTypeKeyword"
                   clearable
-                  placeholder="搜索料号 / 品名"
+                  placeholder="搜索料号 / 图号 / 品名"
                   class="search-control"
                 />
                 <el-button
@@ -465,8 +471,13 @@
               max-height="calc(100vh - 430px)"
               class="price-type-table"
             >
-              <el-table-column prop="materialCode" label="料号 / 图号" min-width="220" fixed="left" show-overflow-tooltip>
-                <template #default="{ row }">{{ materialIdentityLabel(row) }}</template>
+              <el-table-column prop="materialCode" label="料号 / 图号" min-width="280" fixed="left" show-overflow-tooltip>
+                <template #default="{ row }">
+                  <span class="price-source-identity">
+                    <span>{{ materialIdentityLabel(row) }}</span>
+                    <span v-if="row.drawingNo" class="price-source-drawing">图号：{{ row.drawingNo }}</span>
+                  </span>
+                </template>
               </el-table-column>
               <el-table-column prop="materialName" label="品名" min-width="180" fixed="left" show-overflow-tooltip>
                 <template #default="{ row }">{{ row.materialName || '-' }}</template>
@@ -1180,7 +1191,7 @@ import {
   canSelectQuoteBomAlternative,
   formatAlternativeRebuildSummary,
 } from '../utils/quoteBomAlternativeUtils'
-import { expandQuoteBomDisplayRows } from '../utils/quoteCostingBomRows'
+import { expandQuoteBomDisplayRows, buildPriceSourceDisplayRows } from '../utils/quoteCostingBomRows'
 import {
   buildQuoteEffectiveBomTree,
   effectiveAlternativeNodeMeta,
@@ -1407,12 +1418,17 @@ const bomTreeProps = {
   children: 'children',
 }
 const presentedEffectiveBom = computed(() => effectiveBomPreview.value || effectiveBom.value)
-const showDrawingBomPreview = computed(() => !historyViewMode.value
+const drawingBomVisible = ref(false)
+const drawingBomAvailable = computed(() => !historyViewMode.value
   && String(drawingWorkspace.value?.itemId) === String(itemId.value)
   && drawingWorkspace.value?.accountingMonth === displayedPeriodMonth.value
   && drawingWorkspace.value?.current?.taskState === 'RECEIVED'
-  && drawingWorkspace.value?.sourceVersionId
-  && !presentedEffectiveBom.value.nodes.length)
+  && Boolean(drawingWorkspace.value?.sourceVersionId))
+const showDrawingBomPreview = computed(() => drawingBomAvailable.value && !presentedEffectiveBom.value.nodes.length)
+watch(() => [route.query.drawingBom, drawingBomAvailable.value], ([requested, available]) => {
+  if (!available) drawingBomVisible.value = false
+  else if (requested === '1') drawingBomVisible.value = true
+}, { immediate: true })
 const drawingBomRevision = computed(() => `${drawingWorkspace.value?.sourceVersionId}:${drawingWorkspace.value?.workflowStage}:${classificationRevision.value}`)
 const effectiveBomPreviewActive = computed(() => Boolean(effectiveBomPreview.value))
 const effectiveBomTreeData = computed(() => buildQuoteEffectiveBomTree(presentedEffectiveBom.value.nodes))
@@ -1458,7 +1474,8 @@ const effectiveBomPreviewChangedNodeKeys = computed(() => {
 const priceTypeSummary = computed(() => priceType.value.summary || {})
 const flatPriceTypeRows = computed(() => flattenRows(priceType.value.rows || []))
 const missingCandidateSourceRows = computed(() => flatPriceTypeRows.value.filter((row) => isMissingCandidateSourceRow(row)))
-const filteredPriceTypeRows = computed(() => filterTreeRows(priceType.value.rows || []))
+const priceTypeDisplayRows = computed(() => buildPriceSourceDisplayRows(priceType.value.rows || []))
+const filteredPriceTypeRows = computed(() => filterTreeRows(priceTypeDisplayRows.value))
 const pricePrepareItems = computed(() => Array.isArray(pricePrepare.value.items?.records) ? pricePrepare.value.items.records : [])
 const oaPrepareBatch = computed(() => pricePrepare.value.oaScenario?.batch || {})
 const financePrepareBatch = computed(() => pricePrepare.value.financeScenario?.batch || {})
@@ -1749,7 +1766,7 @@ function resetCurrentInputTabs() {
 
 async function loadAlternativeFeatureStatus(showError = true) {
   if (!oaNo.value || !itemId.value
-      || (!pricingBomReadyForNextStep.value && ['NO_BOM', 'ENTRY_PENDING'].includes(workbench.value.bomStatus?.bomStatus))) {
+      || ['NO_BOM', 'ENTRY_PENDING'].includes(workbench.value.bomStatus?.bomStatus)) {
     alternativeFeatureEnabled.value = false
     alternativeSummary.value = emptyAlternativeSummary()
     return
@@ -3094,6 +3111,7 @@ function priceTypeRowMatched(row) {
   const keyword = String(priceTypeKeyword.value || '').trim().toLowerCase()
   const keywordMatched = !keyword ||
     String(row.materialCode || '').toLowerCase().includes(keyword) ||
+    String(row.drawingNo || '').toLowerCase().includes(keyword) ||
     String(row.materialName || '').toLowerCase().includes(keyword)
   if (!keywordMatched) return false
   if (priceTypeFilter.value === 'ALL') return true
@@ -3727,6 +3745,22 @@ onMounted(() => initializeWorkbench())
 .rollup-identity {
   white-space: pre-line;
   line-height: 1.45;
+}
+
+.price-source-identity {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 3px;
+  max-width: calc(100% - 24px);
+  vertical-align: middle;
+}
+
+.price-source-drawing {
+  color: #7a8597;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .product-detail-tab {

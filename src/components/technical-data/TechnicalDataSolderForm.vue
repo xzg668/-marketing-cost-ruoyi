@@ -1,45 +1,45 @@
 <template>
   <section v-loading="loading" class="solder-form">
     <template v-if="workspace">
-      <el-radio-group v-if="canEdit" v-model="mode" :disabled="busy" class="modes">
+      <el-radio-group v-if="canEdit || previewData" v-model="mode" :disabled="busy" class="modes">
         <el-radio-button value="REFERENCE">参考焊料</el-radio-button>
         <el-radio-button value="MANUAL">新增焊料</el-radio-button>
       </el-radio-group>
       <p v-else class="hint">{{ mode === 'MANUAL' ? '新增焊料' : '参考焊料' }} · 只读</p>
       <template v-if="mode === 'REFERENCE'">
-        <div v-if="canEdit" class="search-bar">
-          <el-input v-model="keyword" placeholder="参考成品料号 / 型号" :disabled="busy" @keyup.enter="search" />
-          <el-button :loading="searching" :disabled="busy && !searching" @click="search">查询焊料</el-button>
+        <div v-if="canEdit || previewData" class="search-bar">
+          <el-input v-model="keyword" placeholder="参考成品料号 / 型号" :disabled="!canEdit || busy" @keyup.enter="search" />
+          <el-button :loading="searching" :disabled="!canEdit || busy" @click="search">查询焊料</el-button>
         </div>
         <el-table v-if="searched && canEdit" :data="references" border class="solder-references">
           <el-table-column label="成品料号" min-width="160"><template #default="{ row }">{{ row.evidence.materialNo }}</template></el-table-column>
           <el-table-column label="名称" min-width="150"><template #default="{ row }">{{ row.evidence.name || '—' }}</template></el-table-column>
           <el-table-column label="型号" min-width="160"><template #default="{ row }">{{ row.evidence.model || '—' }}</template></el-table-column>
           <el-table-column label="焊料明细" width="100"><template #default="{ row }">{{ row.items.length }} 条</template></el-table-column>
-          <el-table-column label="操作" width="80"><template #default="{ row }"><el-button link type="primary" :disabled="busy" @click="selectReference(row)">选择</el-button></template></el-table-column>
+          <el-table-column label="操作" width="80"><template #default="{ row }"><el-button link type="primary" :disabled="!canEdit || busy" @click="selectReference(row)">选择</el-button></template></el-table-column>
           <template #empty><el-empty description="没有找到可参考的焊料，请更换成品或新增焊料" /></template>
         </el-table>
         <p v-if="form.reference" class="source-note">参考成品：{{ form.reference.materialNo }} {{ form.reference.name }} {{ form.reference.model }}</p>
       </template>
-      <template v-if="mode === 'MANUAL' || form.reference || form.items.length">
-        <div class="detail-heading"><b>本次焊料明细</b><el-button v-if="canEdit && mode === 'MANUAL'" :disabled="busy || form.items.length >= 500" @click="addRow">＋ 新增焊料</el-button></div>
+      <template v-if="previewData || mode === 'MANUAL' || form.reference || form.items.length">
+        <div class="detail-heading"><b>本次焊料明细</b><el-button v-if="(canEdit || previewData) && mode === 'MANUAL'" :disabled="!canEdit || busy || form.items.length >= 500" @click="addRow">＋ 新增焊料</el-button></div>
         <p class="hint">{{ mode === 'REFERENCE' ? '已带出参考成品的全部适用焊料，可修改用量或删除。' : '输入焊料料号，从料品档案自动带出名称和图号。' }}</p>
         <el-table :data="form.items" row-key="uiId" border class="solder-items">
           <el-table-column label="焊料料号 *" min-width="210"><template #default="{ row }">
-            <el-input v-if="canEdit && mode === 'MANUAL'" :model-value="row.materialNo" aria-label="焊料料号" placeholder="如 311990182" :disabled="busy" @update:model-value="changeMaterial(row, $event)" />
+            <el-input v-if="(canEdit || previewData) && mode === 'MANUAL'" :model-value="row.materialNo" aria-label="焊料料号" placeholder="如 311990182" :disabled="!canEdit || busy" @update:model-value="changeMaterial(row, $event)" />
             <span v-else>{{ row.materialNo }}</span><small>{{ row.name || '—' }}</small>
           </template></el-table-column>
           <el-table-column label="图号" min-width="205"><template #default="{ row }">
             <span class="drawing-number">{{ row.drawingNo || '—' }}</span>
             <small role="status" :class="{ error: ['ERROR', 'NOT_FOUND', 'NOT_SOLDER', 'UNIT_UNSUPPORTED'].includes(row.lookupStatus) }">{{ row.lookupMessage }}</small>
-            <el-button v-if="canEdit && mode === 'MANUAL' && row.lookupStatus === 'ERROR'" link type="primary" :disabled="busy" @click="lookup(row)">重试</el-button>
+            <el-button v-if="canEdit && mode === 'MANUAL' && row.lookupStatus === 'ERROR'" link type="primary" :disabled="!canEdit || busy" @click="lookup(row)">重试</el-button>
           </template></el-table-column>
           <el-table-column label="用量 / 单件产品 *" min-width="210"><template #default="{ row, $index }">
             <input v-model="row.quantityPerProduct" :aria-label="`第${$index + 1}行焊料用量`" type="number" min="0" step="any" placeholder="如 0.0001" :disabled="!canEdit || busy" />
             <small v-if="row.evidence?.sourceQuantityKg != null">参考用量：{{ solderQuantityText(row.evidence.sourceQuantityKg) }} kg</small>
           </template></el-table-column>
           <el-table-column label="计量单位" width="120"><template #default>公斤（kg）</template></el-table-column>
-          <el-table-column v-if="canEdit" label="操作" width="80"><template #default="{ row }"><el-button link type="primary" :disabled="busy" @click="removeRow(row)">删除</el-button></template></el-table-column>
+          <el-table-column v-if="canEdit" label="操作" width="80"><template #default="{ row }"><el-button link type="primary" :disabled="!canEdit || busy" @click="removeRow(row)">删除</el-button></template></el-table-column>
           <template #empty><el-empty description="请添加焊料明细" /></template>
         </el-table>
       </template>
@@ -58,7 +58,7 @@ import { fetchTechnicalDataSolder, fetchTechnicalDataSolderReferences, fetchTech
 import { emptySolder, solderRow, solderPayload, solderQuantityText } from '../../utils/technicalDataSolder'
 import { showErrorOnce } from '../../utils/errorHandler'
 
-const props = defineProps({ productId: { type: Number, required: true }, editable: Boolean, versionId: Number })
+const props = defineProps({ productId: Number, editable: Boolean, versionId: Number, previewData: Object })
 const emit = defineEmits(['dirty', 'busy', 'saved'])
 const workspace = ref(null), mode = ref('REFERENCE'), loading = ref(false), searching = ref(false), saving = ref(false)
 const keyword = ref(''), searched = ref(false), references = ref([])
@@ -67,7 +67,7 @@ const originals = reactive({ REFERENCE: '', MANUAL: '' })
 const timers = new Map(), generations = new Map()
 let disposed = false, loadGeneration = 0
 const form = computed(() => buffers[mode.value])
-const canEdit = computed(() => props.editable && workspace.value?.editable)
+const canEdit = computed(() => !props.previewData && props.editable && workspace.value?.editable)
 const busy = computed(() => loading.value || searching.value || saving.value)
 const priceMessage = computed(() => {
   const requirements = workspace.value?.priceRequirements || []
@@ -96,15 +96,16 @@ function restore(data, initial = false) {
   }
   emit('dirty', JSON.stringify(form.value) !== originals[mode.value])
 }
-watch(() => props.productId, async () => {
+watch(() => [props.productId, props.versionId, props.previewData], async () => {
   const generation = ++loadGeneration
   loading.value = true
-  try { const data = await fetchTechnicalDataSolder(props.productId, props.versionId); if (!disposed && generation === loadGeneration) restore(data, true) }
+  try { const data = props.previewData || await fetchTechnicalDataSolder(props.productId, props.versionId); if (!disposed && generation === loadGeneration) restore(data, true) }
   catch (error) { if (!disposed && generation === loadGeneration) showErrorOnce(error, '焊料资料加载失败') }
   finally { if (!disposed && generation === loadGeneration) loading.value = false }
 }, { immediate: true })
 
 async function search() {
+  if (!canEdit.value) return
   if (!keyword.value.trim()) return ElMessage.warning('请输入参考成品料号或型号')
   searching.value = true; references.value = []; searched.value = true
   try { references.value = await fetchTechnicalDataSolderReferences(props.productId, keyword.value.trim()) }
@@ -152,6 +153,7 @@ async function lookup(row) {
   }
 }
 async function save(next) {
+  if (!canEdit.value || busy.value) return
   saving.value = true
   try {
     if (mode.value === 'MANUAL') await Promise.all(form.value.items.filter(row => row.lookupStatus === 'PENDING').map(lookup))

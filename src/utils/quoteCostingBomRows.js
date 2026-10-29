@@ -14,6 +14,19 @@ function parentChildDisplay(parentValue, childValue) {
   return `${parent}\n【${child}】`
 }
 
+/** 仅展示接口明确返回的图号，自制件只展开直接下一层。 */
+export function buildPriceSourceDisplayRows(rows = []) {
+  const display = (row, stop = false) => {
+    const drawingNo = firstText(row.drawingNo)
+    return {
+      ...row,
+      drawingNo: ['/', '-', '—'].includes(drawingNo) ? '' : drawingNo,
+      children: stop ? [] : (row.children || []).map(child => display(child, row.objectType === 'MAKE_PARENT')),
+    }
+  }
+  return rows.map(row => display(row))
+}
+
 /**
  * 上卷父件按命中子件拆成见机表展示行。
  *

@@ -7,6 +7,18 @@ const ROUTER_FILE = path.resolve(import.meta.dirname, '../src/router/index.js')
 const routerContent = fs.readFileSync(ROUTER_FILE, 'utf-8')
 const indexHtmlContent = fs.readFileSync(path.resolve(import.meta.dirname, '../index.html'), 'utf-8')
 
+describe('按已授权路由选择登录首页', () => {
+  const source = routerContent.slice(routerContent.indexOf('const QUOTE_REQUEST_LIST_PATH'), routerContent.indexOf('/**\n * 将 permissionStore'))
+  const landing = (paths) => new Function('router', `${source}\nreturn resolveLandingPath()`)(
+    { getRoutes: () => paths.map(path => ({ path })) },
+  )
+  const quote = '/ingest/quote-requests', task = '/collaboration/tasks', ratio = '/base/supplier-relation/supply-ratio'
+  it('只有供货比例授权的财务账号直接进入供货比例页', () => assert.equal(landing([ratio]), ratio))
+  it('报价员仍优先进入报价列表', () => assert.equal(landing([ratio, task, quote]), quote))
+  it('无报价权限的协作人员仍优先进入工作台', () => assert.equal(landing([ratio, task]), task))
+  it('没有业务授权时不扩大权限或跳转未注册页面', () => assert.equal(landing(['/login', '/404']), '/404'))
+})
+
 describe('路由配置检查', () => {
 
   it('应用声明内嵌图标，避免浏览器默认请求不存在的 favicon.ico', () => {

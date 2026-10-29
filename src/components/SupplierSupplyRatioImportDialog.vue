@@ -2,7 +2,7 @@
 <el-dialog v-model="visible" title="导入供应商供货比例" width="720px">
       <div class="import-panel">
         <el-alert
-          title="按物料整组更新：本次出现的物料启用新批次，旧记录保留为历史；未出现的物料继续沿用。"
+          title="按物料和供应商增量更新：仅新增或变动关系生成版本，未出现的关系保留，相同内容跳过；无需填写生效日期。"
           type="info"
           show-icon
           :closable="false"
@@ -35,18 +35,19 @@
             <span v-if="sheetNames.length > 1" class="sheet-hint">有多个供货比率工作表，请选择本次要导入的表。</span>
           </el-form-item>
           <el-form-item label="未填写比例">
-            <span class="ratio-note">空白或“补充”的记录照常导入，比例留空；填写 0% 则按 0% 导入。</span>
+            <span class="ratio-note">空白或“补充”的记录照常导入，比例留空；填写 0% 表示退出供货，旧版本仍可追溯。</span>
           </el-form-item>
         </el-form>
         <section v-if="importResult" class="import-result">
           <div class="result-metrics">
             <div><span>总行数</span><strong>{{ importResult.totalRows || 0 }}</strong></div>
-            <div><span>新增</span><strong>{{ importResult.insertedRows || 0 }}</strong></div>
-            <div><span>旧记录失效</span><strong>{{ importResult.deactivatedRows || 0 }}</strong></div>
+            <div><span>新增关系</span><strong>{{ importResult.newRelations || 0 }}</strong></div>
+            <div><span>变更关系</span><strong>{{ importResult.changedRelations || 0 }}</strong></div>
+            <div><span>未变化</span><strong>{{ importResult.unchangedRows || 0 }}</strong></div>
             <div><span>重复合并</span><strong>{{ importResult.duplicateRows || 0 }}</strong></div>
             <div><span>比例未填写</span><strong>{{ importResult.unfilledRatioRows || 0 }}</strong></div>
           </div>
-          <div class="batch-line">批次：{{ importResult.batchNo || '-' }}</div>
+          <div class="batch-line">批次：{{ importResult.batchNo || '无变更，未产生批次' }}</div>
         </section>
       </div>
       <template #footer>
@@ -117,7 +118,7 @@ async function submitImport() {
     importResult.value = await importSupplierSupplyRatioExcel({
       file: uploadFile.value, sheetName: selectedSheet.value,
     })
-    ElMessage.success(`导入完成：新增 ${importResult.value.insertedRows} 条，其中 ${importResult.value.unfilledRatioRows} 条比例未填写`)
+    ElMessage.success(`导入完成：新增 ${importResult.value.newRelations} 条，变更 ${importResult.value.changedRelations} 条，未变化 ${importResult.value.unchangedRows} 条`)
     emit('imported', importResult.value)
     if (props.closeOnSuccess) visible.value = false
   } catch (error) {
@@ -210,7 +211,7 @@ async function submitImport() {
 
 .result-metrics {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 

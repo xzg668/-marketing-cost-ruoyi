@@ -1,9 +1,16 @@
 // 两种填写方式各自保存页面输入；只把当前方式交给后端。
-export const emptyPackage = () => ({ parentQuantity: '', source: null, items: [] })
+export const emptyPackage = () => ({ parentBaseQuantity: '', source: null, items: [] })
+
+export function packageQuantityPerProduct(form, row) {
+  const child = Number(row.quantity), base = Number(form.parentBaseQuantity)
+  if (![child, base].every(value => Number.isFinite(value) && value > 0)) return null
+  return Number((child / base).toFixed(8))
+}
 
 export function packageRow(source = {}) {
   const evidence = source.evidence
   return {
+    lineNo: source.lineNo,
     componentMaterialNo: source.componentMaterialNo || '',
     componentName: source.componentName || '',
     componentModel: source.componentModel || '',
@@ -24,7 +31,8 @@ export function packageSourceRow(source, child) {
 
 export function packagePayload(mode, form, expectedVersion) {
   return {
-    expectedVersion, entryMode: mode, parentQuantity: form.parentQuantity === '' ? null : form.parentQuantity,
+    expectedVersion, entryMode: mode,
+    parentBaseQuantity: form.parentBaseQuantity === '' ? null : form.parentBaseQuantity,
     referenceParentNodeId: mode === 'REFERENCE' ? form.source?.parentNodeId ?? null : null,
     referenceFingerprint: mode === 'REFERENCE' ? form.source?.fingerprint ?? null : null,
     items: form.items.map(row => ({

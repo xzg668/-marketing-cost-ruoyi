@@ -71,7 +71,7 @@
               <span v-if="moduleAction(row, module.code)" class="module-action">{{ moduleAction(row, module.code) }}</span>
             </button>
           </el-tooltip>
-          <el-button v-if="module.code === 'PRICE' && canManage && findModule(row.product, 'PRICE')?.required" link type="primary" @click="openPricePreview(row)">查看价格填写页</el-button>
+          <el-button v-if="module.code === 'PRICE' && canManage && findModule(row.product, 'PRICE')?.required" link type="primary" @click="priceGapRow = row">查看缺价明细</el-button>
         </template>
       </el-table-column>
       <el-table-column label="状态" width="140" fixed="right">
@@ -99,11 +99,12 @@
     <TechnicalDataReturnDialog v-model="returnVisible" :task-ids="returnTaskIds" @changed="load" />
     <TechnicalDataDispatchDialog v-model="dispatchVisible" :rows="dispatchRows" :default-assignee="defaultAssignee" :default-assignee-person="selectedAssigneePerson" @dispatched="load" />
     <TechnicalDataPriceGapDialog v-if="priceGapRow" :row="priceGapRow" @close="priceGapRow = null" @open-costing="openPriceCheck" @open-price-form="openPricePreview(priceGapRow)" />
-    <TechnicalDataPricePreviewDialog v-if="pricePreviewRow" :row="pricePreviewRow" @close="pricePreviewRow = null" />
-    <el-dialog :model-value="!!inspectRow" title="本产品资料检查" width="900px" @close="inspectRow = null">
+    <TechnicalDataEntryPreviewDialog v-if="entryPreview" :row="entryPreview.row" :module-type="entryPreview.module" @close="entryPreview = null" />
+    <el-dialog :model-value="!!inspectRow" :title="inspectModule ? `${moduleName(inspectModule)} · 缺口说明` : '本产品资料检查'" width="900px" @close="inspectRow = null">
       <template v-if="inspectRow">
         <p>{{ inspectRow.product.materialNo || inspectRow.product.sourceModel }} · {{ inspectRow.product.productName }} · {{ inspectRow.accountingMonth }}</p>
-        <el-table :data="inspectRow.product.modules" border>
+        <p v-if="isUnassigned(inspectRow)">当前尚未分派补录任务。以下是本次检查的缺失原因；分派后可查看负责技术员填写的内容。</p>
+        <el-table :data="inspectModule ? inspectRow.product.modules.filter(module => module.moduleType === inspectModule) : inspectRow.product.modules" border>
           <el-table-column label="模块" width="175"><template #default="{ row }">{{ moduleName(row.moduleType) }}</template></el-table-column>
           <el-table-column label="状态" width="110"><template #default="{ row }">{{ modulePresentation(inspectRow.product, row.moduleType).label }}</template></el-table-column>
           <el-table-column prop="requirementReason" label="检查说明" />
@@ -131,7 +132,7 @@ import TechnicalDataDispatchDialog from '../../../components/technical-data/Tech
 import TechnicalDataReturnDialog from '../../../components/technical-data/TechnicalDataReturnDialog.vue'
 import TechnicalDataPersonSelect from '../../../components/technical-data/TechnicalDataPersonSelect.vue'
 import TechnicalDataPriceGapDialog from '../../../components/technical-data/TechnicalDataPriceGapDialog.vue'
-import TechnicalDataPricePreviewDialog from '../../../components/technical-data/TechnicalDataPricePreviewDialog.vue'
+import TechnicalDataEntryPreviewDialog from '../../../components/technical-data/TechnicalDataEntryPreviewDialog.vue'
 import { showErrorOnce } from '../../../utils/errorHandler'
 import { TECHNICAL_DATA_MODULES, findModule, moduleName, modulePresentation, technicalModuleSummary, isTechnicalModuleStatusOnly, taskStatusLabel, taskStatusType, workbenchRowKey, canDispatchWorkbenchRow, workbenchDispatchRow } from '../../../utils/technicalDataWorkbench'
 
@@ -150,9 +151,9 @@ const records = ref([]), selected = ref([]), total = ref(0), loading = ref(false
 const emptySummary = () => ({ total: 0, pending: 0, submitting: 0, submitted: 0, unassigned: 0 })
 const summary = ref(emptySummary())
 const dispatchVisible = ref(false), dispatchRows = ref([]), defaultAssignee = ref(null), selectedAssigneePerson = ref(null)
-const inspectRow = ref(null), rechecking = ref(false)
+const inspectRow = ref(null), inspectModule = ref(''), rechecking = ref(false)
 const priceGapRow = ref(null)
-const pricePreviewRow = ref(null)
+const entryPreview = ref(null)
 const returnVisible = ref(false), returnTaskIds = ref([])
 const dispatchSelection = computed(() => selected.value.filter(canDispatchWorkbenchRow))
 const returnSelection = computed(() => selected.value.filter(canReturnRow))
@@ -241,9 +242,9 @@ function isUnassigned(row) { return !row.taskId || row.taskStatus === 'UNASSIGNE
 function moduleReason(row, code) { return findModule(row.product, code)?.requirementReason || '尚未取得本模块的检查结论' }
 function moduleAction(row, code) {
   if (!canViewSupplementOverview.value && !row.assignedModules.includes(code)) return ''
+  if (canManage.value && code === 'DRAWING_BOM' && ['DRAWING_SOURCE_AVAILABLE', 'DRAWING_SOURCE_PENDING'].includes(findModule(row.product, code)?.requirementReasonCode)) return '查看图库 BOM'
   if (isTechnicalModuleStatusOnly(row.product, code)) return ''
-  if (isUnassigned(row) && code === 'PRICE' && canManage.value && findModule(row.product, code)?.required) return '查看缺价明细'
-  if (isUnassigned(row)) return findModule(row.product, code)?.required ? '' : '查看来源'
+  if (isUnassigned(row)) return findModule(row.product, code)?.required ? '查看缺口' : '查看来源'
   if (row.editableModules.includes(code)) return findModule(row.product, code)?.moduleStatus === 'READY' ? '查看 / 修改' : ({ DRAWING_BOM: '登记 / 检查', MANUFACTURING: '填写原材料', PACKAGE: '引用 / 新增', AUXILIARY: '参考 / 上传', SOLDER: '参考 / 新增', SALARY: '参考 / 上传', NET_LOSS: '参考 / 填写', PRICE: '补录价格' })[code] || '填写'
   return '查看'
 }
@@ -255,9 +256,14 @@ function productAction(row) {
 async function open(row, module) {
   if (submissionBusy.value) return
   if (module && !moduleAction(row, module)) return
+  if (moduleAction(row, module) === '查看图库 BOM') {
+    return router.push({ path: `/ingest/quote-requests/${encodeURIComponent(row.oaNo)}/items/${row.product.oaFormItemId}/costing`, query: { tab: 'PRODUCT_DETAIL', drawingBom: '1' } })
+  }
   if (isUnassigned(row)) {
-    if (module === 'PRICE' && canManage.value && findModule(row.product, module)?.required) { priceGapRow.value = row; return }
-    inspectRow.value = row
+    if (canViewSupplementOverview.value && findModule(row.product, module)?.required && ['PROFILE', 'PACKAGE', 'AUXILIARY', 'SOLDER', 'SALARY', 'NET_LOSS', 'PRICE'].includes(module)) {
+      entryPreview.value = { row, module }; return
+    }
+    inspectModule.value = module || ''; inspectRow.value = row
     return
   }
   persistState()
@@ -273,7 +279,7 @@ function closePanel() {
 function openCosting(row) { router.push(`/ingest/quote-requests/${encodeURIComponent(row.oaNo)}/items/${row.product.oaFormItemId}/costing`) }
 function openPricePreview(row) {
   if (!row || !canManage.value || submissionBusy.value) return
-  priceGapRow.value = null; pricePreviewRow.value = row
+  priceGapRow.value = null; entryPreview.value = { row, module: 'PRICE' }
 }
 function openPriceCheck() {
   const row = priceGapRow.value

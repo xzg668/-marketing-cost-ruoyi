@@ -1,23 +1,23 @@
 <template>
   <section v-loading="loading" class="auxiliary-form">
     <template v-if="workspace">
-      <el-radio-group v-if="canEdit" v-model="mode" :disabled="busy" class="modes">
+      <el-radio-group v-if="canEdit || previewData" v-model="mode" :disabled="busy" class="modes">
         <el-radio-button value="REFERENCE">参考辅料</el-radio-button>
         <el-radio-button value="UPLOAD">上传辅料表</el-radio-button>
       </el-radio-group>
       <p v-else class="hint">{{ mode === 'UPLOAD' ? '上传辅料表' : '参考辅料' }} · 只读</p>
 
       <template v-if="mode === 'REFERENCE'">
-        <div v-if="canEdit" class="search-bar">
-          <el-input v-model="keyword" placeholder="成品料号 / 名称 / 型号 / 规格" @keyup.enter="search" />
-          <el-button :loading="searching" :disabled="busy && !searching" @click="search">查询辅料</el-button>
+        <div v-if="canEdit || previewData" class="search-bar">
+          <el-input v-model="keyword" :disabled="!canEdit || busy" placeholder="成品料号 / 名称 / 型号 / 规格" @keyup.enter="search" />
+          <el-button :loading="searching" :disabled="!canEdit || busy" @click="search">查询辅料</el-button>
         </div>
         <el-table v-if="searched && canEdit" :data="references" border class="auxiliary-references">
           <el-table-column prop="materialNo" label="成品料号" min-width="160" />
           <el-table-column prop="name" label="名称" min-width="150" />
           <el-table-column prop="model" label="型号／图号" min-width="150" />
           <el-table-column label="辅料科目" width="100"><template #default="{ row }">{{ row.items.length }}</template></el-table-column>
-          <el-table-column label="操作" width="80"><template #default="{ row }"><el-button link type="primary" :disabled="busy" @click="selectReference(row)">选择</el-button></template></el-table-column>
+          <el-table-column label="操作" width="80"><template #default="{ row }"><el-button link type="primary" :disabled="!canEdit || busy" @click="selectReference(row)">选择</el-button></template></el-table-column>
           <template #empty><el-empty description="没有找到可用辅料，请更换成品或上传辅料表" /></template>
         </el-table>
         <p v-if="form.reference" class="source-note">参考成品：{{ form.reference.materialNo }} {{ form.reference.name }} {{ form.reference.model }}</p>
@@ -25,10 +25,10 @@
 
       <template v-else>
         <div class="upload-actions">
-          <el-button :disabled="busy" @click="download('template')">下载辅料模板</el-button>
-          <el-button v-if="canEdit" :disabled="busy" :loading="uploading" @click="fileInput.click()">选择辅料表</el-button>
+          <el-button :disabled="!!previewData || busy" @click="download('template')">下载辅料模板</el-button>
+          <el-button v-if="canEdit || previewData" :disabled="!canEdit || busy" :loading="uploading" @click="fileInput.click()">选择辅料表</el-button>
           <input ref="fileInput" type="file" accept=".xlsx" hidden @change="upload" />
-          <el-button v-if="savedFile" :disabled="busy" @click="download('file')">下载已保存原表</el-button>
+          <el-button v-if="savedFile" :disabled="!!previewData || busy" @click="download('file')">下载已保存原表</el-button>
         </div>
         <p class="hint">按模板填写后上传，支持公式。原归类保留；二级科目名称可留空，由财务后续归类。</p>
         <p v-if="form.upload" class="source-note">文件：{{ form.upload.fileName }} · 工作表：{{ form.upload.sheetName }}</p>
@@ -74,14 +74,14 @@ import { fetchTechnicalDataAuxiliary, fetchTechnicalDataAuxiliaryReferences, pre
 import { emptyAuxiliary, auxiliaryAmountText, auxiliaryFromCms, auxiliaryFromUpload, auxiliaryPayload, auxiliaryTotal } from '../../utils/technicalDataAuxiliary'
 import { showErrorOnce } from '../../utils/errorHandler'
 
-const props = defineProps({ productId: { type: Number, required: true }, editable: Boolean, versionId: Number })
+const props = defineProps({ productId: Number, editable: Boolean, versionId: Number, previewData: Object })
 const emit = defineEmits(['dirty', 'busy', 'saved'])
 const workspace = ref(null), mode = ref('REFERENCE'), loading = ref(false), saving = ref(false), searching = ref(false), uploading = ref(false)
 const keyword = ref(''), searched = ref(false), references = ref([]), fileInput = ref(null), uploadIssues = ref([])
 const buffers = reactive({ REFERENCE: emptyAuxiliary(), UPLOAD: emptyAuxiliary() })
 const originals = reactive({ REFERENCE: '', UPLOAD: '' })
 const form = computed(() => buffers[mode.value])
-const canEdit = computed(() => props.editable && workspace.value?.editable)
+const canEdit = computed(() => !props.previewData && props.editable && workspace.value?.editable)
 const busy = computed(() => loading.value || saving.value || searching.value || uploading.value)
 const savedFile = computed(() => workspace.value?.items[0]?.source?.upload)
 watch(busy, value => emit('busy', value))
@@ -101,14 +101,15 @@ function restore(data, initial = false) {
   originals[savedMode] = JSON.stringify(buffers[savedMode])
   emit('dirty', JSON.stringify(form.value) !== originals[mode.value] || mode.value === 'UPLOAD' && uploadIssues.value.length > 0)
 }
-watch(() => props.productId, async () => {
+watch(() => [props.productId, props.versionId, props.previewData], async () => {
   loading.value = true
-  try { restore(await fetchTechnicalDataAuxiliary(props.productId, props.versionId), true) }
+  try { restore(props.previewData || await fetchTechnicalDataAuxiliary(props.productId, props.versionId), true) }
   catch (error) { showErrorOnce(error, '辅料资料加载失败') }
   finally { loading.value = false }
 }, { immediate: true })
 
 async function search() {
+  if (!canEdit.value) return
   if (!keyword.value.trim()) return ElMessage.warning('请输入参考成品查询条件')
   searching.value = true; references.value = []; searched.value = true
   try { references.value = await fetchTechnicalDataAuxiliaryReferences(props.productId, keyword.value.trim()) }
@@ -117,6 +118,7 @@ async function search() {
 }
 function selectReference(source) { buffers.REFERENCE = auxiliaryFromCms(source); searched.value = false }
 async function upload(event) {
+  if (!canEdit.value) return
   const file = event.target.files[0]
   if (!file) return
   uploading.value = true; uploadIssues.value = []
@@ -128,10 +130,12 @@ async function upload(event) {
   finally { uploading.value = false; event.target.value = '' }
 }
 async function download(kind) {
+  if (props.previewData) return
   try { await downloadTechnicalDataAuxiliary(props.productId, kind, kind === 'template' ? '辅料模板_含二级科目.xlsx' : savedFile.value.fileName, kind === 'file' ? workspace.value.draftVersionId : null) }
   catch (error) { showErrorOnce(error, '辅料文件下载失败') }
 }
 async function save(next) {
+  if (!canEdit.value || busy.value) return
   if (mode.value === 'UPLOAD' && uploadIssues.value.length) return ElMessage.warning('请先修正本次上传文件的错误')
   saving.value = true
   try {
