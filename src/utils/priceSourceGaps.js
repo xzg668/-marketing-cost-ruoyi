@@ -22,6 +22,8 @@ export function isMissingScrapMappingGap(row) {
 
 export function priceSourceGapKind(row) {
   if (isMissingScrapMappingGap(row)) return 'SCRAP_MAPPING'
+  if (['MISSING_RAW_PRICE', 'RAW_PRICE_ERROR'].includes(row?.reasonCode)) return 'RAW_PRICE'
+  if (['MISSING_SCRAP_PRICE', 'SCRAP_PRICE_ERROR'].includes(row?.reasonCode)) return 'SCRAP_PRICE'
   const type = String(row?.priceType || '').trim()
   const upper = type.toUpperCase()
   if (upper === 'SETTLE_LINKED' || type.includes('结算联动')) return 'SETTLE_LINKED'
@@ -49,6 +51,8 @@ export function summarizePriceSourceGaps(gaps, reviews = []) {
     linked: 0,
     range: 0,
     make: 0,
+    raw: 0,
+    scrap: 0,
     scrapMapping: 0,
     unresolved: 0,
   }
@@ -65,10 +69,77 @@ export function summarizePriceSourceGaps(gaps, reviews = []) {
       LINKED: 'linked',
       RANGE: 'range',
       MAKE: 'make',
+      RAW_PRICE: 'raw',
+      SCRAP_PRICE: 'scrap',
       SCRAP_MAPPING: 'scrapMapping',
       UNRESOLVED: 'unresolved',
     }[priceSourceGapKind(row)]
     summary[key] += 1
   }
   return summary
+}
+
+/** 母件只提供 BOM 上下文；补价、统计始终针对实际缺价料号。
+ * 同一缺价料出现在多个母件下时保留各处上下文，不猜测它属于哪一处。
+ */
+export function buildPriceSourceGapTree(gaps, bomRows = []) {
+  const byCode = new Map(), byNodeKey = new Map()
+  function visit(rows, parent = null) {
+    for (const row of rows || []) {
+      const code = row.materialCode || row.childCode
+      if (code) {
+        const node = { ...row, materialCode: code, parentCode: row.parentCode || parent?.materialCode,
+          parentNodeKey: row.parentNodeKey || parent?.nodeKey }
+        const matches = byCode.get(code) || []
+        matches.push(node); byCode.set(code, matches)
+        if (node.nodeKey) byNodeKey.set(node.nodeKey, node)
+        visit(row.children, node)
+      } else visit(row.children, parent)
+    }
+  }
+  visit(bomRows)
+  const result = [], parents = new Map()
+  function parentNodes(gap) {
+    const code = gap.gapMaterialCode || gap.materialCode
+    if (gap.materialCode && gap.materialCode !== code) {
+      return byCode.get(gap.materialCode) || [{ materialCode: gap.materialCode }]
+    }
+    return (byCode.get(code) || []).flatMap(node => {
+      if (node.parentNodeKey) {
+        const parent = byNodeKey.get(node.parentNodeKey)
+        return parent && parent.materialCode !== code ? [parent] : []
+      }
+      if (!node.parentCode || node.parentCode === code) return []
+      const matches = byCode.get(node.parentCode) || []
+      // Flat costing rows carry a path. Resolve the parent by that path when possible.
+      const path = node.path || node.nodePath
+      const ancestors = path ? matches.filter(parent => {
+        const parentPath = parent.path || parent.nodePath
+        return parentPath && path.startsWith(parentPath) && parentPath !== path
+      }) : []
+      if (ancestors.length) return ancestors.sort((a, b) => (b.path || b.nodePath).length - (a.path || a.nodePath).length).slice(0, 1)
+      return matches.length === 1 ? matches : []
+    })
+  }
+  for (const [index, gap] of (gaps || []).entries()) {
+    const contexts = parentNodes(gap)
+    if (!contexts.length) {
+      result.push({ ...gap, gapTreeKey: `gap:${index}` })
+      continue
+    }
+    for (const parent of contexts) {
+      const key = parent.nodeKey || parent.path || parent.nodePath || parent.materialCode
+      let context = parents.get(key)
+      if (!context) {
+        context = { gapTreeKey: `parent:${key}`, isGapContext: true,
+          gapMaterialCode: parent.materialCode, materialName: parent.materialName || parent.childName || '',
+          priceType: parent.priceType || (gap.itemType === 'MAKE_PART' ? '自制件' : ''), children: [] }
+        parents.set(key, context); result.push(context)
+      }
+      if (!context.children.some(child => child.gapTreeKey === `gap:${index}:${key}`)) {
+        context.children.push({ ...gap, gapTreeKey: `gap:${index}:${key}` })
+      }
+    }
+  }
+  return result
 }

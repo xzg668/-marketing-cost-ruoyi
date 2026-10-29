@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { isSupplierRatioGap, priceSourceGapKind, summarizePriceSourceGaps } from '../src/utils/priceSourceGaps.js'
+import { isSupplierRatioGap, priceSourceGapKind, summarizePriceSourceGaps, buildPriceSourceGapTree } from '../src/utils/priceSourceGaps.js'
 
 describe('报价价格缺口分类', () => {
   it('月价返回 WAITING 时按实际审核物料区分供货比率和真正无价，不把包装母件误作缺价子件', () => {
@@ -29,10 +29,50 @@ describe('报价价格缺口分类', () => {
     const result = summarizePriceSourceGaps(gaps)
     assert.deepEqual(result, {
       all: 39, total: 29, ratioReview: 10, fixed: 0, settleFixed: 0, settleLinked: 0,
-      linked: 19, range: 0, make: 5, scrapMapping: 1, unresolved: 4,
+      linked: 19, range: 0, make: 5, raw: 0, scrap: 0, scrapMapping: 1, unresolved: 4,
     })
     assert.equal(isSupplierRatioGap(gaps[25]), true)
     assert.equal(priceSourceGapKind(gaps[0]), 'LINKED')
+  })
+
+  it('缺价原材料和废料不沿用自制母件的取价类型；来源异常仍显示但不冒充缺价', () => {
+    const raw = { itemType: 'MAKE_PART', priceType: '自制件', reasonCode: 'MISSING_RAW_PRICE' }
+    const scrap = { ...raw, reasonCode: 'MISSING_SCRAP_PRICE' }
+    assert.equal(priceSourceGapKind(raw), 'RAW_PRICE')
+    assert.equal(priceSourceGapKind(scrap), 'SCRAP_PRICE')
+    assert.equal(priceSourceGapKind({ ...raw, reasonCode: 'RAW_PRICE_ERROR', gapType: 'PRICE_SOURCE_ERROR' }), 'RAW_PRICE')
+    const summary = summarizePriceSourceGaps([raw, scrap])
+    assert.equal(summary.make, 0)
+    assert.equal(summary.raw, 1)
+    assert.equal(summary.scrap, 1)
+  })
+
+  it('实际缺价料号显示在真实 BOM 父件下，父件只作上下文', () => {
+    const gap = { materialCode: '201850068', gapMaterialCode: '201850068', materialName: '基座毛坯', reasonCode: 'MISSING_RAW_PRICE', itemType: 'MAKE_PART' }
+    const tree = buildPriceSourceGapTree([gap], [
+      { nodeKey: 'base', materialCode: '7218501041211', materialName: '基座' },
+      { nodeKey: 'blank', parentNodeKey: 'base', materialCode: '201850068', materialName: '基座毛坯' },
+    ])
+    assert.equal(tree[0].gapMaterialCode, '7218501041211')
+    assert.equal(tree[0].materialName, '基座')
+    assert.equal(tree[0].isGapContext, true)
+    assert.equal(tree[0].children[0].gapMaterialCode, '201850068')
+    assert.equal(tree[0].children[0].isGapContext, undefined)
+    assert.equal(gap.children, undefined)
+  })
+
+  it('同一缺价料在多个实际父件下出现时保留各处关系，不把上下文计入缺价数', () => {
+    const gap = { materialCode: 'RAW', gapMaterialCode: 'RAW', reasonCode: 'MISSING_RAW_PRICE' }
+    const tree = buildPriceSourceGapTree([gap], [
+      { nodeKey: 'a', materialCode: 'P1', children: [{ nodeKey: 'r1', materialCode: 'RAW' }] },
+      { nodeKey: 'b', materialCode: 'P2', children: [{ nodeKey: 'r2', materialCode: 'RAW' }] },
+    ])
+    assert.deepEqual(tree.map(row => row.gapMaterialCode), ['P1', 'P2'])
+    assert.equal(new Set(tree.flatMap(row => row.children).map(row => row.gapTreeKey)).size, 2)
+    assert.equal(summarizePriceSourceGaps([gap]).total, 1)
+    const scrap = buildPriceSourceGapTree([{ materialCode: 'P1', gapMaterialCode: 'SCRAP', reasonCode: 'MISSING_SCRAP_PRICE' }], [])
+    assert.equal(scrap[0].gapMaterialCode, 'P1')
+    assert.equal(scrap[0].children[0].gapMaterialCode, 'SCRAP')
   })
 
   it('价格类型明确时才归入固定价、结算固定价或区间价缺口', () => {

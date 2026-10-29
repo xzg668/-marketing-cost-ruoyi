@@ -7,11 +7,11 @@
       <template v-else-if="result">
         <p>共 {{ gaps.length }} 项：待确认供货比率 {{ ratioCount }} 项，其他价格缺口 {{ gaps.length - ratioCount }} 项</p>
         <el-alert v-if="typeError" title="价格类型暂未加载完整，可进入产品取价检查核对。" type="warning" :closable="false" />
-        <el-table v-if="gaps.length" :data="gaps" border max-height="55vh">
+        <el-table v-if="gaps.length" :data="gapTree" row-key="gapTreeKey" default-expand-all border max-height="55vh">
           <el-table-column label="料号" min-width="140"><template #default="{ row: gap }">{{ gap.gapMaterialCode || gap.materialCode || '—' }}</template></el-table-column>
           <el-table-column prop="materialName" label="物料名称" min-width="160" />
           <el-table-column label="价格类型" width="120"><template #default="{ row: gap }">{{ typeLabel(gap) }}</template></el-table-column>
-          <el-table-column label="待处理事项" width="160"><template #default="{ row: gap }">{{ needsRatio(gap) ? '供货比率待确认' : '价格来源待补齐' }}</template></el-table-column>
+          <el-table-column label="待处理事项" width="160"><template #default="{ row: gap }">{{ gap.isGapContext ? '' : needsRatio(gap) ? '供货比率待确认' : gap.gapType === 'MISSING_PRICE' ? '实际料件缺价' : '价格来源或资料待处理' }}</template></el-table-column>
           <el-table-column prop="message" label="原因" min-width="280" />
         </el-table>
         <el-empty v-else description="当前没有价格缺口" />
@@ -30,12 +30,13 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { checkQuotePriceSources, fetchQuotePriceTypeRecognition } from '../../api/quoteRequests'
-import { isSupplierRatioGap } from '../../utils/priceSourceGaps'
+import { isSupplierRatioGap, priceSourceGapKind, buildPriceSourceGapTree } from '../../utils/priceSourceGaps'
 
 const props = defineProps({ row: { type: Object, required: true } })
 defineEmits(['close', 'open-costing', 'open-price-form'])
 const result = ref(null), types = ref([]), loading = ref(false), error = ref(''), typeError = ref(false)
 const gaps = computed(() => result.value?.gaps?.records || [])
+const gapTree = computed(() => buildPriceSourceGapTree(gaps.value, types.value))
 const reviews = computed(() => (result.value?.supplierPriceReviews || []).filter(review => review.status !== 'FALLBACK_HIGH'))
 const reviewFor = gap => reviews.value.find(review => review.scope?.materialCode === (gap.gapMaterialCode || gap.materialCode))
 const needsRatio = gap => isSupplierRatioGap(gap, reviews.value)
@@ -55,6 +56,8 @@ const typesByCode = computed(() => {
   return map
 })
 function typeLabel(gap) {
+  if (priceSourceGapKind(gap) === 'RAW_PRICE') return '原材料'
+  if (priceSourceGapKind(gap) === 'SCRAP_PRICE') return '废料'
   const values = typesByCode.value.get(gap.gapMaterialCode || gap.materialCode)
   const type = gap.priceType || reviewFor(gap)?.scope?.priceType || (values?.size === 1 ? [...values][0] : '')
   return ({ FIXED: '固定价', PURCHASE_FIXED: '固定价', LINKED: '联动价', RANGE: '区间价', SETTLE_FIXED: '结算固定价', SETTLE_LINKED: '结算联动价' })[type] || type || '待核对'

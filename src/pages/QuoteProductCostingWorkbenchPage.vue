@@ -603,6 +603,14 @@
                 <strong>{{ priceSourceGapSummary.ratioReview }}</strong>
               </div>
               <div class="source-gap-card">
+                <span>原材料价格待处理</span>
+                <strong>{{ priceSourceGapSummary.raw }}</strong>
+              </div>
+              <div class="source-gap-card">
+                <span>废料价格待处理</span>
+                <strong>{{ priceSourceGapSummary.scrap }}</strong>
+              </div>
+              <div class="source-gap-card">
                 <span>制造件内部缺口</span>
                 <strong>{{ priceSourceGapSummary.make }}</strong>
               </div>
@@ -642,7 +650,9 @@
             />
 
             <el-table
-              :data="sourceMaintenanceGaps"
+              :data="sourceMaintenanceGapTree"
+              row-key="gapTreeKey"
+              default-expand-all
               v-if="sourceMaintenanceGaps.length"
               border
               stripe
@@ -666,7 +676,7 @@
               </el-table-column>
               <el-table-column label="操作" width="260" fixed="right">
                 <template #default="{ row }">
-                  <div class="row-actions">
+                  <div v-if="!row.isGapContext" class="row-actions">
                     <template v-if="isMissingScrapMappingGap(row)">
                       <el-button link type="primary" @click="goSupplementScrapMapping(row)">
                         补充废料映射
@@ -1220,7 +1230,7 @@ import {
 } from './quoteCuCostingUtils'
 
 import SupplierPriceReviewPanel from '../components/SupplierPriceReviewPanel.vue'
-import { isSupplierRatioGap, isMissingScrapMappingGap, priceSourceGapKind, summarizePriceSourceGaps } from '../utils/priceSourceGaps'
+import { isSupplierRatioGap, isMissingScrapMappingGap, priceSourceGapKind, summarizePriceSourceGaps, buildPriceSourceGapTree } from '../utils/priceSourceGaps'
 
 const route = useRoute()
 const router = useRouter()
@@ -1506,6 +1516,8 @@ const pricePrepareDifferenceSummary = computed(() => pricePrepare.value.differen
 const oaCuPricePerKg = computed(() => normalizeCuPricePerKg(header.value.copperPrice))
 const pricePrepareGaps = computed(() => Array.isArray(pricePrepare.value.gaps?.records) ? pricePrepare.value.gaps.records : [])
 const sourceMaintenanceGaps = computed(() => pricePrepareGaps.value.filter(row => !isSupplierRatioGap(row, pricePrepare.value.supplierPriceReviews || [])))
+const sourceMaintenanceGapTree = computed(() => buildPriceSourceGapTree(sourceMaintenanceGaps.value,
+  effectiveBom.value.nodes?.length ? effectiveBom.value.nodes : bomRows.value))
 const priceSourceGapSummary = computed(() => summarizePriceSourceGaps(pricePrepareGaps.value, pricePrepare.value.supplierPriceReviews || []))
 const oaPricePrepareReady = computed(() => {
   const readiness = pricePrepare.value.readiness || {}
@@ -2422,12 +2434,19 @@ function openTechnicalPriceImport() {
 }
 
 function openPriceSource(row) {
+  if (row?.isGapContext) return
+  if (row?.gapType === 'PRICE_SOURCE_ERROR') {
+    ElMessage.info(row.message || '请先核实已有价格来源，再重新检查取价')
+    return
+  }
   const kind = priceSourceGapKind(row)
   if (kind === 'SCRAP_MAPPING') {
     ElMessage.info('该缺口请在缺口行选择“补充废料映射”或“确认无废料，按0处理”')
     return
   }
   const paths = {
+    RAW_PRICE: '/collaboration/tasks',
+    SCRAP_PRICE: '/price/scrap',
     FIXED: '/price/fixed',
     SETTLE_FIXED: '/price/settlement',
     SETTLE_LINKED: '/price/settlement',
@@ -2557,6 +2576,8 @@ function priceSourceSupplementText(tab) {
 function priceSourceGapTypeText(row) {
   const type = row?.priceType
   if (isMissingScrapMappingGap(row)) return '废料映射'
+  if (priceSourceGapKind(row) === 'RAW_PRICE') return '原材料'
+  if (priceSourceGapKind(row) === 'SCRAP_PRICE') return '废料'
   if (type) return type
   const labels = {
     FIXED: '固定采购价',
@@ -2572,6 +2593,8 @@ function priceSourceGapTypeText(row) {
 }
 
 function priceSourceGapActionText(row) {
+  if (row?.isGapContext) return ''
+  if (row?.gapType === 'PRICE_SOURCE_ERROR') return '先处理已有价格的供货或来源问题，再重新检查取价'
   const materialCode = row?.gapMaterialCode || row?.materialCode || ''
   if (isMissingScrapMappingGap(row)) {
     const actionCode = actionMaterialNo(row) || materialCode
@@ -2581,6 +2604,8 @@ function priceSourceGapActionText(row) {
     return actionCode ? `${label}：${actionCode}` : label
   }
   const labels = {
+    RAW_PRICE: '核对原材料价格；确无可用价格时在补录工作台补价',
+    SCRAP_PRICE: '维护实际缺价废料的价格',
     FIXED: '维护固定采购价价格源',
     SETTLE_FIXED: '维护结算固定价价格源',
     SETTLE_LINKED: '维护结算联动价及重量',
@@ -2594,7 +2619,10 @@ function priceSourceGapActionText(row) {
 }
 
 function priceSourceGapButtonText(row) {
+  if (row?.gapType === 'PRICE_SOURCE_ERROR') return '查看来源问题'
   const labels = {
+    RAW_PRICE: '去补录工作台',
+    SCRAP_PRICE: '去维护废料价格',
     FIXED: '去维护固定采购价',
     SETTLE_FIXED: '去维护结算固定价',
     SETTLE_LINKED: '去维护结算联动价',
