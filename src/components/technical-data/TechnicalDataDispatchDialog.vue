@@ -54,6 +54,7 @@
 </template>
 
 <script setup>
+import { createUuid } from '../../utils/uuid.js'
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '../../store/modules/user'
@@ -124,7 +125,7 @@ async function publish() {
     const signature = JSON.stringify(command)
     let pending
     try { pending = JSON.parse(sessionStorage.getItem(key) || 'null') } catch { pending = null }
-    if (!pending || pending.signature !== signature) pending = { signature, requestId: globalThis.crypto.randomUUID() }
+    if (!pending || pending.signature !== signature) pending = { signature, requestId: createUuid() }
     sessionStorage.setItem(key, JSON.stringify(pending))
     const result = await publishTechnicalDataTasks({ ...command, requestId: pending.requestId })
     if (result.oaResult?.status === 'SUCCESS') {

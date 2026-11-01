@@ -2,17 +2,19 @@
   <el-dialog :model-value="modelValue" title="退回补录资料" width="960px" :close-on-click-modal="false"
     :before-close="close" @update:model-value="$emit('update:modelValue', $event)">
     <div v-loading="loading">
-      <p>选择需要修改的板块，系统自动退回原负责人。请简要说明修改要求。</p>
+      <p>选择需要退回的产品并填写原因，该产品全部补录资料将退回原负责人。</p>
       <el-alert v-if="result" :title="returnMessage(result)" :type="result.status === 'SUCCESS' ? 'success' : 'warning'" :closable="false" show-icon />
       <el-table :data="candidates" border>
-        <el-table-column prop="productNo" label="产品" width="175" />
-        <el-table-column label="需修改板块 / 原负责人" min-width="290">
+        <el-table-column label="产品" width="175">
+          <template #default="{ row }"><el-checkbox v-model="row.selected" :disabled="busy || locked || !row.modules.length">{{ row.productNo }}</el-checkbox></template>
+        </el-table-column>
+        <el-table-column label="全部补录板块 / 原负责人" min-width="290">
           <template #default="{ row }">
-            <el-checkbox-group v-model="row.selectedModules" :disabled="busy || locked">
-              <el-checkbox v-for="module in row.modules" :key="module.moduleType" :value="module.moduleType">
+            <div class="return-modules">
+              <div v-for="module in row.modules" :key="module.moduleType">
                 {{ module.label }} · {{ module.assigneeName }}（{{ module.employeeNo }}）
-              </el-checkbox>
-            </el-checkbox-group>
+              </div>
+            </div>
             <span v-if="!row.modules.length">当前没有可退回的已提交板块</span>
           </template>
         </el-table-column>
@@ -23,20 +25,21 @@
           </template>
         </el-table-column>
       </el-table>
-      <p>只开放本次选中的内容修改。技术员修改后重新提交领导审批。</p>
+      <p>退回成功后，该产品全部补录缺口恢复，已填内容保留；重新提交成功后消除缺口。其他产品不受影响。</p>
     </div>
     <template #footer>
       <el-button :disabled="busy" @click="close">关闭</el-button>
       <el-button v-if="pending || pendingReturn(result)" :loading="busy" @click="refresh">刷新退回结果</el-button>
       <el-button v-if="result?.canRetry" type="danger" :loading="busy" :disabled="loading" @click="retry">继续退回</el-button>
       <el-button v-else-if="canConfirmPeople" type="danger" :loading="busy" :disabled="loading" @click="confirmPeople">核实OA后继续退回</el-button>
-      <el-button v-else-if="result?.status !== 'SUCCESS'" type="danger" :loading="busy" :disabled="loading || locked || !candidates.some(row => row.selectedModules.length)"
+      <el-button v-else-if="result?.status !== 'SUCCESS'" type="danger" :loading="busy" :disabled="loading || locked || !candidates.some(row => row.selected)"
         @click="submit">{{ result && ['REJECTED', 'NOT_SENT'].includes(result.status) ? '重新确认退回' : '确认退回' }}</el-button>
     </template>
   </el-dialog>
 </template>
 
 <script setup>
+import { createUuid } from '../../utils/uuid.js'
 import { computed, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '../../store/modules/user'
@@ -67,13 +70,14 @@ async function load() {
     try { pending.value = JSON.parse(sessionStorage.getItem(storageKey.value) || 'null') } catch { sessionStorage.removeItem(storageKey.value) }
     const rows = await previewTechnicalDataReturn(props.taskIds)
     if (request !== generation) return
-    candidates.value = rows.map(row => ({ ...row, selectedModules: row.modules.map(module => module.moduleType), reason: row.returnReason || '' }))
+    candidates.value = rows.map(row => ({ ...row, selected: row.modules.length > 0, reason: row.returnReason || '' }))
     const unfinished = rows.find(row => pendingReturn(row.lastReturn))?.lastReturn
     if (unfinished) result.value = unfinished
     if (pending.value) {
       for (const row of candidates.value) {
         const saved = pending.value.targets.find(target => Number(target.taskId) === Number(row.taskId))
-        if (saved) { row.selectedModules = saved.modules; row.reason = saved.reason }
+        row.selected = Boolean(saved)
+        if (saved) row.reason = saved.reason
       }
       await refresh()
     }
@@ -90,8 +94,7 @@ async function accept(value) {
     if (current !== generation) return
     candidates.value = rows.map(row => {
       const previous = candidates.value.find(item => item.taskId === row.taskId)
-      return { ...row, reason: previous?.reason || '', selectedModules: (previous?.selectedModules || [])
-        .filter(type => row.modules.some(module => module.moduleType === type)) }
+      return { ...row, reason: previous?.reason || '', selected: Boolean(previous?.selected && row.modules.length) }
     })
   }
   emit('changed')
@@ -101,7 +104,7 @@ async function accept(value) {
 async function submit() {
   if (busy.value || locked.value) return
   let payload
-  try { payload = buildReturnRequest(candidates.value, globalThis.crypto.randomUUID()) }
+  try { payload = buildReturnRequest(candidates.value, createUuid()) }
   catch (error) { return ElMessage.warning(error.message) }
   storePending(payload); busy.value = true
   const current = generation
@@ -174,6 +177,6 @@ watch(() => [props.modelValue, storageKey.value], ([visible]) => { if (visible) 
 <style scoped>
 p { color: #657187; line-height: 1.7; }
 .el-alert { margin-bottom: 14px; }
-.el-checkbox-group { display: flex; flex-direction: column; }
+.return-modules { display: flex; flex-direction: column; gap: 6px; }
 .el-checkbox { margin: 0; white-space: normal; height: auto; min-height: 30px; }
 </style>

@@ -402,7 +402,7 @@ const actionLoadingId = ref('')
 const activeTab = ref('items')
 const detail = ref({})
 const drawingStates = reactive({})
-const productRows = computed(() => withQuoteItemWorkflow(detail.value, drawingStates).items)
+const productRows = computed(() => withQuoteItemWorkflow(detail.value, drawingStates, materialState.value).items)
 const drawingReviewCount = computed(() => productRows.value.filter(isDrawingReview).length)
 function isDrawingReview(row) { return row.workflow?.currentStatus === 'E_DRAWING_WAIT_REVIEW' }
 const drawingContinuation = useDrawingCostingContinuation(oaNo, {

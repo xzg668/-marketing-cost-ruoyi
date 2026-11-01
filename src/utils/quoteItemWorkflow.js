@@ -1,4 +1,5 @@
 import { carriedForwardPriceCount, priceReadyLabel } from './pricePrepareDisplay.js'
+import { currentSupplementWorkspace, productSupplement } from './technicalDataGaps.js'
 
 const READY_BOM_STATUSES = new Set([
   'SYNCED',
@@ -23,13 +24,14 @@ const BOM_STATUS_LABELS = {
   NOT_CHECKED: 'BOM待检查',
 }
 
-export function withQuoteItemWorkflow(detail, drawingStates = {}) {
+export function withQuoteItemWorkflow(detail, drawingStates = {}, materialState = null) {
   return {
     ...(detail || {}),
-    items: (detail?.items || []).map((item) => ({
-      ...item,
-      workflow: quoteItemWorkflow(item, drawingStates[item.id]),
-    })),
+    items: (detail?.items || []).map((item) => {
+      const current = { ...item, costingWorkspace: currentSupplementWorkspace(item.costingWorkspace,
+        productSupplement(materialState, item.id, item.costingWorkspace?.periodMonth)) }
+      return { ...current, workflow: quoteItemWorkflow(current, drawingStates[item.id]) }
+    }),
   }
 }
 
@@ -92,26 +94,34 @@ export function quoteItemWorkflow(item, drawingWorkspace) {
     )
   }
   if (workspaceStatus === 'WAIT_TECH_DATA') {
-    return state(base, 'PENDING', '待技术资料生效', 'MISSING_TECH_DATA', '待技术资料',
+    const returned = workspace?.supplement?.status === 'RETURNED'
+    return state(base, 'PENDING', returned ? '补录已退回' : '待技术资料', 'MISSING_TECH_DATA', returned ? '已退回，待补录' : '待技术资料',
       'VIEW_COSTING_GAP', '查看缺口', workspace?.lastErrorMessage || '当前月份缺少已审核生效的技术资料', '产品技术')
   }
   if (workspaceStatus === 'WAIT_PRICE_TYPE') {
     // Existing workspaces retain this historical status until their next preparation.
     return state(base, 'PENDING', '待重新检查价格', 'MISSING_PRICE', '待重新检查价格',
-      'VIEW_COSTING_GAP', '查看缺口', '请重新发起核算，按当前取价顺序检查价格', '财务报价')
+      calculated ? 'RESTART_COSTING' : 'START_COSTING', calculated ? '重新核算本产品' : '核算本产品',
+      '请重新发起核算，按当前取价顺序检查价格', '财务报价')
   }
   if (workspaceStatus === 'WAIT_PRICE') {
     const assignee = String(workspace?.lastErrorCode || '').toUpperCase() === 'FINANCE_BASE_PRICE_MISSING'
       ? '财务报价'
       : '财务报价/产品技术'
+    // 补录或维护价格后，由核算入口重新检查；旧缺口仍单独展示，不能挡住本产品核算。
     return state(base, 'MISSING', '缺价格', 'MISSING_PRICE', '缺价格',
-      'VIEW_COSTING_GAP', '查看缺口', workspace?.lastErrorMessage || '价格存在缺口', assignee)
+      calculated ? 'RESTART_COSTING' : 'START_COSTING', calculated ? '重新核算本产品' : '核算本产品',
+      workspace?.lastErrorMessage || '价格存在缺口', assignee)
   }
   if (workspaceStatus === 'SYSTEM_FAILED') {
     return state(base, 'ERROR', '系统处理失败', 'SYSTEM_FAILED', '系统处理失败',
       'RETRY_COSTING', '重试本产品', workspace?.lastErrorMessage || '系统处理失败，可重试')
   }
   if (workspaceStatus === 'READY') {
+    if (workspace?.supplement?.status === 'SUBMITTED' && !calculated) {
+      return state(base, 'PENDING', '待核算', 'READY_FOR_COSTING', '补录已提交',
+        'START_COSTING', '核算本产品', '补录资料已提交，可核算本产品')
+    }
     return state(base, 'READY', priceReadyLabel(historyPriceCount), 'READY_FOR_COSTING', '可核算',
       'START_COSTING', '核算本产品', '当前资料已准备，可核算本产品')
   }

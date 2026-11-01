@@ -15,6 +15,19 @@ const pageContent = fs.readFileSync(PAGE_FILE, 'utf-8')
 const apiContent = fs.readFileSync(API_FILE, 'utf-8')
 
 describe('本次计价 BOM 进入第 2 步', () => {
+  it('本轮 BOM 准备失败后旧构建指针不能放行取价，后续价格阶段失败仍可查看 BOM', () => {
+    const workbench = {
+      buildBatchId: 'QEB-OLD',
+      costingWorkspace: { workspaceStatus: 'SYSTEM_FAILED', currentStep: 'QUOTE_BOM', currentBomBuildBatchId: 'QEB-OLD' },
+      workflowStatus: { quoteBomStatus: 'BLOCKED' },
+      bomRows: [{ id: 1 }],
+    }
+    assert.equal(workbenchCanLoadPriceType(workbench), false)
+    workbench.costingWorkspace.currentStep = 'PRICE_PREPARE'
+    workbench.workflowStatus.quoteBomStatus = 'DONE'
+    assert.equal(workbenchCanLoadPriceType(workbench), true)
+  })
+
   it('只有无阻断且至少有一个节点的草稿可以自动生成报价物料明细', () => {
     assert.equal(effectiveBomCanPrepare({ state: 'DRAFT', nodes: [{ nodeKey: 'P' }] }), true)
     assert.equal(effectiveBomCanPrepare({ state: 'DRAFT', nodes: [] }), false)

@@ -534,11 +534,11 @@ describe('T11 报价单接入页面契约', () => {
     assert.equal(workflows[4].currentStatusLabel, '可核算')
     assert.equal(workflows[4].nextAction, 'START_COSTING')
     assert.equal(workflows[5].currentStatusLabel, '缺价格')
-    assert.equal(workflows[5].nextAction, 'VIEW_COSTING_GAP')
+    assert.equal(workflows[5].nextAction, 'RESTART_COSTING')
     assert.equal(workflows[5].assigneeName, '财务报价')
     assert.equal(workflows[5].message, '缺少财务基准价格')
     assert.equal(workflows[6].currentStatusLabel, '待重新检查价格')
-    assert.equal(workflows[6].nextAction, 'VIEW_COSTING_GAP')
+    assert.equal(workflows[6].nextAction, 'START_COSTING')
     assert.equal(workflows[7].currentStatusLabel, '核算中')
     assert.equal(workflows[7].nextAction, 'VIEW_COSTING_PROGRESS')
   })
@@ -803,7 +803,7 @@ describe('T11 报价单接入页面契约', () => {
     assert.doesNotMatch(quoteRequestApiContent, /costing-bom\/rows\/\$\{encodePath\(rowId\)\}/)
     assert.match(
       costingWorkbenchPageContent,
-      /loading\.value = true\s*try \{\s*clearEffectiveBom\(\)[\s\S]*?finally \{\s*loading\.value = false/,
+      /loading\.value = true\s*try \{[\s\S]*?clearEffectiveBom\(\)[\s\S]*?finally \{\s*loading\.value = false/,
     )
   })
 })

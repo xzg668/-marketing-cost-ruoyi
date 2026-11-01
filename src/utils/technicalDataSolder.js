@@ -1,3 +1,4 @@
+import { createUuid } from './uuid.js'
 export const emptySolder = () => ({ reference: null, items: [] })
 
 export function solderQuantityText(value) {
@@ -7,7 +8,7 @@ export function solderQuantityText(value) {
 
 export function solderRow(item = {}) {
   const material = item.evidence?.material
-  return { uiId: crypto.randomUUID(), itemKey: item.itemKey ?? null, materialNo: item.materialNo || '',
+  return { uiId: createUuid(), itemKey: item.itemKey ?? null, materialNo: item.materialNo || '',
     name: item.name || '', drawingNo: item.drawingNo || '', quantityPerProduct: solderQuantityText(item.quantityPerProduct),
     evidence: item.evidence ?? null, materialFingerprint: material?.fingerprint ?? null,
     lookupStatus: material ? (material.drawingNo ? 'FOUND' : 'NO_DRAWING') : 'EMPTY',

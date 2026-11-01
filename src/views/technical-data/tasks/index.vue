@@ -65,7 +65,7 @@
           <span v-if="!canViewSupplementOverview && !row.assignedModules.includes(module.code)" class="not-assigned">—</span>
           <el-tooltip v-else :content="moduleReason(row, module.code)" placement="top" :show-after="250">
             <button type="button" class="module-button" :disabled="!moduleAction(row, module.code)" :class="{ owned: row.assignedModules.includes(module.code), muted: !findModule(row.product, module.code)?.required }" @click="open(row, module.code)">
-              <el-tag :type="modulePresentation(row.product, module.code).type" size="small">{{ modulePresentation(row.product, module.code).label }}</el-tag>
+              <el-tag :type="modulePresentation(row.product, module.code, row.taskStatus).type" size="small">{{ modulePresentation(row.product, module.code, row.taskStatus).label }}</el-tag>
               <b v-if="!isTechnicalModuleStatusOnly(row.product, module.code)">{{ technicalModuleSummary(row.product, module.code) }}</b>
               <small v-if="findModule(row.product, module.code)?.assigneeName">{{ findModule(row.product, module.code).assigneeName }}负责</small>
               <span v-if="moduleAction(row, module.code)" class="module-action">{{ moduleAction(row, module.code) }}</span>
@@ -106,7 +106,7 @@
         <p v-if="isUnassigned(inspectRow)">当前尚未分派补录任务。以下是本次检查的缺失原因；分派后可查看负责技术员填写的内容。</p>
         <el-table :data="inspectModule ? inspectRow.product.modules.filter(module => module.moduleType === inspectModule) : inspectRow.product.modules" border>
           <el-table-column label="模块" width="175"><template #default="{ row }">{{ moduleName(row.moduleType) }}</template></el-table-column>
-          <el-table-column label="状态" width="110"><template #default="{ row }">{{ modulePresentation(inspectRow.product, row.moduleType).label }}</template></el-table-column>
+          <el-table-column label="状态" width="110"><template #default="{ row }">{{ modulePresentation(inspectRow.product, row.moduleType, inspectRow.taskStatus).label }}</template></el-table-column>
           <el-table-column prop="requirementReason" label="检查说明" />
         </el-table>
         <p v-for="source in inspectRow.sourceCheck?.sharedModules || []" :key="source.moduleType">{{ moduleName(source.moduleType) }}：{{ source.message }} <el-link v-if="source.sourceTaskId" :href="`/collaboration/technical-data/tasks/${source.sourceTaskId}?module=${source.moduleType}`" target="_blank" type="primary">查看原资料</el-link></p>

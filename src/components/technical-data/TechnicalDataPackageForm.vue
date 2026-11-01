@@ -132,13 +132,22 @@ async function searchReferences() {
   if (!keyword.value.trim()) return ElMessage.warning('请输入查询条件')
   searching.value = true
   components.value = []; selectedComponent.value = null; buffers.REFERENCE = emptyPackage(); searched.value = true
-  try { components.value = (await fetchTechnicalDataPackageReferences(props.productId, keyword.value.trim())).components }
+  try {
+    components.value = (await fetchTechnicalDataPackageReferences(props.productId, keyword.value.trim())).components
+    if (components.value.length === 1) selectComponent(components.value[0])
+  }
   catch (error) { showErrorOnce(error, '包装查询失败') }
   finally { searching.value = false }
 }
 function selectComponent(component) {
   selectedComponent.value = component; buffers.REFERENCE = emptyPackage()
   if (component.sources.length === 1) selectSource(component.sources[0])
+  else {
+    const bases = component.sources.map(source => source.evidence.parentBaseQuantity)
+    if (bases.length && bases.every(base => Number.isFinite(Number(base)) && Number(base) > 0 && Number(base) === Number(bases[0]))) {
+      buffers.REFERENCE.parentBaseQuantity = String(Number(bases[0]))
+    }
+  }
 }
 function selectSourceById(id) { selectSource(selectedComponent.value.sources.find(source => source.evidence.parentNodeId === id)) }
 function selectSource(source) {
@@ -159,6 +168,11 @@ function selectChild(option) {
 }
 async function save(next) {
   if (!canEdit.value || busy.value) return
+  if (mode.value === 'REFERENCE' && (!form.value.source?.parentNodeId || !form.value.source?.fingerprint)) {
+    return ElMessage.warning(selectedComponent.value
+      ? '请先选择来源成品，系统会自动带出母件底数和包装子件'
+      : '请先查询并选择包装来源，系统会自动带出母件底数和包装子件')
+  }
   saving.value = true
   try {
     const data = await saveTechnicalDataPackage(props.productId, packagePayload(mode.value, form.value, workspace.value.expectedVersion))

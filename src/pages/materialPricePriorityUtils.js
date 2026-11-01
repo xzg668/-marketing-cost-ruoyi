@@ -6,7 +6,7 @@ const PRICE_TYPES = {
   FIXED: '固定价',
 }
 
-export const priceTypeLabel = type => ({ ODS_ORDER: '订单价', ODS_TIER: '阶梯价' }[type] || PRICE_TYPES[type] || type)
+export const priceTypeLabel = type => ({ ODS_ORDER: '订单价', ODS_TIER: '阶梯价', INVOICE: '发票价', INQUIRY: '询价' }[type] || PRICE_TYPES[type] || type)
 
 export function businessPricingMonth(date = new Date()) {
   const parts = new Intl.DateTimeFormat('en', {

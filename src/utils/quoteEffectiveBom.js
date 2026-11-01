@@ -126,6 +126,8 @@ export function workbenchHasCurrentCostingBom(workbench) {
 export function workbenchCanLoadPriceType(workbench) {
   const workspaceStatus = normalizeCode(workbench?.costingWorkspace?.workspaceStatus)
   if (['STALE', 'WAIT_BOM'].includes(workspaceStatus)) return false
+  if (workspaceStatus === 'SYSTEM_FAILED'
+    && normalizeCode(workbench?.costingWorkspace?.currentStep) === 'QUOTE_BOM') return false
   if (workbenchHasCurrentCostingBom(workbench)) return true
 
   const quoteBomStatus = normalizeCode(workbench?.workflowStatus?.quoteBomStatus)

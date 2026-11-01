@@ -196,7 +196,7 @@
             </div>
 
             <el-alert
-              v-if="effectiveBomBlocked && !showDrawingBomPreview"
+              v-if="effectiveBomBlocked && (!showDrawingBomPreview || storedCostingWorkspace.workspaceStatus === 'SYSTEM_FAILED')"
               type="error"
               show-icon
               :closable="false"
@@ -226,7 +226,8 @@
             <div v-else class="pricing-bom-designer">
               <div class="pricing-bom-tree-column">
             <div class="bom-tree-panel" v-loading="effectiveBomLoading">
-              <div v-if="!hasProductIdentity" class="empty-tip">当前产品行无料号、型号和图号</div>
+              <div v-if="workbenchLoadError" class="empty-tip">工作台读取失败：{{ workbenchLoadError }}</div>
+              <div v-else-if="!hasProductIdentity" class="empty-tip">当前产品行无料号、型号和图号</div>
               <div v-else-if="effectiveBomTreeData.length === 0 && !effectiveBomLoading" class="empty-tip">
                 {{ effectiveBom.state === 'NOT_PREPARED' ? '本产品尚未生成本次计价 BOM，可先处理待办资料，再点击上方发起核算' : effectiveBomBlocked ? '当前存在数据问题，暂时无法生成计价 BOM' : '暂无本次计价 BOM' }}
               </div>
@@ -1003,8 +1004,13 @@
               type="warning"
               show-icon
               :closable="false"
-              :title="displayedCostVersion.dataQualitySummary || `成本结果存在 ${displayedCostVersion.dataQualityWarningCount || 0} 项数据质量警告`"
-            />
+              :title="`成本结果有 ${displayedCostVersion.dataQualityWarningCount || 0} 项需关注，请查看说明`"
+            >
+              <details v-if="displayedCostVersion.dataQualitySummary" :key="displayedCostVersion.id" class="quality-details">
+                <summary>查看说明</summary>
+                <p>{{ displayedCostVersion.dataQualitySummary }}</p>
+              </details>
+            </el-alert>
 
             <el-alert
               v-if="!historyViewMode && hasRunningCostVersion"
@@ -1160,6 +1166,7 @@
 import { fetchQuoteCostingPreparation, prepareQuoteCosting, fetchDrawingVerificationWorkspace } from '../api/quoteRequests'
 import { useDrawingCostingContinuation } from '../composables/useDrawingCostingContinuation'
 import { useQuoteCostingPreparation } from '../composables/useQuoteCostingPreparation'
+import { currentSupplementWorkspace, productSupplement, currentPriceGaps, currentPriceGapCount } from '../utils/technicalDataGaps'
 import AuxiliaryClassificationPanel from '../components/technical-data/AuxiliaryClassificationPanel.vue'
 import DrawingVerificationPanel from '../components/quotation/DrawingVerificationPanel.vue'
 import DrawingBomPreview from '../components/quotation/DrawingBomPreview.vue'
@@ -1319,7 +1326,9 @@ const selectedCostRunVersionId = ref(null)
 const traceDrawerVisible = ref(false)
 const traceVersion = ref(null)
 const localWorkflowGuideText = ref('')
+const workbenchLoadError = ref('')
 let initializingWorkbench = false
+const inputTabsNeedRefresh = ref(false)
 const workbench = ref({
   header: {},
   item: {},
@@ -1336,7 +1345,13 @@ const rollupDisplayRowCount = computed(
   () => displayBomRows.value.filter((row) => row.rollupDisplay).length,
 )
 const currentItemRows = computed(() => item.value?.id ? [item.value] : [])
-const costingWorkspace = computed(() => workbench.value.costingWorkspace || {})
+const supplement = computed(() => historyViewMode.value ? null
+  : productSupplement(materialState.value, itemId.value, workbench.value.periodMonth))
+const storedCostingWorkspace = computed(() => workbench.value.costingWorkspace || {})
+const costingWorkspace = computed(() => currentSupplementWorkspace(storedCostingWorkspace.value, supplement.value))
+const submittedGapResolved = computed(() => supplement.value?.status === 'SUBMITTED'
+  && costingWorkspace.value.workspaceStatus === 'READY'
+  && ['WAIT_TECH_DATA', 'WAIT_PRICE'].includes(workbench.value.costingWorkspace?.workspaceStatus))
 const costingProductCode = computed(() => (
   costingWorkspace.value.productCode || item.value.materialNo || ''
 ))
@@ -1434,7 +1449,8 @@ const drawingBomAvailable = computed(() => !historyViewMode.value
   && drawingWorkspace.value?.accountingMonth === displayedPeriodMonth.value
   && drawingWorkspace.value?.current?.taskState === 'RECEIVED'
   && Boolean(drawingWorkspace.value?.sourceVersionId))
-const showDrawingBomPreview = computed(() => drawingBomAvailable.value && !presentedEffectiveBom.value.nodes.length)
+const showDrawingBomPreview = computed(() => !inputTabsNeedRefresh.value
+  && drawingBomAvailable.value && !presentedEffectiveBom.value.nodes.length)
 watch(() => [route.query.drawingBom, drawingBomAvailable.value], ([requested, available]) => {
   if (!available) drawingBomVisible.value = false
   else if (requested === '1') drawingBomVisible.value = true
@@ -1444,6 +1460,9 @@ const effectiveBomPreviewActive = computed(() => Boolean(effectiveBomPreview.val
 const effectiveBomTreeData = computed(() => buildQuoteEffectiveBomTree(presentedEffectiveBom.value.nodes))
 const effectiveBomDefaultExpandedKeys = computed(() => effectiveBomTreeData.value.map((node) => node.nodeKey))
 const effectiveBomStateInfo = computed(() => {
+  if (inputTabsNeedRefresh.value && costingWorkspace.value.workspaceStatus === 'SUCCESS') {
+    return { label: '已就绪', type: 'success' }
+  }
   if (showDrawingBomPreview.value) return { label: '待完善图库资料', type: 'warning' }
   if (String(costingWorkspace.value.workspaceStatus || '').toUpperCase() === 'STALE') {
     return { label: '待重算', type: 'warning' }
@@ -1514,7 +1533,7 @@ const visiblePricePrepareDifferences = computed(() => onlyDifferentPricePrepare.
   : pricePrepareDifferences.value)
 const pricePrepareDifferenceSummary = computed(() => pricePrepare.value.differenceSummary || {})
 const oaCuPricePerKg = computed(() => normalizeCuPricePerKg(header.value.copperPrice))
-const pricePrepareGaps = computed(() => Array.isArray(pricePrepare.value.gaps?.records) ? pricePrepare.value.gaps.records : [])
+const pricePrepareGaps = computed(() => currentPriceGaps(pricePrepare.value.gaps?.records, supplement.value))
 const sourceMaintenanceGaps = computed(() => pricePrepareGaps.value.filter(row => !isSupplierRatioGap(row, pricePrepare.value.supplierPriceReviews || [])))
 const sourceMaintenanceGapTree = computed(() => buildPriceSourceGapTree(sourceMaintenanceGaps.value,
   effectiveBom.value.nodes?.length ? effectiveBom.value.nodes : bomRows.value))
@@ -1541,7 +1560,8 @@ const costRunRepriceLocked = computed(() => isCostRunLockedByMonthlyReprice(
   activeRepriceLock.value,
   { permissions: userStore.permissions, roles: userStore.roles },
 ))
-const canStartCostRun = computed(() => Boolean(costRun.value.canStartTrial) && pricePrepareReady.value && !costRunRepriceLocked.value)
+const canStartCostRun = computed(() => Boolean(costRun.value.canStartTrial)
+  && (inputTabsNeedRefresh.value || pricePrepareReady.value) && !costRunRepriceLocked.value)
 const costRunBlockingText = computed(() => {
   if (costRunRepriceLocked.value) {
     return activeRepriceLock.value.message || '当前业务单元正在月度调价，暂不能发起成本核算'
@@ -1572,7 +1592,7 @@ const hasStaleCostVersion = computed(() => costRunVersions.value.some((row) => r
 const currentCostingBlockText = computed(() => currentCostingBlockLabel({
   historyView: historyViewMode.value,
   workspaceStatus: costingWorkspace.value.workspaceStatus,
-  overallStatus: workbench.value.workflowStatus?.overallStatus,
+  overallStatus: submittedGapResolved.value ? 'READY' : workbench.value.workflowStatus?.overallStatus,
 }))
 const costRunWorkbenchStatusText = computed(() => {
   if (historyViewMode.value && displayedCostVersion.value.id) {
@@ -1627,6 +1647,7 @@ const hasCostRunResult = computed(() =>
 const inputGapGuideVisible = computed(() => route.query.guide === 'costing-input-gap')
 const workflowGuideVisible = computed(() =>
   !historyViewMode.value
+  && !submittedGapResolved.value
   && (!currentSuccessVersion.value?.id || ['WAIT_TECH_DATA', 'WAIT_BOM', 'WAIT_PRICE_TYPE', 'WAIT_PRICE', 'SYSTEM_FAILED']
     .includes(costingWorkspace.value.workspaceStatus))
   && (inputGapGuideVisible.value || Boolean(localWorkflowGuideText.value))
@@ -1644,6 +1665,7 @@ const costingStatusSummary = computed(() => {
   if (materialError.value) return '资料状态读取失败'
   if (costRunActionLoading.value || hasRunningCostVersion.value) return '正在核算'
   if (materialState.value?.canCost === false) return '暂不能核算'
+  if (submittedGapResolved.value) return '补录已提交，待核算'
   if (showDrawingBomPreview.value) return '图库明细已接收，待完善物料后继续核算'
   if (hasPriceGaps.value) return `价格缺口 ${currentPriceSourceGapCount()} 项`
   if (costingWorkspace.value.workspaceStatus === 'WAIT_TECH_DATA') return '待补齐技术资料'
@@ -1671,7 +1693,7 @@ const inputGapGuideText = computed(() => {
     return costingWorkspace.value.lastErrorMessage || '当前月份缺少已审核生效的技术资料，请由产品技术处理后重新核算'
   }
   if (workspaceStatus === 'WAIT_BOM' || blockedStep === 'QUOTE_BOM') {
-    return '当前产品缺少可核算 BOM，请由产品技术补录后重新核算本产品'
+    return storedCostingWorkspace.value.lastErrorMessage || '当前产品缺少可核算 BOM，请由产品技术补录后重新核算本产品'
   }
   const missingSourceCount = currentMissingSourceCount()
   if (missingSourceCount > 0) {
@@ -1685,10 +1707,30 @@ const inputGapGuideText = computed(() => {
 })
 
 async function loadWorkbench(options = {}) {
-  const { resetTab = false, loadChildren = true } = options
+  const { resetTab = false, loadChildren = true, costResultOnly = false } = options
   if (!oaNo.value || !itemId.value) return
+  workbenchLoadError.value = ''
+  if (workbench.value.item?.id && String(workbench.value.item.id) !== String(itemId.value)) {
+    workbench.value = { header: {}, item: {}, bomRows: [], tabs: [], workflowStatus: {} }
+  }
   loading.value = true
   try {
+    if (costResultOnly) {
+      // The successful submit already refreshed material readiness. Show the saved result
+      // without waiting for BOM, price recognition and price evidence on unopened tabs.
+      inputTabsNeedRefresh.value = true
+      const headerRequest = fetchQuoteCostingWorkbench(oaNo.value, itemId.value)
+      const resultRequest = workbench.value.periodMonth
+        ? loadCostRun(false)
+        : headerRequest.then(header => loadCostRun(false, header.periodMonth))
+      const [nextWorkbench] = await Promise.all([
+        headerRequest,
+        resultRequest,
+        loadActiveRepriceLock(),
+      ])
+      workbench.value = nextWorkbench
+      return
+    }
     clearEffectiveBom()
     const [nextWorkbench] = await Promise.all([
       fetchQuoteCostingWorkbench(oaNo.value, itemId.value),
@@ -1715,30 +1757,36 @@ async function loadWorkbench(options = {}) {
     await loadEffectiveBom()
     if (loadChildren) {
       await refreshAllTabData()
+      inputTabsNeedRefresh.value = false
     }
     applyInputGapGuide()
   } catch (error) {
-    workbench.value = { header: {}, item: {}, bomRows: [], tabs: [], workflowStatus: {} }
-    clearEffectiveBom('ERROR')
-    ElMessage.error(error?.message || '获取核算工作台失败')
+    workbenchLoadError.value = error?.message || '获取核算工作台失败'
+    if (!costResultOnly) {
+      clearEffectiveBom('ERROR')
+      effectiveBom.value.blockIssues = [{ issueCode: 'WORKBENCH_LOAD_FAILED', message: workbenchLoadError.value }]
+    }
+    ElMessage.error(workbenchLoadError.value)
   } finally {
     loading.value = false
   }
 }
 
 function isWaitingForBom() {
-  return String(costingWorkspace.value.workspaceStatus || '').toUpperCase() === 'WAIT_BOM'
+  const status = String(storedCostingWorkspace.value.workspaceStatus || '').toUpperCase()
+  const step = String(storedCostingWorkspace.value.currentStep || '').toUpperCase()
+  return (status === 'WAIT_BOM' || (status === 'SYSTEM_FAILED' && step === 'QUOTE_BOM'))
     && !pricingBomReadyForNextStep.value
 }
 
 function applyStoredBomGap() {
-  const message = costingWorkspace.value.lastErrorMessage || '当前产品缺少可核算 BOM'
+  const message = storedCostingWorkspace.value.lastErrorMessage || '当前产品缺少可核算 BOM'
   effectiveBom.value = normalizeQuoteEffectiveBom({
     state: 'BLOCKED',
     productCode: costingProductCode.value,
     costPeriodMonth: workbench.value.periodMonth || '',
     blockIssues: [{
-      issueCode: costingWorkspace.value.lastErrorCode || 'BOM_MISSING',
+      issueCode: storedCostingWorkspace.value.lastErrorCode || 'BOM_MISSING',
       message,
     }],
   })
@@ -2019,7 +2067,8 @@ function currentMissingSourceCount() {
 }
 
 function currentPriceSourceGapCount() {
-  return Number(pricePrepare.value.readiness?.gapCount ?? pricePrepareGaps.value.length)
+  return currentPriceGapCount(pricePrepare.value.readiness?.gapCount,
+    pricePrepare.value.gaps?.records, supplement.value)
 }
 
 function guidePriceTypeAfterBomBuild() {
@@ -2082,7 +2131,7 @@ async function loadPricePrepare(showError = true) {
 }
 
 let costRunReadRequest = 0
-async function loadCostRun(showError = true) {
+async function loadCostRun(showError = true, periodMonth = workbench.value.periodMonth) {
   const request = ++costRunReadRequest
   if (!oaNo.value || !itemId.value) return
   costRunLoading.value = true
@@ -2090,7 +2139,7 @@ async function loadCostRun(showError = true) {
   try {
     const params = historyViewMode.value
       ? { versionId: historyVersionId.value }
-      : { periodMonth: workbench.value.periodMonth }
+      : { periodMonth }
     const response = await fetchQuoteCostRun(oaNo.value, itemId.value, params)
     if (request !== costRunReadRequest) return
     await applyCostRunResponse(response)
@@ -2702,7 +2751,12 @@ async function submitProductCosting(reason = 'USER_REQUEST') {
       ? outcome.product || outcome.checks?.find(check => String(check.oaFormItemId) === itemId.value)
       : await submitQuoteProductCostRun(oaNo.value, itemId.value, { periodMonth: workbench.value.periodMonth, reason })
     classificationRevision.value++
-    await loadWorkbench({ resetTab: false, loadChildren: true })
+    if (result?.pipelineStatus === 'SUCCESS') {
+      activeTab.value = 'COST_RUN'
+      await loadWorkbench({ costResultOnly: true })
+    } else {
+      await loadWorkbench({ resetTab: false, loadChildren: true })
+    }
     if (outcome && !result) {
       ElMessage.warning(outcome.preparation.message)
       return
@@ -2710,6 +2764,10 @@ async function submitProductCosting(reason = 'USER_REQUEST') {
     if (result?.pipelineStatus === 'SUCCESS') {
       localWorkflowGuideText.value = ''
       activeTab.value = 'COST_RUN'
+      if (costRunError.value || workbenchLoadError.value) {
+        ElMessage.warning('本产品已核算完成，结果页面读取失败，请刷新查看')
+        return
+      }
       if (route.query.guide) {
         const nextQuery = { ...route.query }
         delete nextQuery.guide
@@ -2914,10 +2972,18 @@ function beforeWorkbenchTabLeave() {
 
 function tabBadgeLabel(tab) {
   const code = normalizeTabCode(tab?.code)
+  if (inputTabsNeedRefresh.value && costingWorkspace.value.workspaceStatus === 'SUCCESS') {
+    const completedLabels = {
+      PRODUCT_DETAIL: '已就绪', QUOTE_BOM: '已生成', PRICE_TYPE_CONFIRMATION: '已识别',
+      PRICE_SOURCE_SUPPLEMENT: '已齐全', PRICE_PREPARE: '已生成',
+    }
+    if (completedLabels[code]) return completedLabels[code]
+  }
   if (code === 'PRODUCT_DETAIL') {
     return effectiveBomStateInfo.value.label
   }
   if (code === 'QUOTE_BOM') {
+    if (isWaitingForBom()) return '待准备 BOM'
     if (showDrawingBomPreview.value) return '待生成计价明细'
     const workspaceStatus = String(costingWorkspace.value.workspaceStatus || '').toUpperCase()
     if (workspaceStatus === 'STALE') return '待重算'
@@ -2964,6 +3030,7 @@ function tabBadgeType(tab) {
     return effectiveBomStateInfo.value.type
   }
   if (code === 'QUOTE_BOM') {
+    if (isWaitingForBom()) return 'danger'
     if (showDrawingBomPreview.value) return 'warning'
     const workspaceStatus = String(costingWorkspace.value.workspaceStatus || '').toUpperCase()
     if (workspaceStatus === 'WAIT_BOM') return 'danger'
@@ -3216,7 +3283,9 @@ function priceTypeTagType(row) {
 async function initializeWorkbench() {
   initializingWorkbench = true
   try {
-    await loadWorkbench({ resetTab: true, loadChildren: true })
+    const resultEntry = !historyViewMode.value && isCostRunTab(route.query.tab)
+    if (resultEntry) activeTab.value = 'COST_RUN'
+    await loadWorkbench({ resetTab: true, loadChildren: true, costResultOnly: resultEntry })
     await applyRouteTab()
     if (historyViewMode.value) return
     await refreshPriceSourceFromReturn()
@@ -3228,11 +3297,18 @@ async function initializeWorkbench() {
 
 watch([oaNo, itemId, historyVersionId], () => {
   ++costRunReadRequest
+  inputTabsNeedRefresh.value = false
   resetCostRunResult()
   initializeWorkbench()
 })
 
 watch(activeTab, async (tabCode) => {
+  if (!initializingWorkbench && !loading.value && !historyViewMode.value
+      && !isCostRunTab(tabCode) && inputTabsNeedRefresh.value) {
+    await loadWorkbench({ resetTab: false, loadChildren: true })
+    ensurePriceSourceChecked()
+    return
+  }
   if (
     !initializingWorkbench
     && isPriceTypeTab(tabCode)
@@ -3259,6 +3335,8 @@ onMounted(() => initializeWorkbench())
 </script>
 
 <style scoped>
+.quality-details summary { cursor: pointer; }
+.quality-details p { margin: 8px 0 0; overflow-wrap: anywhere; }
 .costing-page {
   display: flex;
   flex-direction: column;

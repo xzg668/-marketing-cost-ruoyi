@@ -2,7 +2,7 @@ export const pendingReturn = result => ['PREPARED', 'SENDING', 'REJECT_READY', '
 
 export function returnMessage(result) {
   if (!result) return ''
-  if (result.status === 'SUCCESS') return '退回成功，原技术员可修改选中的资料。'
+  if (result.status === 'SUCCESS') return '产品退回成功，全部补录资料待修改后重新提交。'
   const step = result.step === 'REJECT' ? '流程退回' : '技术员回传'
   if (result.status === 'UNKNOWN') return result.step === 'PEOPLE'
     ? 'OA技术员更新结果尚未确认，资料仍为只读；原报价员核实OA更新成功后，可继续本次退回。'
@@ -16,12 +16,12 @@ export function returnMessage(result) {
 
 export function buildReturnRequest(rows, requestKey) {
   if (!rows.length || new Set(rows.map(row => row.formId)).size !== 1) throw new Error('请选择同一张 OA 单的产品')
-  const selected = rows.filter(row => row.selectedModules?.length)
-  if (!selected.length) throw new Error('请选择需要修改的板块')
+  const selected = rows.filter(row => row.selected)
+  if (!selected.length) throw new Error('请选择需要退回的产品')
   const targets = selected.map(row => {
     if (!row.reason?.trim()) throw new Error(`请填写产品 ${row.productNo} 的退回原因`)
-    const modules = [...new Set(row.selectedModules)]
-    if (modules.some(type => !row.modules.some(module => module.moduleType === type))) throw new Error('退回范围已变化，请重新打开确认框')
+    const modules = [...new Set(row.modules.map(module => module.moduleType))]
+    if (!modules.length) throw new Error('产品退回范围已变化，请重新打开确认框')
     return { taskId: row.taskId, expectedTaskVersion: row.taskVersion, modules, reason: row.reason.trim() }
   })
   return { requestKey, targets }

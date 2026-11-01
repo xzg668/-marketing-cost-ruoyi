@@ -41,9 +41,10 @@ export function isTechnicalModuleStatusOnly(product, code) {
   return module?.moduleStatus === 'NOT_REQUIRED' && module.sourceAvailability === 'AVAILABLE'
 }
 
-export function modulePresentation(product, moduleType) {
+export function modulePresentation(product, moduleType, taskStatus) {
   const module = findModule(product, moduleType)
   if (!module) return { label: '待检查', type: 'warning' }
+  if (module.required && (taskStatus === 'PARTIALLY_RETURNED' || product.productStatus === 'RETURNED')) return { label: '已退回，待重新提交', type: 'danger' }
   const states = {
     FROZEN: { label: '提交待确认', type: 'warning' },
     SUBMITTED: { label: '已提交', type: 'success' },

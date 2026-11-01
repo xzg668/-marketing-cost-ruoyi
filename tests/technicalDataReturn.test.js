@@ -1,15 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { buildReturnRequest, pendingReturn, returnMessage } from '../src/utils/technicalDataReturn.js'
-const row = { formId: 1, taskId: 2, taskVersion: 3, productNo: 'P1', modules: [{ moduleType: 'SALARY', employeeNo: '00123' }, { moduleType: 'PACKAGE' }], selectedModules: ['SALARY'], reason: ' 调整工资 ' }
-test('只提交选中的产品和板块，不允许前端指定技术员', () => {
-  const value = buildReturnRequest([row, { ...row, taskId: 5, selectedModules: [] }], 'return-1')
-  assert.deepEqual(value, { requestKey: 'return-1', targets: [{ taskId: 2, expectedTaskVersion: 3, modules: ['SALARY'], reason: '调整工资' }] })
+const row = { formId: 1, taskId: 2, taskVersion: 3, productNo: 'P1', modules: [{ moduleType: 'SALARY', employeeNo: '00123' }, { moduleType: 'PACKAGE' }], selected: true, reason: ' 调整工资 ' }
+test('退回选中产品的全部补录模块，其他产品不受影响', () => {
+  const value = buildReturnRequest([row, { ...row, taskId: 5, selected: false }], 'return-1')
+  assert.deepEqual(value, { requestKey: 'return-1', targets: [{ taskId: 2, expectedTaskVersion: 3, modules: ['SALARY', 'PACKAGE'], reason: '调整工资' }] })
 })
 test('拒绝跨单、空原因和变化后的退回范围', () => {
   assert.throws(() => buildReturnRequest([row, { ...row, formId: 2 }], 'x'), /同一张/)
   assert.throws(() => buildReturnRequest([{ ...row, reason: ' ' }], 'x'), /原因/)
-  assert.throws(() => buildReturnRequest([{ ...row, selectedModules: ['PRICE'] }], 'x'), /范围已变化/)
+  assert.throws(() => buildReturnRequest([{ ...row, modules: [] }], 'x'), /范围已变化/)
 })
 test('处理中和未知结果禁止再次退回，明确失败可新建请求', () => {
   for (const status of ['PREPARED', 'SENDING', 'REJECT_READY', 'RETURN_FAILED', 'OA_ACCEPTED', 'UNKNOWN']) assert.equal(pendingReturn({ status }), true)

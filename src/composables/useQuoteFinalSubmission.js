@@ -1,3 +1,4 @@
+import { createUuid } from '../utils/uuid.js'
 import { computed, onScopeDispose, ref, watch } from 'vue'
 
 /** 列表金额与整单提交共用一次读取；提交使用用户刚看到的指纹，变化时由后台拒绝。 */
@@ -34,10 +35,10 @@ export function useQuoteFinalSubmission(oaNo, api) {
     const scope = generation, number = oaNo.value, current = state.value
     sending.value = true
     readId++
-    if (!pendingRequest || pendingRequest.fingerprint !== current.fingerprint) {
-      pendingRequest = { fingerprint: current.fingerprint, periodMonth: current.periodMonth, requestKey: globalThis.crypto.randomUUID() }
-    }
     try {
+      if (!pendingRequest || pendingRequest.fingerprint !== current.fingerprint) {
+        pendingRequest = { fingerprint: current.fingerprint, periodMonth: current.periodMonth, requestKey: createUuid() }
+      }
       const next = await api.submit(number, pendingRequest)
       if (scope !== generation) return null
       readId++

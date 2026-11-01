@@ -20,7 +20,7 @@ export function createMonthlyRead({ fetch, scope, allowed }) {
 }
 
 export const monthlyType = value => ({ NORMAL: '普通物料', HOUSEHOLD_INQUIRY: '家用询价' }[value] || value)
-export const monthlySource = value => ({ ODS_ORDER: '订单价', ODS_TIER: '阶梯价', PURCHASE_FIXED: '采购固定价', HOUSEHOLD_INQUIRY: '家用部件询价', SETTLE_FIXED: '结算固定价', SETTLE_LINKED: '结算联动价', LINKED_ORIGINAL: '联动价', RANGE_ORIGINAL: '区间价', RANGE_LEGACY_FACTOR: '因素区间价', RANGE_QUANTITY: '数量区间价', SCRAP: '废料价', SUPPLEMENTAL_FIXED: '有效补录固定价' }[value] || value)
+export const monthlySource = value => ({ INVOICE: '发票价', INQUIRY: '询价', ODS_ORDER: '订单价', ODS_TIER: '阶梯价', PURCHASE_FIXED: '采购固定价', HOUSEHOLD_INQUIRY: '家用部件询价', SETTLE_FIXED: '结算固定价', SETTLE_LINKED: '结算联动价', LINKED_ORIGINAL: '联动价', RANGE_ORIGINAL: '区间价', RANGE_LEGACY_FACTOR: '因素区间价', RANGE_QUANTITY: '数量区间价', SCRAP: '废料价', SUPPLEMENTAL_FIXED: '有效补录固定价' }[value] || value)
 export function monthlyQuantity(range) {
   if (range.lower == null && range.upper == null) return '不限数量'
   return `${range.lowerInclusive ? '[' : '('}${range.lower ?? '不限'}, ${range.upper ?? '不限'}${range.upperInclusive ? ']' : ')'}`
