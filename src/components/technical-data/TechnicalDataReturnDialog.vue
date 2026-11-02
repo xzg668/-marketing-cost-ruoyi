@@ -21,7 +21,7 @@
         <el-table-column label="退回原因" min-width="260">
           <template #default="{ row }">
             <el-input v-model="row.reason" type="textarea" :rows="2" maxlength="500" placeholder="请说明需要调整的内容"
-              :aria-label="`${row.productNo}退回原因`" :disabled="busy || locked || !row.modules.length" />
+              :aria-label="`${row.productNo}退回原因`" :disabled="busy || loading || reasonLocked || !row.modules.length" />
           </template>
         </el-table-column>
       </el-table>
@@ -44,7 +44,7 @@ import { computed, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '../../store/modules/user'
 import { previewTechnicalDataReturn, submitTechnicalDataReturn, fetchTechnicalDataReturn, retryTechnicalDataReturn, confirmTechnicalDataReturnPeople } from '../../api/technicalDataTasks'
-import { buildReturnRequest, pendingReturn, returnMessage } from '../../utils/technicalDataReturn'
+import { buildReturnRequest, buildReturnReasons, canReviseReturnReason, pendingReturn, returnMessage } from '../../utils/technicalDataReturn'
 import { showErrorOnce } from '../../utils/errorHandler'
 
 const props = defineProps({ modelValue: Boolean, taskIds: { type: Array, default: () => [] } })
@@ -53,6 +53,7 @@ const user = useUserStore()
 const candidates = ref([]), result = ref(null), pending = ref(null), busy = ref(false), loading = ref(false)
 const storageKey = computed(() => `technical-return:${user.userId}:${user.businessUnitType}:${[...props.taskIds].sort().join(',')}`)
 const locked = computed(() => Boolean(pending.value) || pendingReturn(result.value) || result.value?.status === 'SUCCESS')
+const reasonLocked = computed(() => locked.value && !canReviseReturnReason(result.value, user.userId))
 const canConfirmPeople = computed(() => result.value?.status === 'UNKNOWN' && result.value?.step === 'PEOPLE'
   && Number(result.value?.actorId) === Number(user.userId))
 let generation = 0
@@ -87,7 +88,7 @@ async function load() {
 
 async function accept(value) {
   result.value = value
-  if (['SUCCESS', 'REJECTED', 'NOT_SENT'].includes(value.status)) storePending(null)
+  if (['SUCCESS', 'REJECTED', 'NOT_SENT', 'RETURN_FAILED', 'REJECT_READY'].includes(value.status)) storePending(null)
   if (['REJECTED', 'NOT_SENT'].includes(value.status)) {
     const current = generation
     const rows = await previewTechnicalDataReturn(props.taskIds)
@@ -133,17 +134,21 @@ async function refresh() {
 }
 async function retry() {
   if (busy.value || !result.value?.canRetry) return
+  let reasons
+  try { reasons = buildReturnReasons(candidates.value) }
+  catch (error) { return ElMessage.warning(error.message) }
   busy.value = true
   const current = generation
   const batch = result.value
   try {
-    const value = await retryTechnicalDataReturn(batch.batchId, batch.attempt)
+    const value = await retryTechnicalDataReturn(batch.batchId, batch.attempt, reasons)
     if (current === generation) await accept(value)
   } catch (error) {
     if (current === generation) {
       // 回执丢失时先读取服务端进度，不能再根据旧页面判断仍可重试。
-      result.value = { ...batch, canRetry: false, status: 'UNKNOWN' }
-      showErrorOnce(error, '退回结果尚未确认，请刷新本次结果')
+      const validationFailed = Number(error?.resultCode) >= 400 && Number(error?.resultCode) < 500
+      if (!validationFailed) result.value = { ...batch, canRetry: false, status: 'UNKNOWN' }
+      showErrorOnce(error, validationFailed ? '请检查退回原因后重试' : '退回结果尚未确认，请刷新本次结果')
     }
   } finally { if (current === generation) busy.value = false }
 }

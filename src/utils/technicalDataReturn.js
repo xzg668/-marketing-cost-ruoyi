@@ -1,5 +1,20 @@
 export const pendingReturn = result => ['PREPARED', 'SENDING', 'REJECT_READY', 'RETURN_FAILED', 'OA_ACCEPTED', 'UNKNOWN'].includes(result?.status)
 
+export const canReviseReturnReason = (result, userId) => Boolean(result?.canRetry)
+  && ['RETURN_FAILED', 'REJECT_READY'].includes(result.status)
+  && Number(result.actorId) === Number(userId)
+
+export function buildReturnReasons(rows) {
+  const selected = rows.filter(row => row.selected)
+  if (!selected.length) throw new Error('请选择需要退回的产品')
+  return selected.map(row => {
+    const reason = row.reason?.trim()
+    if (!reason) throw new Error(`请填写产品 ${row.productNo} 的退回原因`)
+    if (reason.length > 500) throw new Error('退回原因不能超过500字')
+    return { taskId: row.taskId, reason }
+  })
+}
+
 export function returnMessage(result) {
   if (!result) return ''
   if (result.status === 'SUCCESS') return '产品退回成功，全部补录资料待修改后重新提交。'

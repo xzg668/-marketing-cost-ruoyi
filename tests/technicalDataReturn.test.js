@@ -1,7 +1,16 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildReturnRequest, pendingReturn, returnMessage } from '../src/utils/technicalDataReturn.js'
+import { buildReturnRequest, buildReturnReasons, canReviseReturnReason, pendingReturn, returnMessage } from '../src/utils/technicalDataReturn.js'
 const row = { formId: 1, taskId: 2, taskVersion: 3, productNo: 'P1', modules: [{ moduleType: 'SALARY', employeeNo: '00123' }, { moduleType: 'PACKAGE' }], selected: true, reason: ' 调整工资 ' }
+test('原报价员可修正失败退回的原因，发送当前填写内容', () => {
+  assert.equal(canReviseReturnReason({ status: 'RETURN_FAILED', canRetry: true, actorId: 7 }, 7), true)
+  assert.deepEqual(buildReturnReasons([{ ...row, reason: ' 改为核对净损失率1% ' }]), [{ taskId: 2, reason: '改为核对净损失率1%' }])
+  assert.deepEqual(buildReturnReasons([row]), [{ taskId: 2, reason: '调整工资' }])
+  assert.equal(canReviseReturnReason({ status: 'RETURN_FAILED', canRetry: true, actorId: 7 }, 8), false)
+  for (const status of ['SENDING', 'UNKNOWN', 'SUCCESS']) assert.equal(canReviseReturnReason({ status, canRetry: false, actorId: 7 }, 7), false)
+  assert.throws(() => buildReturnReasons([{ ...row, reason: ' ' }]), /原因/)
+  assert.throws(() => buildReturnReasons([{ ...row, reason: '字'.repeat(501) }]), /500/)
+})
 test('退回选中产品的全部补录模块，其他产品不受影响', () => {
   const value = buildReturnRequest([row, { ...row, taskId: 5, selected: false }], 'return-1')
   assert.deepEqual(value, { requestKey: 'return-1', targets: [{ taskId: 2, expectedTaskVersion: 3, modules: ['SALARY', 'PACKAGE'], reason: '调整工资' }] })

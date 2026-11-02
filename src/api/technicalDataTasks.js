@@ -68,9 +68,9 @@ export const submitTechnicalDataReturn = body =>
   request('/api/v2/technical-data/returns', { method: 'POST', body, suppressErrorToast: true })
 export const fetchTechnicalDataReturn = batchId =>
   request(`/api/v2/technical-data/returns/${id(batchId)}`, { suppressErrorToast: true })
-export const retryTechnicalDataReturn = (batchId, expectedAttempt) =>
+export const retryTechnicalDataReturn = (batchId, expectedAttempt, reasons) =>
   request(`/api/v2/technical-data/returns/${id(batchId)}/retry`, {
-    method: 'POST', body: { expectedAttempt }, suppressErrorToast: true,
+    method: 'POST', body: { expectedAttempt, reasons }, suppressErrorToast: true,
   })
 export const confirmTechnicalDataReturnPeople = (batchId, expectedAttempt, note) =>
   request(`/api/v2/technical-data/returns/${id(batchId)}/confirm-people`, {
