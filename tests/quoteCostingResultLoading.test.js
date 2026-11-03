@@ -101,3 +101,40 @@ test('a failed result header read releases loading and does not replace valid BO
   assert.equal(h.deps.effectiveBom.value.state, 'READY')
   assert.equal(h.calls.includes('allTabs'), false)
 })
+
+test('recalculation keeps the result tab on refresh and opens the new saved sheet directly', async () => {
+  const replacements = [], destinations = []
+  const deps = {
+    oaNo: ref('OA-1'), itemId: ref('6'), historyViewMode: ref(false),
+    costRunActionLoading: ref(false), costRunLoading: ref(false), costRunError: ref(''),
+    costRunRepriceLocked: ref(false), workbench: ref({ periodMonth: '2026-10' }),
+    classificationRevision: ref(0), activeTab: ref('PRODUCT_DETAIL'),
+    workbenchLoadError: ref(''), localWorkflowGuideText: ref('old gap'),
+    materials: { submit: async () => ({ product: { pipelineStatus: 'SUCCESS', costVersionId: 42 } }) },
+    drawingContinuation: { remember: async () => {} },
+    route: { query: { tab: 'PRODUCT_DETAIL', guide: 'costing-input-gap', returnItemId: '6' } },
+    router: { replace: async target => replacements.push(target), push: target => destinations.push(target) },
+    costRun: ref({ currentDisplayVersion: { id: 41, costRunNo: 'COST-OLD' } }),
+    header: ref({}), item: ref({ productName: '测试产品' }), costingProductCode: ref('P-6'),
+    ElMessage: { success: () => {}, warning: () => assert.fail('unexpected warning'), error: error => assert.fail(error) },
+  }
+  deps.loadWorkbench = async options => {
+    assert.deepEqual(options, { costResultOnly: true })
+    deps.costRun.value = { currentDisplayVersion: { id: 42, costRunNo: 'COST-NEW', versionNo: 'V2' } }
+  }
+  const functions = ['submitProductCosting', 'openCostRunDetail'].map(name => {
+    const node = declarations.find(node => node.type === 'FunctionDeclaration' && node.id.name === name)
+    return source.slice(node.start, node.end)
+  }).join('\n')
+  const page = new Function(...Object.keys(deps), `${functions}; return { submitProductCosting, openCostRunDetail }`)(...Object.values(deps))
+  await page.submitProductCosting()
+  assert.equal(deps.activeTab.value, 'COST_RUN')
+  assert.deepEqual(replacements, [{ query: { tab: 'COST_RUN', returnItemId: '6' } }])
+  assert.equal(deps.costRunActionLoading.value, false)
+  page.openCostRunDetail()
+  assert.equal(destinations.length, 1)
+  assert.equal(destinations[0].name, 'cost-run-detail')
+  assert.deepEqual(destinations[0].params, { oaNo: 'OA-1', itemId: '6' })
+  assert.equal(destinations[0].query.versionId, 42)
+  assert.equal(destinations[0].query.costRunNo, 'COST-NEW')
+})

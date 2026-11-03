@@ -54,7 +54,7 @@ export function useQuoteBatchCosting(oaNo, {
     if (!scope.isCurrent()) return
     stopTimer()
     if (batchRun.value?.active || refreshPending || retryRead) {
-      timer = setTimer(() => loadBatchProgress(), 2000)
+      timer = setTimer(() => loadBatchProgress(), batchRun.value?.active && !retryRead ? 1000 : 2000)
     }
   }
 

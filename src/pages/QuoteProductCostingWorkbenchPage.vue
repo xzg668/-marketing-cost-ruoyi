@@ -28,6 +28,15 @@
         <el-button v-else type="primary" plain @click="openCurrentCosting">
           进入当前核算
         </el-button>
+        <el-button
+          v-if="hasCostRunResult"
+          type="success"
+          plain
+          :disabled="costRunActionLoading || costRunLoading"
+          @click="openCostRunDetail()"
+        >
+          查看结果
+        </el-button>
         <el-button :icon="ArrowLeft" @click="goBack">返回报价单</el-button>
         <el-button :icon="Refresh" :loading="loading || refreshingTabs" @click="refreshWorkbench">刷新</el-button>
       </div>
@@ -2768,11 +2777,9 @@ async function submitProductCosting(reason = 'USER_REQUEST') {
         ElMessage.warning('本产品已核算完成，结果页面读取失败，请刷新查看')
         return
       }
-      if (route.query.guide) {
-        const nextQuery = { ...route.query }
-        delete nextQuery.guide
-        await router.replace({ query: nextQuery })
-      }
+      const nextQuery = { ...route.query, tab: 'COST_RUN' }
+      delete nextQuery.guide
+      await router.replace({ query: nextQuery })
       ElMessage.success(result.reusedSuccess ? '当前结果已是最新，无需重复核算' : '本产品核算完成并生成成功版本')
       return
     }

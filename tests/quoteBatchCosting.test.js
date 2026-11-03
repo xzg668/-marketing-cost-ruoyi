@@ -34,6 +34,26 @@ function harness(overrides = {}) {
   return { ...api, oaNo, scope, timers, events, tick }
 }
 
+test('活动任务及时刷新，读取失败保留退避，完成后停止轮询', async () => {
+  const delays = []
+  let calls = 0
+  const h = harness({
+    setTimer: (_, delay) => { delays.push(delay); return delays.length },
+    fetchProgress: async () => {
+      if (++calls === 2) throw new Error('temporary read failure')
+      return { active: calls < 3, status: calls < 3 ? 'RUNNING' : 'SUCCESS' }
+    },
+  })
+  await h.loadBatchProgress()
+  await h.loadBatchProgress()
+  assert.deepEqual(delays, [1000, 2000])
+  await h.loadBatchProgress()
+  assert.equal(delays.length, 2)
+  assert.equal(h.batchRun.value.status, 'SUCCESS')
+  assert.deepEqual(h.events, ['finished', 'refresh'])
+  h.scope.stop()
+})
+
 test('离开页面后迟到的轮询不能重启定时器', async () => {
   const response = pending()
   let calls = 0
