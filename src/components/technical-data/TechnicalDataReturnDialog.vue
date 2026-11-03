@@ -99,7 +99,10 @@ async function accept(value) {
     })
   }
   emit('changed')
-  if (value.status === 'SUCCESS') ElMessage.success('退回成功，已开放对应资料修改')
+  if (value.status === 'SUCCESS') {
+    ElMessage.success('退回成功，已开放对应资料修改')
+    emit('update:modelValue', false)
+  }
 }
 
 async function submit() {
