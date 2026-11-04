@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { modulePresentation, nextTechnicalModule, validateTechnicalDataProfile, technicalEntryProgress, technicalModuleSummary } from '../src/utils/technicalDataWorkbench.js'
+import { modulePresentation, nextTechnicalModule, validateTechnicalDataProfile, technicalEntryProgress, technicalModuleSummary, isTechnicalModuleStatusOnly } from '../src/utils/technicalDataWorkbench.js'
 
 test('source check errors display the business reason and retain a fallback for missing explanations', () => {
   const row = { moduleType: 'PROFILE', sourceAvailability: 'ERROR', requirementReason: '产品 1053900000078 的料品档案名称不一致，请核实后重查' }
@@ -58,6 +58,35 @@ test('a submitted product can dispatch a newly confirmed, unowned gap without di
 })
 
 const product = (states) => ({ modules: Object.entries(states).map(([moduleType, moduleStatus]) => ({ moduleType, moduleStatus, required: true, sourceAvailability: 'MISSING' })) })
+
+test('received drawing details are present while manufacturing inputs remain a separate gap', () => {
+  const drawing = { moduleType: 'DRAWING_BOM', moduleStatus: 'NOT_REQUIRED', required: false,
+    sourceAvailability: 'AVAILABLE', requirementReasonCode: 'DRAWING_SOURCE_AVAILABLE' }
+  const data = { modules: [drawing, { moduleType: 'MANUFACTURING', moduleStatus: 'PENDING',
+    required: true, sourceAvailability: 'MISSING', requirementReasonCode: 'MANUFACTURING_RAW_MISSING' }] }
+  assert.equal(modulePresentation(data, 'DRAWING_BOM').label, '已有资料')
+  assert.equal(isTechnicalModuleStatusOnly(data, 'DRAWING_BOM'), false)
+  assert.equal(technicalModuleSummary(data, 'DRAWING_BOM'), '已有电子图库明细表')
+  assert.equal(modulePresentation(data, 'MANUFACTURING').label, '待补录')
+  assert.equal(firstRequiredTechnicalModule(data), 'MANUFACTURING')
+  assert.equal(nextTechnicalModule(data, { editableModules: ['DRAWING_BOM', 'MANUFACTURING'] }), 'MANUFACTURING')
+  assert.deepEqual(technicalEntryProgress(data, ['DRAWING_BOM', 'MANUFACTURING']), { total: 1, complete: 0, remaining: 1 })
+})
+
+test('drawing absence is distinct from source errors, unknown state and U9 not requiring a drawing', () => {
+  const drawing = { moduleType: 'DRAWING_BOM', moduleStatus: 'PENDING', required: true,
+    sourceAvailability: 'MISSING', requirementReasonCode: 'U9_ORIGINAL_NOT_FOUND' }
+  assert.equal(technicalModuleSummary({ modules: [drawing] }, 'DRAWING_BOM'), '尚无电子图库明细表')
+  for (const [sourceAvailability, label] of [['ERROR', '检查失败'], ['UNCONFIRMED', '待检查']]) {
+    const data = { modules: [{ ...drawing, sourceAvailability, requirementReason: '图库查询待核实' }] }
+    assert.equal(modulePresentation(data, 'DRAWING_BOM').label, label)
+    assert.equal(technicalModuleSummary(data, 'DRAWING_BOM'), '图库查询待核实')
+  }
+  const u9 = { modules: [{ ...drawing, moduleStatus: 'NOT_REQUIRED', required: false,
+    sourceAvailability: 'AVAILABLE', requirementReasonCode: 'U9_ORIGINAL_AVAILABLE' }] }
+  assert.equal(modulePresentation(u9, 'DRAWING_BOM').label, '无需补录')
+  assert.equal(technicalModuleSummary(u9, 'DRAWING_BOM'), 'U9 已有 BOM，本次无需补录')
+})
 
 test('start opens the first actual unfinished module assigned to the current person', () => {
   const data = product({ PROFILE: 'READY', DRAWING_BOM: 'PENDING', AUXILIARY: 'PENDING', SALARY: 'PENDING' })

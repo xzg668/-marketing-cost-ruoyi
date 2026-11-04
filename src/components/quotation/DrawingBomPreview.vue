@@ -2,8 +2,8 @@
   <section class="drawing-bom-preview" v-loading="loading">
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
     <template v-else>
-      <p>本次图库 BOM 共 {{ state.totalCount || 0 }} 条明细，包含已保存的财务修正。数量取图库原文或财务修正，自制、采购等属性取料品档案。</p>
-      <p v-if="state.bomComposed">实际参与计价的物料和用量请查看计价 BOM。被 U9 下级替换或被核算规则排除的图库行在这里保留，可点击节点查看处理原因。</p>
+      <p>本次图库共 {{ state.totalCount || 0 }} 条明细，按图纸层级和数量还原 BOM。料号及制造、采购属性取料品档案；制造件在图纸中没有下级时，继续展开 U9 子 BOM。包含已保存的财务修正。</p>
+      <p v-if="state.bomComposed">实际参与计价的物料和用量请查看计价 BOM。</p>
       <div class="drawing-toolbar">
         <el-button type="primary" plain @click="openResolution()">查看并确认物料匹配</el-button>
         <div>
@@ -20,11 +20,11 @@
               <span class="node-code" :title="data.isProductRoot || data.resolvedMaterialCode ? '料号' : '电子图库图号'">{{ data.isProductRoot ? productIdentity(data) : (data.resolvedMaterialCode || data.drawingCode || '未匹配料号') }}</span>
               <span class="node-name">{{ data.isProductRoot ? data.productName : data.sourceName }}</span>
               <span v-if="inlineDrawingNo(data)" class="node-drawing-no">图号：{{ inlineDrawingNo(data) }}</span>
-              <span v-if="data.quantityUnit && data.resolvedMaterialSpec" class="node-drawing-no">{{ data.resolvedMaterialSpec }}</span>
+              <span v-if="(data.quantityUnit || data.nodeOrigin === 'U9') && data.resolvedMaterialSpec" class="node-drawing-no">{{ data.resolvedMaterialSpec }}</span>
               <span v-if="!data.isProductRoot && data.quantity != null" class="node-qty"
-                :title="`${data.quantityUnit ? '财务修正用量' : '电子图库数量'}（相对父项）：${data.quantity}`">× {{ data.quantity }} {{ data.quantityUnit || '' }}</span>
+                :title="quantityLabel(data)">× {{ data.quantity }} {{ data.nodeOrigin === 'U9' ? data.resolvedUnit : (data.quantityUnit || '') }}<template v-if="data.nodeOrigin === 'U9' && data.parentBaseQty != null && Number(data.parentBaseQty) !== 1"> / 母件底数 {{ data.parentBaseQty }}</template></span>
+              <el-tag v-if="data.nodeOrigin === 'U9'" type="info" size="small">U9 子 BOM</el-tag>
               <el-tag v-if="data.quantityUnit" class="finance-correction-tag" type="warning" size="small">财务修正</el-tag>
-              <el-tag v-if="data.processingState === 'EXCLUDED'" type="info" size="small" :title="data.processingMessage">未采用此图库行</el-tag>
               <el-tag v-if="!data.isProductRoot && data.resolvedMaterialNature" class="material-nature-tag"
                 :type="materialNatureInfo(data.resolvedMaterialNature).type" size="small"
                 :title="`料品档案属性：${data.resolvedMaterialNature}`">
@@ -52,9 +52,15 @@
           <el-descriptions-item label="电子图库图号">{{ state.electronicDrawingNo || '—' }}</el-descriptions-item>
         </template>
         <template v-else>
-          <el-descriptions-item label="图库物料">{{ selectedNode.sourceName || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="物料来源">{{ selectedNode.nodeOrigin === 'U9' ? 'U9 子 BOM' : '电子图库' }}</el-descriptions-item>
+          <el-descriptions-item label="物料名称">{{ selectedNode.sourceName || '—' }}</el-descriptions-item>
           <el-descriptions-item label="图号">{{ selectedNode.drawingCode || '—' }}</el-descriptions-item>
-          <el-descriptions-item :label="selectedNode.quantityUnit ? '修正用量（相对父项）' : '图库数量（相对父项）'">{{ selectedNode.quantity ?? '—' }} {{ selectedNode.quantityUnit || '' }}</el-descriptions-item>
+          <el-descriptions-item :label="quantityLabel(selectedNode)">{{ selectedNode.quantity ?? '—' }} {{ selectedNode.nodeOrigin === 'U9' ? selectedNode.resolvedUnit : (selectedNode.quantityUnit || '') }}</el-descriptions-item>
+          <template v-if="selectedNode.nodeOrigin === 'U9'">
+            <el-descriptions-item label="母件底数">{{ selectedNode.parentBaseQty ?? 1 }}</el-descriptions-item>
+            <el-descriptions-item label="规格">{{ selectedNode.resolvedMaterialSpec || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="BOM 用途／版本">{{ selectedNode.bomPurpose || '—' }} / {{ selectedNode.bomVersion || '—' }}</el-descriptions-item>
+          </template>
           <el-descriptions-item label="已匹配料号">{{ selectedNode.resolvedMaterialCode || '—' }}</el-descriptions-item>
           <el-descriptions-item label="已匹配物料">{{ selectedNode.resolvedMaterialName || '—' }}</el-descriptions-item>
           <el-descriptions-item label="料品档案属性">{{ materialNatureInfo(selectedNode.resolvedMaterialNature).label }}</el-descriptions-item>
@@ -94,12 +100,16 @@ watch(() => [props.itemId, props.month, props.revision], async () => {
 function productIdentity(product) {
   return product.materialNo || product.sunlModel || product.customerDrawing || '报价产品'
 }
+function quantityLabel(node) {
+  if (node.nodeOrigin === 'U9') return 'U9 用量（按母件底数）'
+  return node.quantityUnit ? '修正用量（相对父项）' : '图库数量（相对父项）'
+}
 function inlineDrawingNo(node) {
   if (node.isProductRoot) return state.value.electronicDrawingNo
   return node.resolvedMaterialCode && node.drawingCode !== '/' ? node.drawingCode : ''
 }
 function materialNatureInfo(nature) {
-  if (nature === '制造件' || nature === '自制件') return { label: '自制件', type: 'primary' }
+  if (nature === '制造件' || nature === '自制件') return { label: nature, type: 'primary' }
   if (nature === '采购件') return { label: nature, type: 'success' }
   if (nature === '委外加工件') return { label: nature, type: 'warning' }
   return { label: nature || '未获取', type: 'info' }

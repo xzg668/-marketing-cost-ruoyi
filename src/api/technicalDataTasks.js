@@ -4,6 +4,16 @@ import { technicalProfilePayload } from '../utils/technicalDataPlateMaterial'
 
 const id = (value) => encodeURIComponent(String(value))
 
+export const startAdminTechnicalDataEntry = (itemId, accountingMonth) =>
+  request(`/api/v2/technical-data/quote-items/${id(itemId)}/admin-entry`, {
+    method: 'POST', params: { accountingMonth }, suppressErrorToast: true,
+  })
+
+export const saveAdminTechnicalDataForQuote = (taskId, expectedVersion) =>
+  request(`/api/v2/technical-data/tasks/${id(taskId)}/admin-direct-save`, {
+    method: 'POST', body: { expectedVersion }, suppressErrorToast: true,
+  })
+
 export const publishTechnicalDataTasks = ({ requestId, oaFormItemIds, accountingMonth, assigneeUserId, moduleAssignees, checkFingerprints, dueAt }) =>
   request('/api/v2/technical-data/tasks/publish-from-quote', {
     method: 'POST',
@@ -47,6 +57,11 @@ export const recheckTechnicalDataDrawing = (productId, { expectedVersion, mainta
 export const fetchTechnicalDataManufacturing = (productId, versionId) =>
   request(`/api/v2/technical-data/products/${id(productId)}/manufacturing`, {
     params: { versionId }, suppressErrorToast: true,
+  })
+
+export const fetchQuoteTechnicalDataManufacturing = (itemId, accountingMonth) =>
+  request(`/api/v2/technical-data/quote-items/${id(itemId)}/manufacturing`, {
+    params: { accountingMonth }, suppressErrorToast: true,
   })
 
 export const fetchTechnicalDataRawMaterial = (productId, materialNo) =>

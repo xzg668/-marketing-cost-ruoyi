@@ -57,6 +57,43 @@ test('图库树以报价成品为唯一根节点，保留原父子关系、重�
   assert.deepEqual(buildDrawingSourceTree(), [])
 })
 
+test('图库制造件展开 U9 下级，保留多层关系、重复出现和母件底数', () => {
+  const u9Children = [
+    { nodeKey: 'raw', parentNodeKey: 'part', materialCode: '301240123', materialName: '不锈钢带',
+      materialSpec: 'SUS301,H,t0.15×21', shapeAttr: '采购件', quantity: 0.000701, parentBaseQty: 1, unit: '千克' },
+    { nodeKey: 'part', parentNodeKey: null, materialCode: '1064000300093', materialName: '金属膜片',
+      shapeAttr: '制造件', quantity: 2, parentBaseQty: 10, unit: '只' },
+  ]
+  const rows = ['G1:R1', 'G1:R2'].map(sourceSequence => ({ sourceSequence,
+    resolvedMaterialCode: 'ASSY', processingState: 'U9_READY', u9Children }))
+  rows.push({ sourceSequence: 'G1:R3', parentSourceSequence: null,
+    resolvedMaterialCode: 'EXCLUDED-AUXILIARY', processingState: 'EXCLUDED' })
+  const original = structuredClone(rows)
+  const tree = buildDrawingSourceTree(rows)
+  const [first, second] = tree[0].children
+  assert.equal(first.children.length, 1)
+  const part = first.children[0], raw = part.children[0]
+  assert.equal(part.resolvedMaterialCode, '1064000300093')
+  assert.equal(part.quantity, 2)
+  assert.equal(part.parentBaseQty, 10)
+  assert.equal(raw.resolvedMaterialCode, '301240123')
+  assert.equal(raw.quantity, 0.000701)
+  assert.equal(raw.resolvedUnit, '千克')
+  assert.equal(raw.nodeOrigin, 'U9')
+  assert.equal(raw.canModify, false)
+  assert.notEqual(part.sourceSequence, second.children[0].sourceSequence)
+  assert.notEqual(raw.sourceSequence, second.children[0].children[0].sourceSequence)
+  assert.deepEqual(rows, original)
+})
+
+test('只有已采用 U9 下级的节点展开 U9，缺失和采购节点不伪造下级', () => {
+  for (const processingState of ['PURCHASE', 'MISSING_RAW', 'ERROR', 'WAIT_FINANCE', 'DRAWING_READY']) {
+    const tree = buildDrawingSourceTree([{ sourceSequence: 'G1:R1', processingState,
+      u9Children: [{ nodeKey: 'raw', materialCode: 'STALE' }] }])
+    assert.deepEqual(tree[0].children[0].children, [])
+  }
+})
+
 test('只把未匹配和歧义物料放入财务选择清单，正常自动匹配项不出现', () => {
   assert.deepEqual(pendingElectronicDrawingItems(state).map((item) => item.sourceNodeId), [2, 3])
   assert.doesNotMatch(page, /系统推荐|推荐结果|确认正常物料/)

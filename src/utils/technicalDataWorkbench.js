@@ -35,10 +35,12 @@ export function moduleName(code) {
   return TECHNICAL_DATA_MODULES.find(module => module.code === code)?.label || code
 }
 
-// 公共来源已满足本项时只展示结论；已填草稿和审批资料仍可进入查看。
+// 图库保留明细已取得的说明与查看入口；其他已满足的公共来源只展示结论。
 export function isTechnicalModuleStatusOnly(product, code) {
   const module = findModule(product, code)
   return module?.moduleStatus === 'NOT_REQUIRED' && module.sourceAvailability === 'AVAILABLE'
+    && !module.requirementReasonCode?.startsWith('SHARED_MODULE_')
+    && !(code === 'DRAWING_BOM' && module.requirementReasonCode === 'DRAWING_SOURCE_AVAILABLE')
 }
 
 export function modulePresentation(product, moduleType, taskStatus) {
@@ -52,6 +54,7 @@ export function modulePresentation(product, moduleType, taskStatus) {
     RETURNED: { label: '已退回', type: 'danger' },
   }
   if (states[module.moduleStatus]) return states[module.moduleStatus]
+  if (['PRICE_SHARED_SAVED', 'SHARED_MODULE_SAVED', 'SHARED_MODULE_SUBMITTED'].includes(module.requirementReasonCode)) return { label: '已有资料', type: 'success' }
   if (module.sourceAvailability === 'ERROR') return { label: '检查失败', type: 'danger' }
   if (module.sourceAvailability === 'UNCONFIRMED') return { label: '待检查', type: 'warning' }
   if (module.moduleStatus === 'NOT_REQUIRED') return {
@@ -69,15 +72,19 @@ export function technicalModuleSummary(product, code) {
   if (module.sourceAvailability === 'UNCONFIRMED') return module.requirementReason || '资料来源待确认'
   if (!module.required) return ({
     U9_ORIGINAL_AVAILABLE: 'U9 已有 BOM，本次无需补录',
+    DRAWING_SOURCE_AVAILABLE: '已有电子图库明细表',
     MANUFACTURING_U9_SOURCE: '沿用已有原材料关系',
     SALARY_SOURCE_AVAILABLE: '沿用 CMS 工资',
     PACKAGE_SOURCE_AVAILABLE: '沿用已有包装',
     NET_LOSS_SOURCE_AVAILABLE: '沿用已有净损失率',
     PRICE_SOURCE_AVAILABLE: '已有可用价格',
+    PRICE_SHARED_SAVED: '已有资料，无需重复补录',
+    SHARED_MODULE_SUBMITTED: '已有共享资料',
+    SHARED_MODULE_SAVED: '已有共享资料',
   })[module.requirementReasonCode] || '本次无需补录'
   const count = module.itemCount > 0 ? ` ${module.itemCount} 项` : ''
   const plateSummary = plateMaterialSummary(product?.profile?.plateMaterial)
-  return ({ PROFILE: ['产品属性与单件费用', plateSummary].filter(Boolean).join(' · '), DRAWING_BOM: '取得有效图库明细',
+  return ({ PROFILE: ['产品属性与单件费用', plateSummary].filter(Boolean).join(' · '), DRAWING_BOM: '尚无电子图库明细表',
     MANUFACTURING: `制造件${count} · 原材料、净长、毛重`, PACKAGE: `包装子件${count} · 母件底数、子件用量`,
     AUXILIARY: `辅料明细${count} · 参考 / 上传`, SOLDER: `焊料${count} · 单件用量`,
     SALARY: '直接人工 / 辅助人员工资', NET_LOSS: '参考产品 / 填写费率', PRICE: `价格${count} · 公式 / 固定价` })[code] || moduleName(code)
@@ -137,8 +144,9 @@ export function workbenchRowKey(row) {
 }
 
 export function canDispatchWorkbenchRow(row) {
-  if (!row || row.sourceCheck?.sharedModules?.length) return false
-  if (row.taskStatus === 'UNASSIGNED') return row.product.modules.some(module => module.required)
+  if (!row) return false
+  const shared = new Set((row.sourceCheck?.sharedModules || []).map(module => module.moduleType))
+  if (row.taskStatus === 'UNASSIGNED') return row.product.modules.some(module => module.required && !shared.has(module.moduleType))
   return ['PENDING', 'SUBMITTED', 'APPROVED'].includes(row.taskStatus)
     && row.product.modules.some(isAdditionalDispatchModule)
 }

@@ -4,15 +4,20 @@ export const ELECTRONIC_DRAWING_SEARCH_TYPES = [
   { value: 'MATERIAL_NAME', label: '物料名称' },
 ]
 
-// 成品根节点仅用于展示报价产品；图库行仍使用已保存的父子关系和相对用量。
+// 图库负责成品结构；已采用的 U9 子 BOM 继续挂到对应制造节点，重复出现的分支各自保留。
 export function buildDrawingSourceTree(items = [], product = {}) {
   if (!items.length) return []
-  const bySequence = new Map(items.map(item => [item.sourceSequence, { ...item, children: [] }]))
+  const bySequence = new Map(items
+    .filter(item => item.processingState !== 'EXCLUDED')
+    .map(item => [item.sourceSequence, { ...item, children: [], nodeOrigin: 'DRAWING' }]))
   const roots = []
   for (const row of bySequence.values()) {
     const parent = row.parentSourceSequence && bySequence.get(row.parentSourceSequence)
     if (parent) parent.children.push(row)
     else roots.push(row)
+  }
+  for (const row of bySequence.values()) {
+    if (row.processingState === 'U9_READY') row.children.push(...buildU9Children(row))
   }
   return [{
     sourceSequence: 'QUOTE_PRODUCT',
@@ -23,6 +28,44 @@ export function buildDrawingSourceTree(items = [], product = {}) {
     customerDrawing: product.customerDrawing,
     children: roots,
   }]
+}
+
+function buildU9Children(anchor) {
+  const rows = anchor.u9Children || []
+  const key = nodeKey => JSON.stringify(['U9', anchor.sourceSequence, nodeKey])
+  const nodes = new Map(rows.map(row => [row.nodeKey, {
+    sourceSequence: key(row.nodeKey),
+    parentSourceSequence: row.parentNodeKey == null ? anchor.sourceSequence : key(row.parentNodeKey),
+    sourceName: row.materialName,
+    resolvedMaterialCode: row.materialCode,
+    resolvedMaterialName: row.materialName,
+    resolvedMaterialSpec: row.materialSpec,
+    resolvedMaterialNature: row.shapeAttr,
+    resolvedUnit: row.unit,
+    drawingCode: row.drawingNo,
+    quantity: row.quantity,
+    parentBaseQty: row.parentBaseQty,
+    bomPurpose: row.bomPurpose,
+    bomVersion: row.bomVersion,
+    sourceU9BomId: row.sourceU9BomId,
+    sourceRawHierarchyId: row.sourceRawHierarchyId,
+    sortSeq: row.sortSeq,
+    nodeOrigin: 'U9',
+    canModify: false,
+    children: [],
+  }]))
+  const roots = []
+  for (const row of rows) {
+    const node = nodes.get(row.nodeKey)
+    if (row.parentNodeKey == null) roots.push(node)
+    else nodes.get(row.parentNodeKey)?.children.push(node)
+  }
+  const sort = children => {
+    children.sort((a, b) => (a.sortSeq ?? Number.MAX_SAFE_INTEGER) - (b.sortSeq ?? Number.MAX_SAFE_INTEGER))
+    children.forEach(child => sort(child.children))
+  }
+  sort(roots)
+  return roots
 }
 
 export function pendingElectronicDrawingItems(state) {

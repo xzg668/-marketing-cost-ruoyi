@@ -1,6 +1,6 @@
 <template>
   <section class="entry-preview" :aria-label="`${moduleName(moduleType)}填写页预览`">
-    <el-alert title="填写页只读预览，可切换填写方式查看字段；资料由负责技术员填写并提交。" type="info" :closable="false" />
+    <el-alert :title="moduleType === 'MANUFACTURING' ? '当前账号只能查看。原材料、净长和毛重由负责技术员补录，提交后在此查看。' : '填写页只读预览，可切换填写方式查看字段；资料由负责技术员填写并提交。'" type="info" :closable="false" />
     <p v-if="reason" class="gap-reason">{{ reason }}</p>
     <div v-loading="loading" class="preview-content">
       <template v-if="error">
@@ -8,6 +8,8 @@
         <el-button @click="load">重试</el-button>
       </template>
       <TechnicalDataProfileForm v-else-if="moduleType === 'PROFILE'" :product="row.product" :editable="false" />
+      <TechnicalDataManufacturingForm v-else-if="moduleType === 'MANUFACTURING'" :key="`${row.product.oaFormItemId}:${row.accountingMonth}`"
+        :quote-item-id="row.product.oaFormItemId" :accounting-month="row.accountingMonth" :editable="false" />
       <component v-else-if="preview && formComponent" :is="formComponent" :key="moduleType" :preview-data="preview" :editable="false" />
     </div>
   </section>
@@ -19,6 +21,7 @@ import { checkQuotePriceSources, fetchQuoteCostingWorkbench } from '../../api/qu
 import { priceEntryPreview } from '../../utils/technicalDataPrice'
 import { findModule, moduleName } from '../../utils/technicalDataWorkbench'
 import TechnicalDataProfileForm from './TechnicalDataProfileForm.vue'
+import TechnicalDataManufacturingForm from './TechnicalDataManufacturingForm.vue'
 import TechnicalDataPackageForm from './TechnicalDataPackageForm.vue'
 import TechnicalDataAuxiliaryForm from './TechnicalDataAuxiliaryForm.vue'
 import TechnicalDataSolderForm from './TechnicalDataSolderForm.vue'

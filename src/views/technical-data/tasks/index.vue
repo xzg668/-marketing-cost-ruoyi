@@ -12,6 +12,7 @@
       </div>
     </header>
 
+
     <div class="task-overview" aria-label="补录任务统计">
       <div><span>{{ canViewSupplementOverview ? '补录产品' : '本人的补录任务' }}</span><b>{{ summary.total }}</b></div>
       <div><span>待补录 / 待修改</span><b>{{ summary.pending }}</b></div>
@@ -52,7 +53,9 @@
             <small>{{ row.oaNo }} · {{ row.accountingMonth }}</small>
             <el-button v-if="row.taskNo && !isUnassigned(row)" link type="primary" @click="open(row)">{{ row.taskNo }}</el-button>
             <small v-else-if="row.taskNo">{{ row.taskNo }}</small>
-            <small class="scope">{{ isUnassigned(row) ? (canManage ? '勾选产品后，在上方统一分派' : '等待分派') : scopeLabel(row) }}</small>
+            <small class="scope">{{ isUnassigned(row) ? (row.product.modules.some(module => module.required) ? (canManage ? '勾选产品后，在上方统一分派' : '等待分派') : '已有资料，无需重复补录') : scopeLabel(row) }}</small>
+            <el-button v-if="canAdminDirect && isUnassigned(row) && row.product.modules.some(module => module.required)" type="primary" size="small"
+              :loading="adminStarting" @click="startAdmin(row)">补录</el-button>
             <el-button v-if="!isUnassigned(row)" :type="row.editableModules.length ? 'primary' : ''" size="small"
               @click="open(row)">
               {{ productAction(row) }}
@@ -62,7 +65,7 @@
       </el-table-column>
       <el-table-column v-for="module in TECHNICAL_DATA_MODULES" :key="module.code" :label="module.code === 'MANUFACTURING' ? '电子图库制造件明细' : module.label" :min-width="module.code === 'MANUFACTURING' ? 155 : 122">
         <template #default="{ row }">
-          <span v-if="!canViewSupplementOverview && !row.assignedModules.includes(module.code)" class="not-assigned">—</span>
+          <span v-if="!canViewSupplementOverview && !row.assignedModules.includes(module.code) && !findModule(row.product, module.code)?.requirementReasonCode?.startsWith('SHARED_MODULE_')" class="not-assigned">—</span>
           <el-tooltip v-else :content="moduleReason(row, module.code)" placement="top" :show-after="250">
             <button type="button" class="module-button" :disabled="!moduleAction(row, module.code)" :class="{ owned: row.assignedModules.includes(module.code), muted: !findModule(row.product, module.code)?.required }" @click="open(row, module.code)">
               <el-tag :type="modulePresentation(row.product, module.code, row.taskStatus).type" size="small">{{ modulePresentation(row.product, module.code, row.taskStatus).label }}</el-tag>
@@ -76,9 +79,10 @@
       </el-table-column>
       <el-table-column label="状态" width="140" fixed="right">
         <template #default="{ row }">
-          <el-tag v-if="isUnassigned(row)" :type="taskStatusType(row.taskStatus)">{{ taskStatusLabel(row.taskStatus) }}</el-tag>
+          <el-tag v-if="isUnassigned(row) && !row.product.modules.some(module => module.required)" type="success">已有资料</el-tag>
+          <el-tag v-else-if="isUnassigned(row)" :type="taskStatusType(row.taskStatus)">{{ taskStatusLabel(row.taskStatus) }}</el-tag>
           <el-button v-else link @click="open(row)"><el-tag :type="taskStatusType(row.taskStatus)">{{ taskStatusLabel(row.taskStatus) }}</el-tag></el-button>
-          <small v-if="row.sourceCheck?.sharedModules?.length">已有办理资料，需核实复用</small>
+          <small v-if="row.sourceCheck?.sharedModules?.some(source => ['SAVED', 'SUBMITTED'].includes(source.status))">已有资料，无需重复补录</small>
           <el-button v-if="canManage && canReturnRow(row)" link type="danger" @click="startReturn([row])">退回资料</el-button>
         </template>
       </el-table-column>
@@ -94,7 +98,7 @@
 
     <el-dialog :model-value="!!editorTaskId" title="补录资料" width="1200px" top="24px" class="technical-entry-dialog"
       :show-close="false" :close-on-click-modal="false" :before-close="closePanel" destroy-on-close>
-      <TechnicalDataProductEditor v-if="editorTaskId" :task-id="editorTaskId" :submission-id="fixedSubmission || undefined" @close="closePanel" @changed="load" />
+      <TechnicalDataProductEditor v-if="editorTaskId" :task-id="editorTaskId" :submission-id="fixedSubmission || undefined" :admin-direct="canAdminDirect" @close="closePanel" @changed="load" />
     </el-dialog>
     <TechnicalDataReturnDialog v-model="returnVisible" :task-ids="returnTaskIds" @changed="load" />
     <TechnicalDataDispatchDialog v-model="dispatchVisible" :rows="dispatchRows" :default-assignee="defaultAssignee" :default-assignee-person="selectedAssigneePerson" @dispatched="load" />
@@ -124,7 +128,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { useTechnicalDataIdentity } from '../../../composables/useTechnicalDataIdentity'
-import { fetchTechnicalDataProducts, checkTechnicalDataSources, fetchTechnicalDataTask, fetchTechnicalDataWorkflow, fetchTechnicalDataDocument } from '../../../api/technicalDataTasks'
+import { fetchTechnicalDataProducts, checkTechnicalDataSources, fetchTechnicalDataTask, fetchTechnicalDataWorkflow, fetchTechnicalDataDocument, startAdminTechnicalDataEntry } from '../../../api/technicalDataTasks'
 import TechnicalDataProductEditor from '../../../components/technical-data/TechnicalDataProductEditor.vue'
 import TechnicalDataDocumentSubmit from '../../../components/technical-data/TechnicalDataDocumentSubmit.vue'
 import { submittedDocumentRows } from '../../../utils/technicalDataDocument'
@@ -143,6 +147,8 @@ const fixedSubmission = computed(() => String(route.query.submission || ''))
 const editorTaskId = computed(() => String(route.query.supplement || (route.query.module && route.params.taskId) || ''))
 const isEntry = computed(() => Boolean(route.meta.technicalDataEntry))
 const canManage = computed(() => canViewSupplementOverview.value && !fixedSubmission.value && !isEntry.value)
+const canAdminDirect = computed(() => canManage.value && (user.permissions?.some(value => ['*:*:*', 'technical:data:admin:operate'].includes(value)) || user.roles?.includes('admin')))
+const adminStarting = ref(false)
 const personalDocuments = ref([]), documentError = ref(''), submissionBusy = ref(false)
 const storageKey = computed(() => `technical-data-product-workbench-state:${user.userId}:${user.businessUnitType}`)
 const filters = reactive({ taskStatus: '', accountingMonth: '', keyword: '', current: 1 })
@@ -241,9 +247,11 @@ function scopeLabel(row) {
 function isUnassigned(row) { return !row.taskId || row.taskStatus === 'UNASSIGNED' }
 function moduleReason(row, code) { return findModule(row.product, code)?.requirementReason || '尚未取得本模块的检查结论' }
 function moduleAction(row, code) {
+  if (findModule(row.product, code)?.sourceReference?.startsWith('TECH_SHARED:')) return '查看原资料'
   if (!canViewSupplementOverview.value && !row.assignedModules.includes(code)) return ''
   if (canManage.value && code === 'DRAWING_BOM' && ['DRAWING_SOURCE_AVAILABLE', 'DRAWING_SOURCE_PENDING'].includes(findModule(row.product, code)?.requirementReasonCode)) return '查看图库 BOM'
   if (isTechnicalModuleStatusOnly(row.product, code)) return ''
+  if (code === 'MANUFACTURING' && !row.editableModules.includes(code)) return '查看明细'
   if (isUnassigned(row)) return findModule(row.product, code)?.required ? '查看缺口' : '查看来源'
   if (row.editableModules.includes(code)) return findModule(row.product, code)?.moduleStatus === 'READY' ? '查看 / 修改' : ({ DRAWING_BOM: '登记 / 检查', MANUFACTURING: '填写原材料', PACKAGE: '引用 / 新增', AUXILIARY: '参考 / 上传', SOLDER: '参考 / 新增', SALARY: '参考 / 上传', NET_LOSS: '参考 / 填写', PRICE: '补录价格' })[code] || '填写'
   return '查看'
@@ -253,14 +261,28 @@ function productAction(row) {
   if (row.editableModules.length) return '继续补录'
   return '查看资料'
 }
+async function startAdmin(row) {
+  if (!canAdminDirect.value || !isUnassigned(row) || adminStarting.value) return
+  adminStarting.value = true
+  try {
+    const task = await startAdminTechnicalDataEntry(row.product.oaFormItemId, row.accountingMonth)
+    await load()
+    await openPanel(task.id)
+  } catch (cause) { showErrorOnce(cause, '直接补录暂不可用，请刷新产品状态') }
+  finally { adminStarting.value = false }
+}
 async function open(row, module) {
   if (submissionBusy.value) return
   if (module && !moduleAction(row, module)) return
+  if (moduleAction(row, module) === '查看原资料') {
+    const sourceTaskId = findModule(row.product, module).sourceReference.split(':')[1]
+    return openPanel(sourceTaskId, module)
+  }
   if (moduleAction(row, module) === '查看图库 BOM') {
     return router.push({ path: `/ingest/quote-requests/${encodeURIComponent(row.oaNo)}/items/${row.product.oaFormItemId}/costing`, query: { tab: 'PRODUCT_DETAIL', drawingBom: '1' } })
   }
   if (isUnassigned(row)) {
-    if (canViewSupplementOverview.value && findModule(row.product, module)?.required && ['PROFILE', 'PACKAGE', 'AUXILIARY', 'SOLDER', 'SALARY', 'NET_LOSS', 'PRICE'].includes(module)) {
+    if (canViewSupplementOverview.value && findModule(row.product, module)?.required && ['PROFILE', 'MANUFACTURING', 'PACKAGE', 'AUXILIARY', 'SOLDER', 'SALARY', 'NET_LOSS', 'PRICE'].includes(module)) {
       entryPreview.value = { row, module }; return
     }
     inspectModule.value = module || ''; inspectRow.value = row

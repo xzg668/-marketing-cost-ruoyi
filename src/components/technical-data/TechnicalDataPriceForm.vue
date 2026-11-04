@@ -27,6 +27,11 @@
           <p class="hint">{{ selected.message }}</p>
         </template>
         <el-alert v-else-if="selected.status === 'ERROR'" type="error" :closable="false" :title="selected.message || '取价失败，请重新检查价格来源'" />
+        <template v-else-if="['SHARED', 'ASSIGNED'].includes(selected.status)">
+          <el-alert :type="selected.status === 'SHARED' ? 'success' : 'info'" :closable="false" :title="selected.status === 'SHARED' ? '已有资料，本项无需重复补录' : '原任务办理中，本项无需重复补录'" />
+          <p>{{ selected.message }}</p>
+          <el-button v-if="owner(selected)" link type="primary" @click="viewOriginal">查看原资料</el-button>
+        </template>
         <template v-else>
         <el-alert v-if="selected.status === 'REVISION'" type="info" :closable="false" :title="selected.message" />
         <el-radio-group :model-value="draft.entryMode" :disabled="(!itemEditable && !previewData) || busy" @change="changeMode">
@@ -66,12 +71,14 @@
 
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { fetchTechnicalDataPrice, fetchTechnicalDataPriceReferences, saveTechnicalDataPrice, recheckTechnicalDataPrice } from '../../api/technicalDataTasks'
 import { PRICE_MODES, priceDraft, pricePayload, switchPriceDraft } from '../../utils/technicalDataPrice'
 import { showErrorOnce } from '../../utils/errorHandler'
 
 const props = defineProps({ productId: Number, editable: Boolean, versionId: Number, previewData: Object })
+const router = useRouter(), route = useRoute()
 const emit = defineEmits(['dirty', 'busy', 'saved'])
 const workspace = ref(null), drafts = ref({}), selectedKey = ref(''), original = ref('')
 const modeDrafts = ref({})
@@ -82,7 +89,9 @@ const searchBy = ref('CODE'), keyword = ref(''), references = ref([])
 const parameterLabels = { blankWeight: '下料重', netWeight: '净重', processFee: '加工费', agentFee: '代理费' }
 const canEdit = computed(() => !props.previewData && props.editable && workspace.value?.editable)
 const busy = computed(() => loading.value || saving.value || searching.value)
-const rows = computed(() => workspace.value?.historical ? (workspace.value.content?.items || []).map(row => ({ ...row, status: 'RECORDED' })) : workspace.value?.requirements?.items || [])
+const rows = computed(() => workspace.value?.historical
+  ? [...(workspace.value.content?.items || []).map(row => ({ ...row, status: 'RECORDED' })), ...(workspace.value.requirements?.items || [])]
+  : workspace.value?.requirements?.items || [])
 const selected = computed(() => rows.value.find(row => row.itemKey === selectedKey.value))
 const draft = computed(() => drafts.value[selectedKey.value])
 const publication = computed(() => workspace.value?.publications?.find(row => row.itemKey === selectedKey.value))
@@ -92,7 +101,11 @@ const signature = computed(() => JSON.stringify(drafts.value))
 let disposed = false, generation = 0
 watch(busy, value => emit('busy', value))
 watch(signature, value => emit('dirty', value !== original.value))
-const ownerLabel = row => row.status === 'REVISION' ? '修改原补录来源' : row.status === 'RECORDED' ? '已提交资料' : owner(row) ? `${owner(row).assigneeName || '原技术员'}办理 · ${['SUBMITTED', 'APPROVED'].includes(owner(row).moduleStatus) ? '已提交，待可用性检查' : '等待原资料完成'}` : '需要补价'
+const ownerLabel = row => row.status === 'SHARED' ? '已有资料' : row.status === 'ASSIGNED' ? '原任务办理中' : row.status === 'REVISION' ? '修改原补录来源' : row.status === 'RECORDED' ? '已提交资料' : owner(row) ? `${owner(row).assigneeName || '原技术员'}办理 · ${['SUBMITTED', 'APPROVED'].includes(owner(row).moduleStatus) ? '已提交，待可用性检查' : '等待原资料完成'}` : '需要补价'
+function viewOriginal() {
+  const source = selected.value && owner(selected.value)
+  if (source) router.push({ query: { ...route.query, supplement: String(source.taskId), module: 'PRICE' } })
+}
 
 function restore(data) {
   workspace.value = data

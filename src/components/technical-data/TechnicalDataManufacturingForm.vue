@@ -2,7 +2,7 @@
   <section class="manufacturing-form" v-loading="loading">
     <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
     <template v-if="state">
-      <p>每个缺失的制造件补一种原材料。净长按单件填写，单位 mm；毛重按单件填写，单位 kg。</p>
+      <p>{{ canEdit ? '每个缺失的制造件补一种原材料。' : '以下为制造件原材料明细，尚未补录的内容显示为“尚未填写”。' }}净长按单件填写，单位 mm；毛重按单件填写，单位 kg。</p>
       <el-alert v-if="state.source?.unavailableReason" :title="state.source.unavailableReason" type="warning" :closable="false" show-icon />
       <p v-if="state.historical" class="note">以下为本次提交时保存的原材料及图库重量，当前来源变化不会覆盖这些内容。</p>
       <div v-if="inherited.length" class="source-status">
@@ -27,13 +27,13 @@
           </template>
         </el-table-column>
         <el-table-column label="单件净长（mm）" min-width="145">
-          <template #default="{ row }"><el-input v-if="canEdit" v-model="draft[row.sourceNodeId].netLengthMm" type="number" min="0" :aria-label="`${row.name}单件净长`" @input="changed" /><span v-else>{{ draft[row.sourceNodeId]?.netLengthMm ?? '尚未填写' }}</span></template>
+          <template #default="{ row }"><el-input v-if="canEdit" v-model="draft[row.sourceNodeId].netLengthMm" type="number" min="0" :aria-label="`${row.name}单件净长`" @input="changed" /><span v-else>{{ displayValue(draft[row.sourceNodeId]?.netLengthMm) }}</span></template>
         </el-table-column>
-        <el-table-column label="图库单件净重 · 只读" min-width="150">
-          <template #default="{ row }">{{ row.sourceNetWeight ?? '未提供' }} {{ row.sourceNetWeightUnit || '单位未记录' }}</template>
+        <el-table-column label="单件净重（g）· 只读" min-width="150">
+          <template #default="{ row }">{{ netWeightGrams(row) }}</template>
         </el-table-column>
         <el-table-column label="单件毛重（kg）" min-width="145">
-          <template #default="{ row }"><el-input v-if="canEdit" v-model="draft[row.sourceNodeId].grossWeightKg" type="number" min="0" step="any" :aria-label="`${row.name}单件毛重`" @input="changed" /><span v-else>{{ draft[row.sourceNodeId]?.grossWeightKg ?? '尚未填写' }}</span></template>
+          <template #default="{ row }"><el-input v-if="canEdit" v-model="draft[row.sourceNodeId].grossWeightKg" type="number" min="0" step="any" :aria-label="`${row.name}单件毛重`" @input="changed" /><span v-else>{{ displayValue(draft[row.sourceNodeId]?.grossWeightKg) }}</span></template>
         </el-table-column>
         <el-table-column v-if="canEdit" label="操作" width="75">
           <template #default="{ row }"><el-button link type="danger" @click="clear(row)">清除</el-button></template>
@@ -67,9 +67,9 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { fetchTechnicalDataManufacturing, fetchTechnicalDataRawMaterial, saveTechnicalDataManufacturing } from '../../api/technicalDataTasks'
+import { fetchTechnicalDataManufacturing, fetchQuoteTechnicalDataManufacturing, fetchTechnicalDataRawMaterial, saveTechnicalDataManufacturing } from '../../api/technicalDataTasks'
 
-const props = defineProps({ productId: { type: Number, required: true }, editable: Boolean, versionId: Number })
+const props = defineProps({ productId: Number, quoteItemId: [String, Number], accountingMonth: String, editable: Boolean, versionId: Number })
 const emit = defineEmits(['dirty', 'busy', 'saved'])
 const state = ref(null)
 const loading = ref(false)
@@ -78,7 +78,7 @@ const error = ref('')
 const draft = reactive({})
 const options = reactive({})
 const lookupErrors = reactive({})
-const canEdit = computed(() => props.editable && state.value?.editable && !state.value?.historical)
+const canEdit = computed(() => !props.quoteItemId && props.editable && state.value?.editable && !state.value?.historical)
 const inherited = computed(() => (state.value?.source?.nodes || []).filter(row => ['U9_READY', 'DRAWING_READY'].includes(row.state)))
 const waiting = computed(() => (state.value?.source?.nodes || []).filter(row => ['WAIT_FINANCE', 'ERROR'].includes(row.state)))
 const editableRows = computed(() => state.value?.historical
@@ -103,6 +103,16 @@ function install(value) {
   }
 }
 function changed() { emit('dirty', true) }
+function displayValue(value) { return value == null || value === '' ? '尚未填写' : value }
+function netWeightGrams(row) {
+  if (row.sourceNetWeight == null || row.sourceNetWeight === '') return '未提供'
+  const weight = Number(row.sourceNetWeight)
+  if (!Number.isFinite(weight)) return '未提供'
+  const unit = String(row.sourceNetWeightUnit || '').trim().toLowerCase()
+  if (['g', '克'].includes(unit)) return String(row.sourceNetWeight)
+  if (['kg', '千克', '公斤'].includes(unit)) return String(Number((weight * 1000).toPrecision(15)))
+  return '单位未明确'
+}
 function clear(row) {
   draft[row.sourceNodeId] = { rawMaterialNo: '', netLengthMm: '', grossWeightKg: '' }
   delete options[row.sourceNodeId]
@@ -111,8 +121,11 @@ function clear(row) {
 }
 async function load() {
   loading.value = true
+  error.value = ''
   emit('busy', true)
-  try { install(await fetchTechnicalDataManufacturing(props.productId, props.versionId)) }
+  try { install(await (props.quoteItemId
+    ? fetchQuoteTechnicalDataManufacturing(props.quoteItemId, props.accountingMonth)
+    : fetchTechnicalDataManufacturing(props.productId, props.versionId))) }
   catch (exception) { error.value = exception?.message || '制造件资料读取失败，请刷新重试' }
   finally { loading.value = false; emit('busy', false) }
 }
@@ -129,6 +142,7 @@ async function lookup(row) {
   }
 }
 async function save(next) {
+  if (!canEdit.value) return
   const items = editableRows.value.filter(row => {
     const value = draft[row.sourceNodeId]
     return value.rawMaterialNo || value.netLengthMm !== '' || value.grossWeightKg !== ''
