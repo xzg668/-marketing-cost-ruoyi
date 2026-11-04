@@ -27,7 +27,7 @@
               <el-table-column prop="lineNo" label="明细行" width="80" /><el-table-column prop="message" label="问题" />
               <el-table-column label="操作" width="90"><template #default="{ row }"><el-button link type="primary" @click="selectModule(row.moduleType)">去处理</el-button></template></el-table-column>
             </el-table>
-            <component v-if="showForm" :is="formComponent" ref="formRef" :key="formKey" v-bind="formProps" @dirty="dirty = $event" @busy="busy = $event" @saved="afterSave" />
+            <component v-if="showForm" :is="formComponent" ref="formRef" :key="formKey" v-bind="formProps" @dirty="dirty = $event" @busy="busy = $event" @saved="afterSave" @open-price="selectModule('PRICE')" />
             <TechnicalDataEntryPreview v-else-if="readOnly && !submissionId && previewModules.includes(activeModule)" :row="previewRow" :module-type="activeModule" />
             <el-empty v-else :description="readOnly ? '本板块尚未提交，当前为待处理。' : '请选择本人需要补录的板块。'" />
             <details v-if="workflow && !submissionId" class="progress-details"><summary>查看办理进度</summary><TechnicalDataApprovalPanel :task="task" :workflow="workflow" @changed="load" /></details>
@@ -89,6 +89,7 @@ const forms = { PROFILE: TechnicalDataProfileForm, DRAWING_BOM: TechnicalDataDra
 const formComponent = computed(() => forms[activeModule.value])
 const formProps = computed(() => activeModule.value === 'PROFILE' ? { product: product.value, taskId: props.taskId, editable: editable.value }
   : { productId: product.value.id, editable: editable.value, oaNo: task.value.oaNo,
+    ...(activeModule.value === 'MANUFACTURING' ? { priceEditable: editableScope.value.includes('PRICE') } : {}),
     versionId: readOnly.value ? activeState.value?.currentVersionId : undefined })
 const formKey = computed(() => `${props.taskId}:${activeModule.value}:${props.submissionId || ''}:${revision.value}`)
 

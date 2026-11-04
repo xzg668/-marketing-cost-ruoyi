@@ -57,6 +57,8 @@
           <span v-else-if="item.status === 'MISSING_PRICE'" class="warning-text">缺少可用价，需在价格模块处理。</span>
           <span v-else class="warning-text">{{ item.status === 'ERROR' ? '取价检查失败，请重查。' : '价格来源尚未确认，需在价格模块核实。' }}</span>
         </p>
+        <el-button v-if="priceEditable && state.priceRequirements.some(item => item.status === 'MISSING_PRICE')"
+          type="primary" plain :disabled="saving" @click="emit('open-price')">补录缺少的价格</el-button>
       </div>
       <el-alert v-for="message in state.issues || []" :key="message" :title="message" type="warning" :closable="false" />
       <el-alert v-if="state.bomMessage" :title="state.bomMessage" :type="state.bomComposed ? 'success' : 'info'" :closable="false" />
@@ -69,8 +71,8 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { fetchTechnicalDataManufacturing, fetchQuoteTechnicalDataManufacturing, fetchTechnicalDataRawMaterial, saveTechnicalDataManufacturing } from '../../api/technicalDataTasks'
 
-const props = defineProps({ productId: Number, quoteItemId: [String, Number], accountingMonth: String, editable: Boolean, versionId: Number })
-const emit = defineEmits(['dirty', 'busy', 'saved'])
+const props = defineProps({ productId: Number, quoteItemId: [String, Number], accountingMonth: String, editable: Boolean, versionId: Number, priceEditable: Boolean })
+const emit = defineEmits(['dirty', 'busy', 'saved', 'open-price'])
 const state = ref(null)
 const loading = ref(false)
 const saving = ref(false)

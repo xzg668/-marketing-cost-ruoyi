@@ -18,6 +18,10 @@
     </el-form>
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
     <template v-if="preview">
+      <el-alert v-if="preview.notices?.length" type="info" :closable="false" title="识别提示：以下行未丢失，按说明跳过或纠正。" />
+      <el-collapse v-if="preview.notices?.length"><el-collapse-item :title="`查看 ${preview.notices.length} 条识别提示`">
+        <p v-for="(notice,index) in preview.notices" :key="index">{{ notice.sheet }} 第{{ notice.row }}行 · {{ notice.materialCode }}：{{ notice.message }}</p>
+      </el-collapse-item></el-collapse>
       <el-alert v-if="preview.rows.some(row => !row.result && !row.error)" type="info" :closable="false" title="可以先保存原稿；发布适用基价时会同步生成财务有效价。" />
       <p>{{ preview.businessRowCount }} 条主价 · 新增 {{ summary.newCount }} · 修订 {{ summary.revisedCount }} · 未变 {{ summary.unchangedCount }} · 异常 {{ summary.errorCount }}</p>
       <p v-for="(context, org) in preview.financial" :key="org">
