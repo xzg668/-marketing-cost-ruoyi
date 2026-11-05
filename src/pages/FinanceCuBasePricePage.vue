@@ -8,7 +8,7 @@
             <p>选择月份可查看并导出该月基价；修改文件后，切换到目标月份导入。商用与板换分别维护。</p>
           </div>
           <div v-if="canImport" class="publication-actions">
-            <el-button :loading="exporting" :disabled="!exportSourceMonth || publishing" @click="exportSelectedMonth">导出所选月份{{ scope.priceOrgCode === '220' ? '板换' : '商用' }}基价</el-button>
+            <el-button :loading="exporting" :disabled="loading || !snapshot || !exportSourceMonth || publishing" @click="exportSelectedMonth">导出所选月份{{ scope.priceOrgCode === '220' ? '板换' : '商用' }}基价</el-button>
             <el-button type="primary" :disabled="publishing" @click="importVisible = true">导入财务基价表</el-button>
           </div>
         </div>
@@ -36,8 +36,10 @@
         </el-form-item>
         <el-form-item><el-button :loading="loading" @click="loadSnapshot">查询</el-button></el-form-item>
       </el-form>
-      <p v-if="canImport && exportSourceMonth" class="monthly-hint">导出月份：{{ exportSourceMonth }}，包含该月最后一次发布的全部方案和条件。导入月份：{{ scope.priceMonth }}；发布时同步生成适用原稿的财务有效价。</p>
-      <el-alert v-if="loadError" :title="loadError" type="info" :closable="false" show-icon />
+      <p v-if="canImport && snapshot && exportSourceMonth" class="monthly-hint">导出月份：{{ exportSourceMonth }}，包含该月最后一次发布的全部方案和条件。导入月份：{{ scope.priceMonth }}；发布时同步生成适用原稿的财务有效价。</p>
+      <p v-if="canImport" class="monthly-hint">同月基价可更正后再次导入。发布后，依赖基价的价格同步更新，后续核算和手动重新核算使用新价；已保存的历史成本保留。</p>
+      <el-alert v-if="loadError" :title="loadError" type="error" :closable="false" show-icon />
+      <el-empty v-else-if="!loading && !snapshot" :description="`${scope.priceMonth} ${scope.priceOrgCode === '220' ? '板换' : '商用'}尚未发布财务基价${canImport ? '，请先导入财务基价表。' : '，请联系财务维护。'}`" />
       <template v-if="snapshot">
         <div class="publication-summary">
           <span>方案：{{ schemeLabel(snapshot.scope.schemeCode) }}</span>
@@ -151,7 +153,7 @@ const exportSourceMonth = computed(() => { try { return financeMonthExport(scope
 let alive = true
 const exportScope = () => JSON.stringify([scope.value.priceMonth, scope.value.priceOrgCode, user.userId, user.businessUnitType])
 async function exportSelectedMonth() {
-  if (!canImport.value || exporting.value) return
+  if (!canImport.value || exporting.value || loading.value || !snapshot.value) return
   const selected = exportScope()
   const isCurrent = () => alive && canImport.value && selected === exportScope()
   exporting.value = true
@@ -194,7 +196,7 @@ async function loadSnapshot() {
     const result = await fetchFinanceFactorSnapshot({ ...scope.value }, !canReadFactors.value)
     if (request === snapshotRequest) {
       snapshot.value = result
-      scope.value.schemeCode = result.scope.schemeCode
+      if (result) scope.value.schemeCode = result.scope.schemeCode
     }
   } catch (error) {
     if (request === snapshotRequest) loadError.value = error.message || '财务基价读取失败'

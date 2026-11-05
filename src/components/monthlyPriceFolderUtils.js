@@ -8,6 +8,22 @@ export function canCompleteFolder(report) {
     report.summary.errorRows === 0 && report.groups.every(group => ['IMPORTED', 'PREPARED'].includes(group.status))
 }
 
+export function folderIssueText(issue, month) {
+  const message = issue.message || '处理失败'
+  const factor = message.match(/缺少财务因素=([^，,]+)/)?.[1]
+  if (!factor) {
+    const location = [issue.sheet, issue.row ? `第${issue.row}行` : '', issue.materialCode].filter(Boolean).join(' ')
+    return location ? `${location}：${message}` : message
+  }
+  const cell = message.match(/(?:^|[，,：:])([^，,：:!]+)!\$?[A-Z]+\$?(\d+)/)
+  const sheet = issue.sheet || cell?.[1] || ''
+  const row = issue.row || cell?.[2]
+  const material = issue.materialCode || message.match(/物料=([^，,\s]+)/)?.[1]
+  const location = [sheet, row ? `第${row}行` : '', material ? `料号 ${material}` : ''].filter(Boolean).join(' · ')
+  const factorName = factor.replace(/^[A-Z_]+\|/, '')
+  return `${location ? `${location}：` : ''}缺少 ${month} 财务基价「${factorName}」。请补齐该项基价后重试。`
+}
+
 export function folderReceiptRows(report) {
   const rows = []
   for (const group of report.groups || []) {
