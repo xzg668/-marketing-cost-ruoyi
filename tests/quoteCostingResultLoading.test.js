@@ -50,6 +50,7 @@ function harness(overrides = {}) {
     clearEffectiveBom: record('clearBom'), loadEffectiveBom: record('bom'),
     refreshAllTabData: record('allTabs'), materials: { refresh: record('materials') },
     isWaitingForBom: () => false, applyInputGapGuide: record('guide'),
+    ensurePriceSourceChecked: async () => {},
     ElMessage: { error: record('error') }, ...overrides,
   }
   const load = new Function(...Object.keys(deps), `${body}; return loadWorkbench`)(...Object.values(deps))
@@ -109,6 +110,7 @@ test('recalculation keeps the result tab on refresh and opens the new saved shee
     costRunActionLoading: ref(false), costRunLoading: ref(false), costRunError: ref(''),
     costRunRepriceLocked: ref(false), workbench: ref({ periodMonth: '2026-10' }),
     classificationRevision: ref(0), activeTab: ref('PRODUCT_DETAIL'),
+    ensurePriceSourceChecked: async () => {},
     workbenchLoadError: ref(''), localWorkflowGuideText: ref('old gap'),
     materials: { submit: async () => ({ product: { pipelineStatus: 'SUCCESS', costVersionId: 42 } }) },
     drawingContinuation: { remember: async () => {} },
@@ -137,4 +139,15 @@ test('recalculation keeps the result tab on refresh and opens the new saved shee
   assert.deepEqual(destinations[0].params, { oaNo: 'OA-1', itemId: '6' })
   assert.equal(destinations[0].query.versionId, 42)
   assert.equal(destinations[0].query.costRunNo, 'COST-NEW')
+})
+
+
+test('reloading an active gap tab checks details after the summary load ends', async () => {
+  let checked = 0
+  const h = harness({ activeTab: ref('PRICE_SOURCE_SUPPLEMENT'), ensurePriceSourceChecked: async () => {
+    assert.equal(h.deps.loading.value, false)
+    checked++
+  } })
+  await h.load({ loadChildren: true })
+  assert.equal(checked, 1)
 })

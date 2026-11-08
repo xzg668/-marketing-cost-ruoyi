@@ -29,3 +29,21 @@ for (const workspaceStatus of ['WAIT_PRICE', 'WAIT_PRICE_TYPE']) {
     })
   }
 }
+
+for (const [code, label, status] of [
+  ['SUPPLIER_RATIO_REVIEW_REQUIRED', '缺供货比率', 'MISSING_SUPPLIER_RATIO'],
+  ['PRICE_AND_SUPPLIER_RATIO_MISSING', '缺价格/供货比率', 'MISSING_PRICE'],
+  ['PRICE_MISSING', '缺价格', 'MISSING_PRICE'],
+]) {
+  test(`真实缺口${code}：显示具体原因且保留再次核算`, () => {
+    const [item] = withQuoteItemWorkflow({ items: [{ id: 162, costingWorkspace: {
+      workspaceStatus: 'WAIT_PRICE', lastErrorCode: code, lastErrorMessage: '具体缺口：301260158',
+    } }] }).items
+    assert.equal(item.workflow.currentStatusLabel, label)
+    assert.equal(item.workflow.currentStatus, status)
+    assert.equal(item.workflow.message, '具体缺口：301260158')
+    assert.equal(item.workflow.actionEnabled, true)
+    assert.equal(item.workflow.nextAction, 'START_COSTING')
+    assert.equal(hasQuoteItemCostingGap(item), true)
+  })
+}

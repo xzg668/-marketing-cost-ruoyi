@@ -3,6 +3,14 @@ import { describe, it } from 'node:test'
 import { isSupplierRatioGap, priceSourceGapKind, summarizePriceSourceGaps, buildPriceSourceGapTree } from '../src/utils/priceSourceGaps.js'
 
 describe('报价价格缺口分类', () => {
+  it('后端真实展示原因优先，制造件缺比率不能再次归入缺少原料价', () => {
+    const gap = { gapMaterialCode: '301260158', reasonCode: 'RAW_PRICE_ERROR', displayReasonCode: 'SUPPLIER_RATIO_REVIEW_REQUIRED' }
+    const raw = { gapMaterialCode: '301070080', reasonCode: 'MISSING_RAW_PRICE' }
+    const summary = summarizePriceSourceGaps([gap, raw])
+    assert.equal(summary.ratioReview, 1)
+    assert.equal(summary.raw, 1)
+    assert.equal(summary.all, 2)
+  })
   it('月价返回 WAITING 时按实际审核物料区分供货比率和真正无价，不把包装母件误作缺价子件', () => {
     const gaps = [
       { gapMaterialCode: '201350006', reasonCode: 'WAITING', sourceTable: 'lp_material_monthly_price' },

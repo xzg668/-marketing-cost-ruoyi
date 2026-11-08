@@ -1,5 +1,6 @@
 /** 缺口按实际取价类型统计；供货比率审核和结构问题不冒充缺少单价。 */
 export function isSupplierRatioGap(row, reviews = []) {
+  if (row?.displayReasonCode === 'SUPPLIER_RATIO_REVIEW_REQUIRED') return true
   if (row?.reasonCode === 'SUPPLIER_RATIO_REVIEW_REQUIRED') return true
   const materialCode = row?.gapMaterialCode || row?.materialCode
   if (materialCode && reviews.some(review => review.status !== 'FALLBACK_HIGH'

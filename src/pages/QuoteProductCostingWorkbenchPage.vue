@@ -519,7 +519,7 @@
           </div>
 
           <div v-else-if="isPriceSourceSupplementTab(tab.code)" class="price-source-tab"
-            v-loading="pricePrepareLoading || costRunActionLoading"
+            v-loading="pricePrepareLoading || autoPriceSourceChecking || costRunActionLoading"
             :element-loading-text="costRunActionLoading ? '正在检查资料并核算…' : '正在读取价格…'">
             <div class="action-panel">
               <div>
@@ -528,12 +528,13 @@
               </div>
               <div class="toolbar-actions">
                 <el-button
-                  v-if="!priceSourceChecked"
+                  v-if="!priceSourceChecked || priceSourceDetailsMissing || priceSourceCheckError"
                   type="primary"
                   :loading="pricePrepareActionLoading || autoPriceSourceChecking"
-                  disabled
+                  :disabled="isBlockedTab(tab)"
+                  @click="runPriceSourceCheck()"
                 >
-                  {{ pricePrepareActionLoading || autoPriceSourceChecking ? '自动检查中' : '自动检查价格源' }}
+                  {{ pricePrepareActionLoading || autoPriceSourceChecking ? '自动检查中' : '重新检查价格源' }}
                 </el-button>
                 <el-button
                   v-else-if="priceSourceGapSummary.total > 0"
@@ -561,6 +562,8 @@
                 </el-table>
               </el-collapse-item>
             </el-collapse>
+
+            <el-alert v-if="priceSourceCheckError" :title="priceSourceCheckError" type="error" show-icon :closable="false" class="inline-alert" />
 
             <SupplierPriceReviewPanel
               :oa-no="oaNo"
@@ -679,10 +682,10 @@
               <el-table-column label="价格类型" width="130">
                 <template #default="{ row }">{{ priceSourceGapTypeText(row) }}</template>
               </el-table-column>
-              <el-table-column prop="gapType" label="缺口类型" width="140" show-overflow-tooltip />
-              <el-table-column prop="message" label="说明" min-width="260" show-overflow-tooltip />
+              <el-table-column label="缺口类型" width="140" show-overflow-tooltip><template #default="{ row }">{{ row.displayGapType || row.gapType }}</template></el-table-column>
+              <el-table-column label="说明" min-width="260" show-overflow-tooltip><template #default="{ row }">{{ row.displayMessage || row.message }}</template></el-table-column>
               <el-table-column label="建议处理" min-width="180" show-overflow-tooltip>
-                <template #default="{ row }">{{ priceSourceGapActionText(row) }}</template>
+                <template #default="{ row }">{{ row.displayAction || priceSourceGapActionText(row) }}</template>
               </el-table-column>
               <el-table-column label="操作" width="260" fixed="right">
                 <template #default="{ row }">
@@ -922,11 +925,11 @@
             <el-table v-if="pricePrepareGaps.length" :data="pricePrepareGaps" border stripe scrollbar-always-on max-height="280" class="gap-table">
               <el-table-column prop="materialCode" label="来源料号" min-width="160" fixed="left" show-overflow-tooltip />
               <el-table-column prop="gapMaterialCode" label="缺口料号" min-width="160" show-overflow-tooltip />
-              <el-table-column prop="gapType" label="缺口类型" width="130" />
-              <el-table-column prop="actionType" label="处理动作" width="130" />
+              <el-table-column label="缺口类型" width="130"><template #default="{ row }">{{ row.displayGapType || row.gapType }}</template></el-table-column>
+              <el-table-column label="处理动作" width="180"><template #default="{ row }">{{ row.displayAction || row.actionType }}</template></el-table-column>
               <el-table-column prop="actionTarget" label="处理入口" min-width="160" show-overflow-tooltip />
               <el-table-column prop="oaPushStatus" label="OA 状态" width="120" />
-              <el-table-column prop="message" label="说明" min-width="260" show-overflow-tooltip />
+              <el-table-column label="说明" min-width="260" show-overflow-tooltip><template #default="{ row }">{{ row.displayMessage || row.message }}</template></el-table-column>
               <template #empty>
                 <el-empty description="暂无价格生成缺口" />
               </template>
@@ -1318,6 +1321,7 @@ const pricePrepareActionLoading = ref(false)
 const pricePrepareScenarioTab = ref('FINANCE')
 const onlyDifferentPricePrepare = ref(true)
 const autoPriceSourceChecking = ref(false)
+const priceSourceCheckError = ref('')
 const returnPriceSourceRefreshing = ref(false)
 const autoPriceSourceCheckedKey = ref('')
 const noScrapConfirmDialogVisible = ref(false)
@@ -1564,6 +1568,7 @@ const priceSourceChecked = computed(() => {
   if (status && status !== 'NOT_PREPARED') return true
   return Boolean(latestPrepare.value.prepareNo || pricePrepareItems.value.length || pricePrepareGaps.value.length)
 })
+const priceSourceDetailsMissing = computed(() => Number(pricePrepare.value.readiness?.gapCount) > 0 && !pricePrepareGaps.value.length)
 const priceSourceReady = computed(() => priceSourceChecked.value && oaPricePrepareReady.value && priceSourceGapSummary.value.total === 0)
 const costRunRepriceLocked = computed(() => isCostRunLockedByMonthlyReprice(
   activeRepriceLock.value,
@@ -1778,6 +1783,7 @@ async function loadWorkbench(options = {}) {
     ElMessage.error(workbenchLoadError.value)
   } finally {
     loading.value = false
+    if (!costResultOnly && loadChildren && !historyViewMode.value) await ensurePriceSourceChecked()
   }
 }
 
@@ -2135,6 +2141,8 @@ async function loadPricePrepare(showError = true) {
     pricePrepare.value = await fetchQuotePricePrepare(oaNo.value, itemId.value, {
       periodMonth: workbench.value.periodMonth,
     })
+    // A persisted summary can replace an unsaved preview. Check its details again.
+    autoPriceSourceCheckedKey.value = ''
   } catch (error) {
     pricePrepare.value = emptyPricePrepareResponse()
     if (showError) ElMessage.error(error?.message || '获取最终价格生成失败')
@@ -2404,6 +2412,7 @@ async function runPriceSourceCheck(successText = '价格源已自动检查', ref
     return false
   }
   autoPriceSourceChecking.value = true
+  priceSourceCheckError.value = ''
   try {
     pricePrepare.value = await checkQuotePriceSources(oaNo.value, itemId.value, {
       periodMonth: workbench.value.periodMonth,
@@ -2412,7 +2421,8 @@ async function runPriceSourceCheck(successText = '价格源已自动检查', ref
     if (successText) ElMessage.success(successText)
     return pricePrepare.value
   } catch (error) {
-    ElMessage.error(error?.message || '检查价格源失败')
+    priceSourceCheckError.value = error?.message || '检查价格源失败，请重新检查'
+    ElMessage.error(priceSourceCheckError.value)
     return false
   } finally {
     autoPriceSourceChecking.value = false
@@ -2800,6 +2810,7 @@ async function submitProductCosting(reason = 'USER_REQUEST') {
     ElMessage.error(costRunError.value)
   } finally {
     costRunActionLoading.value = false
+    if (!historyViewMode.value) await ensurePriceSourceChecked()
   }
 }
 

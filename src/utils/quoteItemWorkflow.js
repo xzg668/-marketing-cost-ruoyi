@@ -105,11 +105,14 @@ export function quoteItemWorkflow(item, drawingWorkspace) {
       '请重新发起核算，按当前取价顺序检查价格', '财务报价')
   }
   if (workspaceStatus === 'WAIT_PRICE') {
-    const assignee = String(workspace?.lastErrorCode || '').toUpperCase() === 'FINANCE_BASE_PRICE_MISSING'
-      ? '财务报价'
+    const code = String(workspace?.lastErrorCode || '').toUpperCase()
+    const ratioOnly = code === 'SUPPLIER_RATIO_REVIEW_REQUIRED'
+    const mixed = code === 'PRICE_AND_SUPPLIER_RATIO_MISSING'
+    const label = ratioOnly ? '缺供货比率' : mixed ? '缺价格/供货比率' : '缺价格'
+    const assignee = (code === 'FINANCE_BASE_PRICE_MISSING' || ratioOnly) ? '财务报价'
       : '财务报价/产品技术'
     // 补录或维护价格后，由核算入口重新检查；旧缺口仍单独展示，不能挡住本产品核算。
-    return state(base, 'MISSING', '缺价格', 'MISSING_PRICE', '缺价格',
+    return state(base, 'MISSING', label, ratioOnly ? 'MISSING_SUPPLIER_RATIO' : 'MISSING_PRICE', label,
       calculated ? 'RESTART_COSTING' : 'START_COSTING', calculated ? '重新核算本产品' : '核算本产品',
       workspace?.lastErrorMessage || '价格存在缺口', assignee)
   }
