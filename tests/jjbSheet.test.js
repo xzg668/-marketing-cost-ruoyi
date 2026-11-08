@@ -1,6 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { savedMoney, rowBasis, ratePercent, sheetGroups, sheetTotals, jjbColumns } from '../src/utils/jjbSheet.js'
+import { savedMoney, rowBasis, ratePercent, sheetGroups, sheetTotals, jjbColumns, sheetHeaderRows } from '../src/utils/jjbSheet.js'
+
+test('报价员使用保存成本的核算人，不借用需求申请人', () => {
+  const rows = sheetHeaderRows({ header: { quotation: { quoterName: '罗思雅', applicantName: '需求申请人' } } })
+  assert.equal(rows[0].cells.find(cell => cell.column === 4).value, '罗思雅')
+  const missing = sheetHeaderRows({ header: { quotation: { applicantName: '需求申请人' } } })
+  assert.equal(missing[0].cells.find(cell => cell.column === 4).value, '')
+})
 
 test('decimal display preserves huge values, negative differences, explicit zero and blank', () => {
   for (const v of ['999999999973.140060', '0.000000', '-8.000000']) assert.equal(savedMoney(v), v)

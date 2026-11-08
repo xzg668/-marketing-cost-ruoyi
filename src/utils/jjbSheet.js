@@ -11,7 +11,7 @@ export const jjbColumnWidths = Object.freeze([15.9166666667, 19, 20.4166666667, 
 export function sheetHeaderRows(sheet) {
   const h = sheet.header || {}, q = h.quotation || {}, id = sheet.identity || {}
   const values = [
-    ['OA单号', id.oaNo, null, '报价员', q.applicantName, '申请部门', q.applicantDept, '申请处室', q.applicantOffice, '不锈钢-316L\n（元/吨）', savedMoney(q.sus316lPrice), '电解铜\n（元/吨）', savedMoney(q.copperPrice), '电解铝\n（元/吨）', savedMoney(q.aluminumPrice)],
+    ['OA单号', id.oaNo, null, '报价员', q.quoterName, '申请部门', q.applicantDept, '申请处室', q.applicantOffice, '不锈钢-316L\n（元/吨）', savedMoney(q.sus316lPrice), '电解铜\n（元/吨）', savedMoney(q.copperPrice), '电解铝\n（元/吨）', savedMoney(q.aluminumPrice)],
     ['客户名称', h.customerName, null, '客户编号', h.customerCode, '是否通过海外\n仓库发终端客户', q.overseasSalesMode, '销售价格\n是否联动', q.priceLinkMode, '不锈钢-304\n（元/吨）', savedMoney(q.sus304Price), '电解锌\n（元/吨）', savedMoney(q.zincPrice), '/', ''],
     ['父件名称', h.productName, null, '父件型号', h.productModel, '业务类型', q.businessType, '事业部', q.division, '美国柜装黄铜', '', 'H65黄铜边料', '', '/', ''],
     ['一级编码', id.productCode, null, '父件规格', q.spec, '客户图号', h.customerDrawing, '客户Cu\n（元/公斤）', savedMoney(q.customerCuPrice), '白银', savedMoney(q.silverPrice), '黄金', savedMoney(q.goldPrice), '/', ''],

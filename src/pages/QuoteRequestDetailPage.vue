@@ -42,7 +42,7 @@
 
     <el-alert v-if="detail.oaWorkflow" :closable="false" show-icon
       :type="detail.oaWorkflow.syncError ? 'warning' : 'info'"
-      :title="'OA流程：' + detail.oaWorkflow.label"
+      :title="'OA流程：' + quoteOaWorkflowLabel(detail.oaWorkflow, finalState)"
       :description="detail.oaWorkflow.syncError || detail.oaWorkflow.reason || undefined" />
 
     <QuoteCostingPreparationPanel :oa-no="oaNo" :state="materialState" :checks="materialChecks" :products="productRows" :error="materialError" @refresh="materials.refresh" @view-gap="openCostingGap" />
@@ -132,8 +132,8 @@
               <span v-else>—</span>
             </template>
           </el-table-column>
-          <el-table-column label="处理人" min-width="120">
-            <template #default="{ row }">{{ row.workflow?.assigneeName || row.technicianName || '-' }}</template>
+          <el-table-column label="报价员" min-width="120">
+            <template #default="{ row }">{{ row.quoterName || '-' }}</template>
           </el-table-column>
           <el-table-column label="当前状态" min-width="160">
             <template #default="{ row }">
@@ -166,7 +166,7 @@
           <el-table-column label="操作" width="200" fixed="right">
             <template #default="{ row }">
               <div class="row-actions">
-                <el-button v-if="needsCostRecalculation(row)" link type="primary"
+                <el-button v-if="needsCostRecalculation(row) || canRegenerateCost(row)" link type="primary"
                   :disabled="detail.oaWorkflow?.canCost === false"
                   :loading="actionLoadingId === rowActionKey(row)" @click="submitSingleProductCosting(row, 'INPUT_CHANGED')">
                   {{ '重新核算本产品' }}
@@ -185,7 +185,7 @@
                   查看缺口
                 </el-button>
                 <el-button
-                  v-if="hasHistoricalCostResult(row) && (needsCostRecalculation(row) || row.workflow?.nextAction !== 'VIEW_COSTING_RESULT')"
+                  v-if="hasHistoricalCostResult(row) && (needsCostRecalculation(row) || canRegenerateCost(row) || row.workflow?.nextAction !== 'VIEW_COSTING_RESULT')"
                   link
                   type="primary"
                   :loading="costResultDialog.loading && costResultDialog.itemId === row.id"
@@ -362,6 +362,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import QuoteFinalSubmissionPanel from '../components/quotation/QuoteFinalSubmissionPanel.vue'
+import { quoteOaWorkflowLabel } from '../utils/quoteOaWorkflowLabel.js'
 import DrawingVerificationPanel from '../components/quotation/DrawingVerificationPanel.vue'
 import {
   confirmQuoteRequestClassification,
@@ -430,6 +431,10 @@ const itemsTableRef = ref()
 const finalSubmission = useQuoteFinalSubmission(oaNo, { fetch: fetchQuoteFinalSubmission, submit: confirmQuoteFinalSubmission })
 const { state: finalState, loading: finalLoading, sending: finalSending, error: finalError, canSubmit: canSubmitFinal, costsByItem: finalCosts } = finalSubmission
 function needsCostRecalculation(row) { return finalCosts.value.get(String(row.id))?.status === 'STALE' }
+function canRegenerateCost(row) {
+  return finalCosts.value.get(String(row.id))?.status === 'READY'
+    && detail.value.oaWorkflow?.canCost !== false
+}
 watch(detail, () => { if (detail.value.oaNo) finalSubmission.refresh() })
 async function submitFinalCosts() {
   try {
