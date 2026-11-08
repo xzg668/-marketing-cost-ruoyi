@@ -258,7 +258,7 @@
           </el-table-column>
           <el-table-column label="操作" width="100" fixed="right">
             <template #default="{ row }">
-              <el-button link type="primary" @click.stop="selectCostResult(row)">查看</el-button>
+              <el-button link type="primary" @click.stop="viewCostResult(row)">查看</el-button>
             </template>
           </el-table-column>
           <template #empty><el-empty description="暂无可查看的成本结果" /></template>
@@ -680,6 +680,18 @@ async function selectCostResult(result) {
   }
 }
 
+function viewCostResult(result) {
+  if (result?.resultType !== 'QUOTE_COST') return selectCostResult(result)
+  if (!result.versionId || !costResultDialog.row) return
+  costResultDialog.selected = result
+  if (String(result.versionId) === String(costResultDialog.row.confirmedCostVersionId)) {
+    costResultDialog.visible = false
+    openCostingWorkbench(costResultDialog.row, { tab: 'PRODUCT_DETAIL' })
+    return
+  }
+  openSelectedQuoteCostResult()
+}
+
 function openSelectedQuoteCostResult() {
   const selected = costResultDialog.selected
   if (!selected?.versionId || !costResultDialog.row) return
@@ -724,7 +736,7 @@ async function submitSingleProductCosting(row, reason, periodMonth) {
   actionLoadingId.value = rowActionKey(row)
   try {
     // 电子图库自动接续沿用已经采用的技术版本，不自动认可新补录内容。
-    const options = { itemId: row.id, ...(periodMonth ? { periodMonth } : {}) }
+    const options = { itemId: row.id, force: reason === 'INPUT_CHANGED', ...(periodMonth ? { periodMonth } : {}) }
     const outcome = reason === 'ELECTRONIC_DRAWING_RESOLVED' ? null : await materials.submit(options)
     if (reason !== 'ELECTRONIC_DRAWING_RESOLVED' && !outcome) return
     if (outcome) await drawingContinuation.remember(outcome, options)
