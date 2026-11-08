@@ -31,6 +31,7 @@
       <el-button :disabled="busy" @click="close">关闭</el-button>
       <el-button v-if="pending || pendingReturn(result)" :loading="busy" @click="refresh">刷新退回结果</el-button>
       <el-button v-if="result?.canRetry" type="danger" :loading="busy" :disabled="loading" @click="retry">继续退回</el-button>
+      <el-button v-if="canRestart" type="danger" :disabled="busy || loading" @click="restart">重新发起退回</el-button>
       <el-button v-else-if="canConfirmPeople" type="danger" :loading="busy" :disabled="loading" @click="confirmPeople">核实OA后继续退回</el-button>
       <el-button v-else-if="result?.status !== 'SUCCESS'" type="danger" :loading="busy" :disabled="loading || locked || !candidates.some(row => row.selected)"
         @click="submit">{{ result && ['REJECTED', 'NOT_SENT'].includes(result.status) ? '重新确认退回' : '确认退回' }}</el-button>
@@ -54,6 +55,7 @@ const candidates = ref([]), result = ref(null), pending = ref(null), busy = ref(
 const storageKey = computed(() => `technical-return:${user.userId}:${user.businessUnitType}:${[...props.taskIds].sort().join(',')}`)
 const locked = computed(() => Boolean(pending.value) || pendingReturn(result.value) || result.value?.status === 'SUCCESS')
 const reasonLocked = computed(() => locked.value && !canReviseReturnReason(result.value, user.userId))
+const canRestart = computed(() => result.value?.status === 'RETURN_FAILED')
 const canConfirmPeople = computed(() => result.value?.status === 'UNKNOWN' && result.value?.step === 'PEOPLE'
   && Number(result.value?.actorId) === Number(user.userId))
 let generation = 0
@@ -62,6 +64,11 @@ function storePending(value) {
   pending.value = value
   if (value) sessionStorage.setItem(storageKey.value, JSON.stringify(value))
   else sessionStorage.removeItem(storageKey.value)
+}
+
+function restart() {
+  if (busy.value || loading.value || !canRestart.value) return
+  storePending(null); result.value = null
 }
 
 async function load() {

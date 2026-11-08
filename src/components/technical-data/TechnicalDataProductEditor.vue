@@ -11,7 +11,7 @@
       <el-alert v-else-if="adminDirect" title="保存后仍可修改；点击“确认保存”后资料直接生效，可用于报价核算，无需 OA 审批。" type="info" :closable="false" />
         <main class="product-editor" v-loading="loading">
           <template v-if="product">
-            <div class="product-heading"><h3>当前产品：{{ product.materialNo || product.sourceModel }}</h3><el-button link type="primary" :disabled="busy" @click="refresh">刷新资料</el-button></div>
+            <div class="product-heading"><h3>当前产品：{{ product.materialNo || product.sourceModel }}</h3><el-button v-if="!readOnly && editableScope.some(code => ['MANUFACTURING','PACKAGE','SOLDER','PRICE'].includes(code))" link type="primary" :disabled="busy || dirty" :loading="loading" @click="checkPrices">检查价格</el-button><el-button link type="primary" :disabled="busy" @click="refresh">刷新资料</el-button></div>
             <el-alert v-for="person in workflow?.participants?.filter(person => person.returnReason && ['OPEN', 'RETURN_PENDING'].includes(person.status)) || []"
               :key="person.recipientId" :title="`${person.status === 'RETURN_PENDING' ? '退回待确认' : '修改要求'}：${person.returnReason}`" type="warning" :closable="false" show-icon />
             <p class="scope">{{ readOnly ? '查看板块' : '本次补录' }}：{{ (readOnly ? scope : editableScope).map(moduleName).join('、') || '暂无待补内容' }} · {{ task.accountingMonth }}</p>
@@ -48,8 +48,8 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { fetchTechnicalDataTask, fetchTechnicalDataWorkflow, fetchTechnicalDataDocument, validateTechnicalDataTask, saveAdminTechnicalDataForQuote } from '../../api/technicalDataTasks'
-import { TECHNICAL_DATA_MODULES, moduleName, findModule, canEditTechnicalModule, nextTechnicalModule } from '../../utils/technicalDataWorkbench'
+import { fetchTechnicalDataTask, fetchTechnicalDataWorkflow, fetchTechnicalDataDocument, validateTechnicalDataTask, saveAdminTechnicalDataForQuote, checkTechnicalDataBomPrices } from '../../api/technicalDataTasks'
+import { TECHNICAL_DATA_MODULES, moduleName, findModule, canEditTechnicalModule, nextTechnicalModule, needsBomPriceCheck } from '../../utils/technicalDataWorkbench'
 import { showErrorOnce } from '../../utils/errorHandler'
 import TechnicalDataApprovalPanel from './TechnicalDataApprovalPanel.vue'
 import TechnicalDataEntryPreview from './TechnicalDataEntryPreview.vue'
@@ -94,11 +94,15 @@ const formProps = computed(() => activeModule.value === 'PROFILE' ? { product: p
 const formKey = computed(() => `${props.taskId}:${activeModule.value}:${props.submissionId || ''}:${revision.value}`)
 
 function moduleStatus(code) { return ({ PENDING: '待处理', EDITING: '填写中', READY: '已补齐', FROZEN: '待确认', SUBMITTED: '已提交', APPROVED: '已提交', RETURNED: '待修改' })[findModule(product.value, code)?.moduleStatus] || '待处理' }
-async function load() {
+async function load(autoCheck = true) {
   const current = ++generation
   loading.value = true
   try {
     const [detail, state] = await Promise.all([fetchTechnicalDataTask(props.taskId), fetchTechnicalDataWorkflow(props.taskId)])
+    if (autoCheck !== false && !props.submissionId && needsBomPriceCheck(detail.products[0], state.editableModules)) {
+      await checkTechnicalDataBomPrices(detail.products[0].id)
+      return load(false)
+    }
     let visibleTask = detail
     if (props.submissionId) {
       const snapshot = await fetchTechnicalDataDocument(detail.oaFormId, props.submissionId)
@@ -116,6 +120,18 @@ async function load() {
   } catch (cause) {
     if (current === generation) { task.value = null; workflow.value = null; showErrorOnce(cause, '任务加载失败') }
   } finally { if (current === generation) loading.value = false }
+}
+async function checkPrices() {
+  if (busy.value || dirty.value || !product.value) return
+  loading.value = true
+  try {
+    const result = await checkTechnicalDataBomPrices(product.value.id)
+    await load(false); revision.value++; emit('changed')
+    if (result.issues?.length) ElMessage.warning(result.issues.join('；'))
+    else if (result.missing) { ElMessage.info('检查完成，请查看价格板块中尚未补齐的项目'); activeModule.value = 'PRICE' }
+    else ElMessage.success('检查完成，已有价格无需重复填写')
+  } catch (cause) { showErrorOnce(cause, '价格检查失败，已填资料保留') }
+  finally { loading.value = false }
 }
 async function mayLeave() {
   if (busy.value) { ElMessage.warning('正在保存，请稍候'); return false }

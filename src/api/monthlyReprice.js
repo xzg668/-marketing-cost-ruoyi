@@ -7,15 +7,6 @@ export const fetchMonthlyRepriceActiveLock = () =>
 export const fetchMonthlyRepriceBatches = (params) =>
   request('/api/v1/monthly-reprice/batches', { params })
 
-export const fetchMonthlyRepriceBatch = (repriceNo) =>
-  request(`/api/v1/monthly-reprice/batches/${repriceNo}`)
-
-export const fetchMonthlyRepriceProgress = (repriceNo) =>
-  request(`/api/v1/monthly-reprice/batches/${repriceNo}/progress`)
-
-export const fetchMonthlyRepriceTasks = (repriceNo, params) =>
-  request(`/api/v1/monthly-reprice/batches/${repriceNo}/tasks`, { params })
-
 export const fetchMonthlyRepriceResults = (repriceNo, params) =>
   request(`/api/v1/monthly-reprice/batches/${repriceNo}/results`, { params })
 
@@ -25,12 +16,20 @@ export const fetchMonthlyRepricePartItems = (repriceNo, resultId) =>
 export const fetchMonthlyRepriceCostItems = (repriceNo, resultId) =>
   request(`/api/v1/monthly-reprice/batches/${repriceNo}/results/${resultId}/cost-items`)
 
+export const fetchMonthlyRepriceResultSources = (repriceNo, resultId, params) =>
+  request(`/api/v1/monthly-reprice/batches/${encodeURIComponent(repriceNo)}/results/${resultId}/sources`, { params })
+
+export const fetchMonthlyComparisonHistoricalSources = (versionId, params) =>
+  request(`/api/v1/monthly-reprice/1130/comparison/versions/${versionId}/sources`, { params })
+
 export const fetchMonthlyRepriceAuditLogs = (params) =>
   request('/api/v1/monthly-reprice/audit-logs', { params })
 
 export const fetchRepriceCurrent = () => request('/api/v1/monthly-reprice/1130/current')
 export const startReprice = () => request('/api/v1/monthly-reprice/1130/start', { method: 'POST' })
-export const retryReprice = (no) => request(`/api/v1/monthly-reprice/1130/${encodeURIComponent(no)}/retry`, { method: 'POST' })
+export const fetchUncalculatedReprice = (params) => request('/api/v1/monthly-reprice/1130/uncalculated', { params })
+export const recheckReprice = (no) => request(`/api/v1/monthly-reprice/1130/${encodeURIComponent(no)}/recheck`, { method: 'POST' })
+export const retryReprice = (no, selection) => request(`/api/v1/monthly-reprice/1130/${encodeURIComponent(no)}/retry`, { method: 'POST', body: selection })
 export const confirmReprice = (no, checkedRevision) => request(`/api/v1/monthly-reprice/1130/${encodeURIComponent(no)}/confirm`, { method: 'POST', body: { checkedRevision } })
 
 export const fetchMonthlyCostComparison = (params) => request('/api/v1/monthly-reprice/1130/comparison', { params: { ...params, metrics: params.metrics == null ? undefined : params.metrics.length ? params.metrics.join(',') : 'NONE' }, suppressErrorToast: true })

@@ -41,3 +41,8 @@ test('失败和结果不明不能显示为已提交', () => {
     assert.doesNotMatch(technicalSubmissionMessage({ tasks: [], lastSubmission: { status } }, 7), /本人资料已提交/)
   }
 })
+test('已退回批次明确提示继续修改和重提，不沿用成功提示', () => {
+  const document = { lastSubmission: { status: 'RETURNED' }, tasks: [task(1, [module(7, 'RETURNED')])] }
+  assert.match(technicalSubmissionMessage(document, 7), /已退回，待修改/)
+  assert.doesNotMatch(technicalSubmissionMessage(document, 7), /已提交|等待 OA 审批/)
+})

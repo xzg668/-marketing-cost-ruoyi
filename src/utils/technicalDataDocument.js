@@ -18,6 +18,7 @@ export function technicalSubmissionMessage(document, userId) {
     return document.canSubmit ? '本人本轮资料已补齐，可以确认提交审批。' : '请补齐本轮新增资料后确认提交。'
   }
   return ({ SUCCESS: '本人资料已提交，等待 OA 审批。', OA_ACCEPTED: 'OA 已受理，正在确认本地提交状态。',
+    RETURNED: '已退回，待修改。已填写的资料保留，修改保存后可重新确认提交。',
     SENDING: '本次提交正在等待 OA 结果，请勿重复发起。', UNKNOWN: 'OA 结果尚未确认，请核实原流程；资料暂为只读。',
     REJECTED: 'OA 未受理：' + (result.oaResult?.message || '请核实流程状态'),
     NOT_SENT: '本次未发送：' + (result.oaResult?.message || '请检查接口配置') })[result.status] || ''

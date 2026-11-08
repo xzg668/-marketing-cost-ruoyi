@@ -4,10 +4,11 @@
       <div class="head-actions"><span class="month-field">调价月份 <span class="pricing-month">{{ pricingMonth }}</span></span><el-tag effect="light">{{ batch ? statusLabels[batch.status] || batch.status : '未开始' }}</el-tag><el-button :loading="busy" @click="refresh">刷新</el-button>
         <template v-if="view && view.canOperate">
           <el-button v-if="!batch" type="primary" :disabled="!!error" :loading="busy" @click="run('start')">调价</el-button>
-          <el-button v-if="batch && batch.status === 'FAILED'" type="primary" :disabled="!!error" :loading="busy" @click="run('retry')">修正后重试</el-button>
-          <el-button v-if="batch && batch.status === 'WAIT_CONFIRM'" type="primary" :disabled="!!error" :loading="busy" @click="run('confirm')">确认</el-button>
+          <el-button v-if="batch" :disabled="busy" @click="showUncalculated">未核算明细</el-button>
+          <el-button v-if="publication.canCheck" :disabled="!!error" :loading="busy" @click="run('recheck')">检查成功结果</el-button>
+          <el-button v-if="publication.canConfirm" type="primary" :disabled="!!error" :loading="busy" @click="run('confirm')">{{ publication.confirmLabel }}</el-button>
         </template>
-        <el-tag v-if="batch?.status==='CONFIRMED'" type="success">本月调价已完成</el-tag>
+        <el-tag v-if="publication.released" type="success">{{ publication.releaseLabel }}</el-tag>
       </div>
     </div>
     <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
@@ -20,9 +21,11 @@
         <span class="progress-state">{{ item.label }}</span>
       </div>
       <el-progress :percentage="percentage" :show-text="false" :stroke-width="6" :status="batch?.status==='FAILED'?'exception':batch?.status==='CONFIRMED'?'success':undefined" />
-      <div class="progress-caption"><span>{{ batch ? statusLabels[batch.status] || batch.status : '未开始' }}<template v-if="batch"> · 已完成 {{ batch.successCount || 0 }} / {{ batch.totalCount || 0 }} 个产品</template></span><span>{{ percentage }}%</span></div>
-      <p v-if="batch?.status==='FAILED'" class="quotation-note">修正资料后重试，将保留本批次已成功的结果。</p>
-      <p v-if="view" class="quotation-note">{{ view.quotationBlocked ? '当前业务单元暂停报价，管理员或业务总监确认后恢复。' : '当前业务单元可以报价。' }}</p>
+      <div class="progress-caption"><span>{{ batch ? statusLabels[batch.status] || batch.status : '未开始' }}<template v-if="batch"> · 已完成 {{ batch.successCount || 0 }} / {{ batch.totalCount || 0 }} 个客户产品</template></span><span>{{ percentage }}%</span></div>
+      <MonthlyRepriceStatistics :statistics="view?.statistics" />
+      <p v-if="batch && (publication.uncalculated || publication.unresolved)" class="quotation-note">未核算客户产品 {{ publication.uncalculated }} 个，客户资料待完善 {{ publication.unresolved }} 条。已核算成功的结果可以先检查确认，其余在未核算明细中继续处理。</p>
+      <p v-if="batch?.status==='FAILED'" class="quotation-note">在未核算明细中查看原因，完善资料后勾选再次核算。</p>
+      <p v-if="view" class="quotation-note">{{ view.quotationBlocked ? '当前业务单元暂停报价，管理员或业务总监确认成功结果后恢复。' : '当前业务单元可以报价。' }}<template v-if="publication.released && !publication.allDone"> 补算不会再次暂停报价；新增结果确认后发布，原已确认成本保留。</template></p>
     </el-card>
     <el-card v-if="problems.length" shadow="never" class="problem-panel"><h3>需要处理的问题</h3><el-alert v-for="problem in problems" :key="problem" :title="problem" type="error" :closable="false" /></el-card>
     <el-card ref="reportPanel" shadow="never" class="report-panel">
@@ -33,6 +36,17 @@
             <p v-if="batch" class="batch-reference">批次：{{ batch.repriceNo }}</p>
             <el-timeline v-if="operationRecords.length"><el-timeline-item v-for="record in operationRecords" :key="record.title" :timestamp="record.time" :type="record.type" placement="top"><div class="record-title">{{ record.title }}</div><p>{{ record.description }}</p></el-timeline-item></el-timeline>
             <el-empty v-else :description="batch ? '本批次暂无已保存的操作时间记录' : '尚未开始本次调价'" :image-size="70" />
+            <template v-if="batch">
+              <h3>确认与补算记录</h3>
+              <el-alert v-if="auditError" :title="auditError" type="error" :closable="false" />
+              <el-table :data="audits" stripe>
+                <el-table-column prop="operationTime" label="时间" width="180" />
+                <el-table-column prop="operationName" label="操作" width="170" />
+                <el-table-column label="操作人" width="150"><template #default="{ row }">{{ row.operatorName || row.operatorId || '未记录' }}</template></el-table-column>
+                <el-table-column prop="changeSummary" label="处理结果" min-width="240" />
+              </el-table>
+              <el-pagination v-model:current-page="auditPage" :page-size="20" :total="auditTotal" layout="prev, pager, next" @current-change="loadOperations" />
+            </template>
           </div>
         </el-tab-pane>
       </el-tabs>
@@ -53,8 +67,8 @@
     <el-dialog v-model="resultsOpen" title="历史核算结果" width="85%">
       <el-alert v-if="historyError" :title="historyError" type="error" :closable="false" />
       <el-table :data="results"><el-table-column prop="oaNo" label="报价单" /><el-table-column prop="productCode" label="产品" />
-        <el-table-column prop="totalCost" label="制造成本" /><el-table-column prop="calcStatus" label="核算状态" />
-        <el-table-column label="明细"><template #default="{ row }"><el-button link @click="showDetails(row)">查看明细</el-button></template></el-table-column></el-table>
+        <el-table-column prop="totalCost" label="制造成本" /><el-table-column prop="calcStatus" label="核算状态" /><el-table-column prop="calcMessage" label="结果说明" min-width="200" />
+        <el-table-column label="明细"><template #default="{ row }"><el-button link :disabled="row.totalCost == null" @click="showDetails(row)">查看明细</el-button></template></el-table-column></el-table>
       <el-pagination v-model:current-page="resultPage" :page-size="20" :total="resultTotal" layout="prev, pager, next" @current-change="loadResults" />
     </el-dialog>
     <el-dialog v-model="detailsOpen" title="保存的成本明细" width="85%">
@@ -65,20 +79,27 @@
 </template>
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import MonthlyRepriceStatistics from '../components/MonthlyRepriceStatistics.vue'
 import MonthlyCostComparisonPanel from '../components/MonthlyCostComparisonPanel.vue'
 import MonthlyRepriceSources from '../components/MonthlyRepriceSources.vue'
 import { useUserStore } from '../store/modules/user'
-import { fetchRepriceCurrent, startReprice, retryReprice, confirmReprice, fetchMonthlyRepriceBatches,
-  fetchMonthlyRepriceResults, fetchMonthlyRepricePartItems, fetchMonthlyRepriceCostItems } from '../api/monthlyReprice'
+import { monthlyRepricePublication } from '../utils/monthlyRepricePublication'
+import { fetchRepriceCurrent, startReprice, recheckReprice, confirmReprice, fetchMonthlyRepriceBatches,
+  fetchMonthlyRepriceResults, fetchMonthlyRepricePartItems, fetchMonthlyRepriceCostItems, fetchMonthlyRepriceAuditLogs } from '../api/monthlyReprice'
 const user = useUserStore()
+const router = useRouter()
+function showUncalculated(){router.push({path:'/cost/uncalculated',query:{month:pricingMonth.value}})}
 const view=ref(null), busy=ref(false), error=ref(''), history=ref([]), historyPage=ref(1), historyTotal=ref(0)
 const resultsOpen=ref(false), results=ref([]), resultPage=ref(1), resultTotal=ref(0), historyError=ref(''), selectedNo=ref('')
 const detailsOpen=ref(false), parts=ref([]), costs=ref([])
 const activeTab=ref('comparison'),reportPanel=ref(null)
+const audits=ref([]),auditPage=ref(1),auditTotal=ref(0),auditError=ref('')
 const batch=computed(()=>view.value?.batch)
+const publication=computed(()=>monthlyRepricePublication(view.value))
 const pricingMonth=computed(()=>batch.value?.pricingMonth || `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}`)
-const statusLabels={ QUEUED:'已受理', RUNNING:'正在核算', CHECKING:'正在检查', FAILED:'待处理', WAIT_CONFIRM:'待确认', CONFIRMED:'已完成' }
-const percentage=computed(()=>['WAIT_CONFIRM','CONFIRMED'].includes(batch.value?.status)?100:batch.value?.totalCount?Math.min(99,Math.round((batch.value.successCount || 0)/batch.value.totalCount*100)):0)
+const statusLabels={ QUEUED:'已受理', RUNNING:'正在核算', CHECKING:'正在检查', FAILED:'待处理', WAIT_CONFIRM:'待确认', CONFIRMED:'已确认' }
+const percentage=computed(()=>batch.value?.totalCount?Math.min(100,Math.round((batch.value.successCount || 0)/batch.value.totalCount*100)):0)
 const processSteps=computed(()=>{
   const status=batch.value?.status
   return [
@@ -88,7 +109,12 @@ const processSteps=computed(()=>{
     ['生成成本对比并校验','系统生成新旧成本明细及差异，完成自动检查'],
   ].map(([title,description],index)=>{
     let state='pending',label='待执行'
-    if(['WAIT_CONFIRM','CONFIRMED'].includes(status) || status==='CHECKING' && index<3){state='done';label='已完成'}
+    if(['WAIT_CONFIRM','CONFIRMED'].includes(status) || status==='CHECKING' && index<3){
+      state='done';label='已完成'
+      if(publication.value.uncalculated || publication.value.unresolved){
+        state=index===3?'done':'active';label=index===3?'成功结果已检查':'部分完成'
+      }
+    }
     else if(status==='RUNNING' && index<3 || status==='CHECKING' && index===3){state='active';label='处理中'}
     else if(status==='FAILED'){state='failed';label='待处理'}
     return {title,description,state,label}
@@ -102,7 +128,7 @@ const operationRecords=computed(()=>{
   add(current.createdAt,'受理调价',`${current.createdName || current.createdBy || '操作人未记录'} · ${current.pricingMonth}`,'primary')
   add(current.startedAt,'开始自动处理','获取目标月BOM、准备适用价格并重新核算。','primary')
   add(current.checkedAt,current.checkStatus==='PASSED'?'自动检查通过':'自动检查未通过',`结果版本：${current.checkedRevision ?? current.resultRevision ?? '未记录'}`,current.checkStatus==='PASSED'?'success':'danger')
-  add(current.confirmedAt,'确认调价',`${current.confirmedName || current.confirmedBy || '确认人未记录'} · 已恢复报价`,'success')
+  add(current.confirmedAt,'首次确认并放行',`${current.confirmedName || current.confirmedBy || '确认人未记录'} · 已恢复报价`,'success')
   return records
 })
 async function showOperations(){activeTab.value='operations';await nextTick();reportPanel.value?.$el.scrollIntoView({behavior:'smooth',block:'start'})}
@@ -111,7 +137,17 @@ const problems=computed(()=>{
   try { for(const p of JSON.parse(batch.value?.checkResultJson || '{}').problems || []) if(!list.includes(p)) list.push(p) } catch { /* Saved evidence may be absent. */ }
   return list
 })
-let epoch=0, timer, refreshNo=0, historyNo=0, resultNo=0, detailNo=0
+let epoch=0, timer, refreshNo=0, historyNo=0, resultNo=0, detailNo=0, auditNo=0
+async function loadOperations(){
+  const current=epoch,id=++auditNo,no=batch.value?.repriceNo
+  if(!no)return
+  try {const value=await fetchMonthlyRepriceAuditLogs({repriceNo:no,page:auditPage.value,pageSize:20})
+    if(current===epoch && id===auditNo && no===batch.value?.repriceNo){audits.value=value.list || [];auditTotal.value=value.total || 0;auditError.value=''}
+  }catch(e){if(current===epoch && id===auditNo){audits.value=[];auditError.value=e.message || '操作记录读取失败'}}
+}
+watch(activeTab,value=>{if(value==='operations')loadOperations()})
+watch(()=>batch.value?.repriceNo,()=>{auditNo++;audits.value=[];auditPage.value=1;auditTotal.value=0;auditError.value='';if(activeTab.value==='operations')loadOperations()})
+watch(()=>batch.value?.publishedRevision,()=>{if(activeTab.value==='operations')loadOperations()})
 async function refresh() {
   if(busy.value)return
   const current=epoch,id=++refreshNo
@@ -122,8 +158,7 @@ async function run(action) {
   if(busy.value) return
   busy.value=true;refreshNo++;const current=epoch
   try {
-    const value=action==='start' ? await startReprice() : action==='retry' ? await retryReprice(batch.value.repriceNo)
-      : await confirmReprice(batch.value.repriceNo,batch.value.checkedRevision)
+    const value=action==='start' ? await startReprice() : action==='recheck' ? await recheckReprice(batch.value.repriceNo) : await confirmReprice(batch.value.repriceNo,batch.value.checkedRevision)
     if(current===epoch){view.value=value;error.value='';await loadHistory()}
   } catch(e){if(current===epoch) error.value=e.message || '操作失败，请刷新后重试'}
   finally {if(current===epoch) busy.value=false}

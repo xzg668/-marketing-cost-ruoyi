@@ -71,7 +71,7 @@ describe('threeExpenseRateImportUtils', () => {
     assert.equal(result.rows[0].applicantDepartment, '欧美业务部-直销')
     assert.equal(result.rows[0].threeExpenseTotalRate, 0.3)
     assert.equal(result.rows[0].oemExpenseRate, 0.05)
-    assert.equal(result.rows[3].businessUnitType, null)
+    assert.ok(result.rows.every(row => row.businessUnitType === 'COMMERCIAL'))
     assert.equal(Object.hasOwn(result.rows[0], 'rawPeriod'), false)
   })
 
@@ -99,16 +99,28 @@ describe('threeExpenseRateImportUtils', () => {
     assert.equal(result.rows[0].productLine, '国内产线')
   })
 
-  it('uses the explicit business unit instead of inferring it from product category', () => {
-    const result = parseThreeExpenseRateRows([
-      ['家代商代销产品-国内产线'],
-      ['申请部门', '申请处室', '管理费用', '财务费用', '营业费用', '三项费用合计', 'OEM费用率', '业务单元'],
-      ['泰国事务所-直销', '/', '10%', '2%', '25%', '37%', '0%', 'COMMERCIAL'],
-    ], { defaultPeriodYear: 2026 })
+  for (const importedUnit of ['COMMERCIAL', 'HOUSEHOLD', '家用', '']) {
+    it(`normalizes the spreadsheet business unit ${importedUnit || '(blank)'} to COMMERCIAL`, () => {
+      const result = parseThreeExpenseRateRows([
+        ['家代商代销产品-国内产线'],
+        ['申请部门', '申请处室', '管理费用', '财务费用', '营业费用', '三项费用合计', 'OEM费用率', '业务单元'],
+        ['泰国事务所-直销', '/', '10%', '2%', '25%', '37%', '0%', importedUnit],
+      ], { defaultPeriodYear: 2026 })
 
+      assert.equal(result.errors.length, 0)
+      assert.equal(result.rows.length, 1)
+      assert.equal(result.rows[0].productCategory, '家代商代销产品')
+      assert.equal(result.rows[0].businessUnitType, 'COMMERCIAL')
+    })
+  }
+
+  it('normalizes legacy imports to COMMERCIAL too', () => {
+    const result = parseThreeExpenseRateRows([
+      ['公司', '生产事业部', '申请部门', '期间', '管理费用', '财务费用', '营业费用', '三项费用合计', '业务单元'],
+      ['三花', '电子产品事业部', '美洲事务所-代销', '2026', '10%', '2%', '8%', '20%', 'HOUSEHOLD'],
+    ])
     assert.equal(result.errors.length, 0)
     assert.equal(result.rows.length, 1)
-    assert.equal(result.rows[0].productCategory, '家代商代销产品')
     assert.equal(result.rows[0].businessUnitType, 'COMMERCIAL')
   })
 })

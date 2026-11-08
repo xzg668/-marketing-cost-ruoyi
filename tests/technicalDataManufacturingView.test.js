@@ -61,7 +61,7 @@ function formHarness(props, response) {
     options: reactive({}), lookupErrors: reactive({}), emit: () => {}, ElMessage: { success: () => {} },
     fetchQuoteTechnicalDataManufacturing: async (...args) => { calls.push(['quote', ...args]); return response },
     fetchTechnicalDataManufacturing: async (...args) => { calls.push(['product', ...args]); return response },
-    saveTechnicalDataManufacturing: async () => { calls.push(['save']); return response } }
+    saveTechnicalDataManufacturing: async (...args) => { calls.push(['save', ...args]); return { ...response, issues: [] } } }
   const body = formDeclarations.filter(node =>
     node.type === 'FunctionDeclaration' && ['install', 'load', 'save', 'displayValue', 'netWeightGrams'].includes(node.id.name)
     || node.type === 'VariableDeclaration' && ['canEdit', 'editableRows'].includes(node.declarations[0].id.name)
@@ -108,4 +108,26 @@ test('single part net weight displays in grams for live and saved kilogram value
   assert.equal(h.netWeightGrams({ sourceNetWeight: '0.0093', sourceNetWeightUnit: '千克' }), '9.3')
   assert.equal(h.netWeightGrams({ sourceNetWeight: null }), '未提供')
   assert.equal(h.netWeightGrams({ sourceNetWeight: 10.5, sourceNetWeightUnit: null }), '单位未明确')
+})
+
+
+test('a matching manufactured component is filled from its saved sibling and saved with provenance', async () => {
+  const h = formHarness({ productId: 15, editable: true }, {
+    expectedVersion: 3, editable: true, historical: false, source: { sourceVersionId: 14, fingerprint: 'source-hash', nodes: [
+      { sourceNodeId: 366, state: 'MISSING_RAW', name: '接管', parentMaterialNo: '9990000051108' },
+      { sourceNodeId: 367, state: 'MISSING_RAW', name: '膜片', parentMaterialNo: '1064000300093' },
+    ] }, saved: null, reusedItems: [{ parentSourceNodeId: 366, sourceProductId: 14, sourceProductCode: '1064100050088',
+      rawMaterialNo: '301050747', netLengthMm: 1, grossWeightKg: 0.01067, sourceReference: 'TECH_MANUFACTURING:0088:7:348:hash' }],
+  })
+  await h.load()
+  assert.equal(h.draft[366].rawMaterialNo, '301050747')
+  assert.equal(h.draft[366].grossWeightKg, 0.01067)
+  assert.equal(h.draft[367].rawMaterialNo, '')
+  assert.deepEqual(h.calls, [['product', 15, undefined]]) // Opening is read-only.
+  await h.save(false)
+  const body = h.calls.find(call => call[0] === 'save')[2]
+  assert.equal(body.expectedVersion, 3)
+  assert.equal(body.sourceVersionId, 14)
+  assert.deepEqual(body.items, [{ parentSourceNodeId: 366, rawMaterialNo: '301050747', netLengthMm: 1,
+    grossWeightKg: 0.01067, reuseReference: 'TECH_MANUFACTURING:0088:7:348:hash' }])
 })

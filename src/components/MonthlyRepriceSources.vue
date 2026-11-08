@@ -12,7 +12,7 @@
         <el-alert v-if="selected.automatic" title="系统每日自动同步，无需财务导入或手动刷新。" type="info" :closable="false" />
         <p>{{ selected.description }}</p>
         <p v-if="!selected.automatic">目标月份：{{ month || '本月' }}。请在维护页核对月份和业务范围，再导入资料。</p>
-        <p v-if="selected.id==='ratio'">只导入新增或变动条目；未出现的关系继续使用，明确填写0表示退出供货，无需填写生效日期。</p>
+        <p v-if="selected.id==='ratio'">更新料号时请导入该料号完整的供应商及比例；未导入的料号沿用原值。明确填写0表示退出供货，无需每月重传或填写生效日期。</p>
         <div class="source-links"><el-button v-for="link in selected.links" :key="link.path" type="primary" @click="open(link.path)">{{ link.label }}</el-button>
           <el-button v-if="selected.id==='ratio' && canImportRatio" @click="sourceOpen=false;ratioOpen=true">导入供货比例</el-button>
           <el-button v-if="selected.id==='ratio'" @click="open('/base/supplier-relation/supply-ratio',{changes:'1'})">变更记录</el-button>

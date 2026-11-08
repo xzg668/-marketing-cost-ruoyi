@@ -54,7 +54,7 @@ export function modulePresentation(product, moduleType, taskStatus) {
     RETURNED: { label: '已退回', type: 'danger' },
   }
   if (states[module.moduleStatus]) return states[module.moduleStatus]
-  if (['PRICE_SHARED_SAVED', 'SHARED_MODULE_SAVED', 'SHARED_MODULE_SUBMITTED'].includes(module.requirementReasonCode)) return { label: '已有资料', type: 'success' }
+  if (['PRICE_SHARED_SAVED', 'TECHNICAL_BOM_PRICE_SHARED', 'SHARED_MODULE_SAVED', 'SHARED_MODULE_SUBMITTED'].includes(module.requirementReasonCode)) return { label: '已有资料', type: 'success' }
   if (module.sourceAvailability === 'ERROR') return { label: '检查失败', type: 'danger' }
   if (module.sourceAvailability === 'UNCONFIRMED') return { label: '待检查', type: 'warning' }
   if (module.moduleStatus === 'NOT_REQUIRED') return {
@@ -63,6 +63,17 @@ export function modulePresentation(product, moduleType, taskStatus) {
   if (module.moduleStatus === 'READY') return { label: '已填完整', type: 'success' }
   if (module.moduleStatus === 'EDITING') return { label: '草稿', type: 'warning' }
   return { label: '待补录', type: 'warning' }
+}
+
+// 未分派给当前人员只限制填写权限，不能把来源检查结论隐藏成横线。
+export function unassignedModulePresentation(product, code) {
+  const module = findModule(product, code)
+  const state = modulePresentation(product, code)
+  if (!module || ['ERROR', 'UNCONFIRMED'].includes(module.sourceAvailability)) return state
+  if (module.required && module.sourceAvailability === 'MISSING') {
+    return { label: module.assigneeUserId ? '其他人员负责' : '待分派补录', type: 'warning' }
+  }
+  return state
 }
 
 export function technicalModuleSummary(product, code) {
@@ -118,7 +129,7 @@ export function taskStatusLabel(status) {
     PREPARED: '提交待确认',
     SUBMITTED: '已提交',
     RETURN_PENDING: '退回待确认',
-    PARTIALLY_RETURNED: '待修改',
+    PARTIALLY_RETURNED: '已退回，待修改',
     APPROVED: '已提交',
     CANCELLED: '已作废',
   })[status] || status || '-'
@@ -170,4 +181,13 @@ export function workbenchDispatchRow(row) {
     dispatchModuleTypes: row.taskStatus === 'UNASSIGNED' ? null
       : row.product.modules.filter(isAdditionalDispatchModule).map(module => module.moduleType),
     costingWorkspace: { periodMonth: row.accountingMonth } }
+}
+
+// 制造件已填好的旧任务或失败检查，在打开时检查一次；成功结果不随普通刷新重算。
+export function needsBomPriceCheck(product, editableModules = []) {
+  const price = findModule(product, 'PRICE')
+  return editableModules.includes('MANUFACTURING')
+    && findModule(product, 'MANUFACTURING')?.moduleStatus === 'READY'
+    && ['PRICE_BOM_NOT_READY', 'MANUFACTURING_PRICE_MISSING', 'TECHNICAL_BOM_PRICE_FAILED'].includes(price?.requirementReasonCode)
+    && ['PENDING', 'NOT_REQUIRED', 'EDITING', 'READY', 'RETURNED'].includes(price?.moduleStatus)
 }

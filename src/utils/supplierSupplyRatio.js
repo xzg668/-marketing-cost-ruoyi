@@ -21,6 +21,7 @@ export function supplierRatioChangeFields(change) {
   ].map(([key, label]) => ({
     label,
     before: !change.before ? '无原记录' : key === 'supplyRatio' ? formatPercent(change.before[key]) : (change.before[key] ?? '—'),
-    after: key === 'supplyRatio' ? formatPercent(change.after?.[key]) : (change.after?.[key] ?? '—'),
+    after: change.after?.isActive === 0 ? '已移出当前集合'
+      : key === 'supplyRatio' ? formatPercent(change.after?.[key]) : (change.after?.[key] ?? '—'),
   }))
 }

@@ -15,6 +15,12 @@
         <template v-if="selected.paths?.length"><dt>实际计价路径</dt><dd>{{ selected.paths.join('；') }}</dd></template>
         <dt>说明</dt><dd>{{ selected.remark || '' }}</dd>
       </dl>
+      <section v-if="selected.householdCalculation?.calculatedW != null" class="monthly-evidence" aria-label="家用W列计算核对">
+        <h4>家用 W 列计算核对</h4>
+        <p>{{ selected.householdCalculation.formula }}</p>
+        <p>铜锌价格：元/公斤；重量：克。客户未填时采用保存的财务基价。</p>
+        <dl><template v-for="field in householdFields" :key="field.key"><dt>{{ field.label }}</dt><dd>{{ selected.householdCalculation[field.key] ?? '未记录' }}</dd></template></dl>
+      </section>
       <div v-for="source in selected.sources" :key="`${source.table}:${source.id}`" class="source-note">来源：{{ source.table || '历史未记录' }}<span v-if="source.id != null"> #{{ source.id }}</span> {{ source.description || '' }}</div>
       <article v-for="price in selectedPrices" :key="price.id" class="monthly-evidence" :data-monthly-price-id="price.id">
         <h4>已采用月价 #{{ price.id }} · {{ price.materialCode }}</h4>
@@ -33,6 +39,15 @@
 import { computed, ref, watch } from 'vue'
 import { savedMoney, rowBasis, sheetTotals } from '../utils/jjbSheet'
 const props = defineProps({ sheet: { type: Object, required: true }, initialTrace: { type: Object, default: null } })
+const householdFields = [
+  ['inquirySourceMonth','询价来源月份'],['pricingMonth','核算月份'],['financeMonth','基价来源月份'],
+  ['matchKind','来源匹配方式'],['matchedSpecification','匹配的型号/规格'],
+  ['originalPrice','原询价 E'],['baseCopper','商用铜基价'],['baseZinc','商用锌基价'],
+  ['customerCopper','代入的客户铜价'],['customerZinc','代入的客户锌价'],['copperGrams','铜重'],['zincGrams','锌重'],
+  ['originalWFormula','原表 W 公式'],['originalWValue','原表 W 结果'],['calculatedW','本单计算 W'],
+  ['householdRate','家用两项费用率 H'],['salesRate','商用营业费用率 S'],['quantity','实际用量 Q'],
+  ['financialAmount','P0 换算后金额'],['customerAmount','W 换算后金额'],['difference','材料差异']
+].map(([key,label]) => ({key,label}))
 const selectedKey = ref('')
 watch(() => [props.sheet, props.initialTrace], () => {
   const initial = props.initialTrace

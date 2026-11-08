@@ -12,7 +12,7 @@
       </div>
     </section>
 
-    <el-alert class="ratio-policy" title="仅导入新增或变动的物料/供应商关系；未出现的关系继续保留，相同内容不重复生成版本。0%表示退出供货，空白表示未填写。无需填写生效日期。" type="info" :closable="false" show-icon />
+    <el-alert class="ratio-policy" title="财务更新过的料号以本次完整供货比率为准，旧集合中未出现的供应商转为历史；未导入的料号持续沿用原值。0%表示退出供货，空白表示未填写，无需每月重传或填写生效日期。" type="info" :closable="false" show-icon />
     <section class="query-panel">
       <el-form :model="filters" class="query-form" :inline="true" label-width="78px">
         <el-form-item label="物料代码">
@@ -123,8 +123,9 @@
         <el-table-column prop="supplierCode" label="供应商代码" width="130" />
         <el-table-column prop="supplierName" label="供应商" min-width="150" />
         <el-table-column label="改前比例" width="110"><template #default="{ row }">{{ row.before ? formatPercent(row.before.supplyRatio) : '无原记录' }}</template></el-table-column>
-        <el-table-column label="改后比例" width="110"><template #default="{ row }">{{ formatPercent(row.after?.supplyRatio) }}</template></el-table-column>
-        <el-table-column label="版本关联" width="140"><template #default="{ row }">{{ row.previousVersionId ?? '新增' }} → {{ row.versionId }}</template></el-table-column>
+        <el-table-column label="改后比例" width="110"><template #default="{ row }">{{ row.after?.isActive === 0 ? '已移出当前集合' : formatPercent(row.after?.supplyRatio) }}</template></el-table-column>
+        <el-table-column label="版本关联" width="140"><template #default="{ row }">{{ row.previousVersionId ?? '新增' }} → {{ row.after?.isActive === 0 ? '历史' : row.versionId }}</template></el-table-column>
+        <el-table-column prop="changeReason" label="变更原因" min-width="180" />
         <el-table-column prop="changedByName" label="操作人" width="130" />
         <el-table-column prop="changedAt" label="导入时间" width="180" />
         <el-table-column prop="importFileName" label="导入文件" min-width="200" />

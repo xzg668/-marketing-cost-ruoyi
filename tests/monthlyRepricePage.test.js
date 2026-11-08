@@ -12,7 +12,7 @@ describe('1130 调价入口与旧历史读取',()=>{
   })
   it('按钮使用服务端真实总监资格，确认绑定当前检查版本',()=>{
     assert.match(page,/view.canOperate/)
-    assert.match(page,/batch.status === 'WAIT_CONFIRM'/)
+    assert.match(page,/publication.canConfirm/)
     assert.match(page,/batch.value.checkedRevision/)
     assert.doesNotMatch(page,/v-hasPermi|v-hasRole/)
   })

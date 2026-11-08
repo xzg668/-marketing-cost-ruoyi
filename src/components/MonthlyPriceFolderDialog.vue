@@ -75,6 +75,7 @@
 import { computed, ref, watch } from 'vue'
 import { useUserStore } from '../store/modules/user'
 import * as api from '../api/monthlyPriceFolders'
+import { createUuid } from '../utils/uuid'
 import { canCompleteFolder, folderPath, folderReceiptCsv, folderIssueText } from './monthlyPriceFolderUtils'
 
 const props = defineProps({ modelValue: Boolean, month: String })
@@ -115,7 +116,7 @@ async function onFolder(event) {
     const paths = selected.map(folderPath)
     let next = report.value && report.value.status !== 'COMPLETE'
       ? await api.addPriceFolderFiles(report.value.id, report.value.revision, paths)
-      : await api.startPriceFolder({ pricingMonth: props.month, requestKey: crypto.randomUUID(), paths })
+      : await api.startPriceFolder({ pricingMonth: props.month, requestKey: createUuid(), paths })
     if (current !== epoch) return
     report.value = next
     for (let i = 0; i < selected.length; i++) {

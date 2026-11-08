@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { modulePresentation, nextTechnicalModule, validateTechnicalDataProfile, technicalEntryProgress, technicalModuleSummary, isTechnicalModuleStatusOnly } from '../src/utils/technicalDataWorkbench.js'
+import { needsBomPriceCheck, unassignedModulePresentation, modulePresentation, nextTechnicalModule, validateTechnicalDataProfile, technicalEntryProgress, technicalModuleSummary, isTechnicalModuleStatusOnly } from '../src/utils/technicalDataWorkbench.js'
 
 test('source check errors display the business reason and retain a fallback for missing explanations', () => {
   const row = { moduleType: 'PROFILE', sourceAvailability: 'ERROR', requirementReason: '产品 1053900000078 的料品档案名称不一致，请核实后重查' }
@@ -169,4 +169,29 @@ test('module summary uses actual item counts and preserves source uncertainty', 
   const row = { moduleType: 'MANUFACTURING', required: true, itemCount: 3, sourceAvailability: 'MISSING' }
   assert.match(technicalModuleSummary({ modules: [row] }, 'MANUFACTURING'), /3 项/)
   assert.equal(technicalModuleSummary({ modules: [{ ...row, sourceAvailability: 'UNCONFIRMED', requirementReason: '待财务确认物料' }] }, 'MANUFACTURING'), '待财务确认物料')
+})
+
+
+test('unassigned public modules distinguish available, unchecked and genuinely missing data', () => {
+  const row = module => ({ modules: [module] })
+  assert.equal(unassignedModulePresentation(row({ moduleType: 'NET_LOSS', required: false, moduleStatus: 'NOT_REQUIRED', sourceAvailability: 'AVAILABLE' }), 'NET_LOSS').label, '已有资料')
+  assert.equal(unassignedModulePresentation(row({ moduleType: 'PRICE', required: false, moduleStatus: 'PENDING', sourceAvailability: 'UNCONFIRMED', requirementReasonCode: 'PRICE_BOM_NOT_READY' }), 'PRICE').label, '待检查')
+  assert.equal(unassignedModulePresentation(row({ moduleType: 'PRICE', required: true, moduleStatus: 'PENDING', sourceAvailability: 'MISSING' }), 'PRICE').label, '待分派补录')
+  assert.equal(unassignedModulePresentation(row({ moduleType: 'PRICE', required: true, moduleStatus: 'PENDING', sourceAvailability: 'MISSING', assigneeUserId: 123 }), 'PRICE').label, '其他人员负责')
+  assert.equal(unassignedModulePresentation(row({ moduleType: 'PRICE', required: false, sourceAvailability: 'ERROR' }), 'PRICE').label, '检查失败')
+})
+
+test('completed manufacturing checks legacy price scope once and preserves submitted scope', () => {
+  const product = { modules: [{ moduleType: 'MANUFACTURING', moduleStatus: 'READY' },
+    { moduleType: 'PRICE', moduleStatus: 'PENDING', requirementReasonCode: 'PRICE_BOM_NOT_READY' }] }
+  assert.equal(needsBomPriceCheck(product, ['MANUFACTURING']), true)
+  assert.equal(needsBomPriceCheck(product, []), false)
+  product.modules[1].requirementReasonCode = 'TECHNICAL_BOM_PRICE_FAILED'
+  assert.equal(needsBomPriceCheck(product, ['MANUFACTURING']), true)
+  product.modules[1].moduleStatus = 'SUBMITTED'
+  assert.equal(needsBomPriceCheck(product, ['MANUFACTURING']), false)
+  product.modules[1].moduleStatus = 'READY'
+  product.modules[1].requirementReasonCode = 'TECHNICAL_BOM_PRICE_SHARED'
+  assert.equal(needsBomPriceCheck(product, ['MANUFACTURING']), false)
+  assert.equal(modulePresentation(product, 'PRICE').label, '已有资料')
 })

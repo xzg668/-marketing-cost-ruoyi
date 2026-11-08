@@ -9,7 +9,7 @@ const api = fs.readFileSync(path.join(root, 'src/api/supplierSupplyRatios.js'), 
 const page = fs.readFileSync(path.join(root, 'src/pages/SupplierSupplyRatioPage.vue'), 'utf8')
 const dialog = fs.readFileSync(path.join(root, 'src/components/SupplierSupplyRatioImportDialog.vue'), 'utf8')
 
-describe('MRP-02 供货关系增量导入和追溯', () => {
+describe('供货比率按料号替换、沿用和追溯', () => {
   it('仅保留导入写入，历史覆盖入口已移除', () => {
     assert.match(api, /import-excel/)
     assert.match(api, /fetchSupplierSupplyRatioChanges/)
@@ -19,11 +19,12 @@ describe('MRP-02 供货关系增量导入和追溯', () => {
   })
   it('支持当前、历史和按批次追溯，明确无日期要求', () => {
     for (const text of ['当前版本', '历史版本', 'sourceBatchNo', 'supplierCode', 'before', 'after', 'previousVersionId', 'importFileName', 'changedByName']) assert.ok(page.includes(text))
-    assert.match(dialog, /按物料和供应商增量更新/)
+    assert.match(dialog, /按料号整组更新/)
+    assert.match(dialog, /未导入的料号沿用原值/)
+    assert.match(dialog, /removedRelations/)
     assert.match(dialog, /无需填写生效日期/)
     assert.match(dialog, /unchangedRows/)
     assert.match(dialog, /无变更，未产生批次/)
-    assert.doesNotMatch(dialog, /按物料整组更新/)
   })
   it('比例精度保持到数据库的六位小数，不把微小比例显示为零', () => {
     assert.equal(formatPercent('0.000001'), '0.0001%')
@@ -33,6 +34,12 @@ describe('MRP-02 供货关系增量导入和追溯', () => {
   it('空值与明确零分别展示', () => {
     for (const value of [null, undefined, '']) assert.equal(formatPercent(value), '未填写')
     assert.equal(formatPercent(0), '0.00%')
+  })
+  it('整组替换移出的供应商不显示成未填写或零比例', () => {
+    const change = normalizeSupplierRatioChange({ beforeValue: '{"supplyRatio":0.6}', afterValue: '{"isActive":0,"importFileName":"replace.xlsx"}' })
+    const fields = supplierRatioChangeFields(change)
+    assert.equal(fields.find(x => x.label === '供货比例').before, '60.00%')
+    assert.equal(fields.find(x => x.label === '供货比例').after, '已移出当前集合')
   })
   it('新增没有旧版本，不能虚构旧零值', () => {
     const change = normalizeSupplierRatioChange({ beforeValue: null, afterValue: '{"supplyRatio":0,"supplierName":"供应商C"}' })

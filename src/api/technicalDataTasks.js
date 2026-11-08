@@ -250,3 +250,8 @@ export const saveTechnicalDataPrice = (productId, body) =>
 
 export const recheckTechnicalDataPrice = productId =>
   request(`/api/v2/technical-data/products/${id(productId)}/price/recheck`, { method: 'POST', suppressErrorToast: true })
+
+export const checkTechnicalDataBomPrices = (productId) =>
+  request(`/api/v2/technical-data/products/${id(productId)}/price/check-bom`, {
+    method: 'POST', suppressErrorToast: true,
+  })

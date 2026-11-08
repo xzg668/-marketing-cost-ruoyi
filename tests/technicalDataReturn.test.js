@@ -29,6 +29,7 @@ test('处理中和未知结果禁止再次退回，明确失败可新建请求',
 test('第一步成功第二步失败仍只读，提示具体失败步骤和OA错误', () => {
   assert.match(returnMessage({ status: 'REJECT_READY', step: 'REJECT' }), /技术员已回传.*尚未退回/)
   assert.match(returnMessage({ status: 'RETURN_FAILED', step: 'REJECT', oaResult: { errorCode: '1200308', message: '退回节点不在可选范围内' } }), /资料仍为只读.*1200308/)
+  assert.match(returnMessage({ status: 'RETURN_FAILED', step: 'REJECT', oaResult: { errorCode: '1200504', message: '成本核算员已经操作' } }), /成本核算员已经操作.*1200504.*继续原退回.*重新发起退回/)
   assert.match(returnMessage({ status: 'UNKNOWN', step: 'REJECT' }), /流程退回结果尚未确认/)
 })
 test('人员更新未知必须由原报价员核实，节点退回未知不能提示继续发送', () => {

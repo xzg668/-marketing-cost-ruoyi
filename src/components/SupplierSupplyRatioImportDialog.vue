@@ -2,7 +2,7 @@
 <el-dialog v-model="visible" title="导入供应商供货比例" width="720px">
       <div class="import-panel">
         <el-alert
-          title="按物料和供应商增量更新：仅新增或变动关系生成版本，未出现的关系保留，相同内容跳过；无需填写生效日期。"
+          title="按料号整组更新：请包含该料号本次完整的供应商及比例，旧集合中未出现的供应商转为历史；未导入的料号沿用原值，相同内容跳过，无需填写生效日期。"
           type="info"
           show-icon
           :closable="false"
@@ -43,6 +43,7 @@
             <div><span>总行数</span><strong>{{ importResult.totalRows || 0 }}</strong></div>
             <div><span>新增关系</span><strong>{{ importResult.newRelations || 0 }}</strong></div>
             <div><span>变更关系</span><strong>{{ importResult.changedRelations || 0 }}</strong></div>
+            <div><span>替换移出</span><strong>{{ importResult.removedRelations || 0 }}</strong></div>
             <div><span>未变化</span><strong>{{ importResult.unchangedRows || 0 }}</strong></div>
             <div><span>重复合并</span><strong>{{ importResult.duplicateRows || 0 }}</strong></div>
             <div><span>比例未填写</span><strong>{{ importResult.unfilledRatioRows || 0 }}</strong></div>
@@ -118,7 +119,7 @@ async function submitImport() {
     importResult.value = await importSupplierSupplyRatioExcel({
       file: uploadFile.value, sheetName: selectedSheet.value,
     })
-    ElMessage.success(`导入完成：新增 ${importResult.value.newRelations} 条，变更 ${importResult.value.changedRelations} 条，未变化 ${importResult.value.unchangedRows} 条`)
+    ElMessage.success(`导入完成：新增 ${importResult.value.newRelations} 条，变更 ${importResult.value.changedRelations} 条，替换移出 ${importResult.value.removedRelations || 0} 条，未变化 ${importResult.value.unchangedRows} 条`)
     emit('imported', importResult.value)
     if (props.closeOnSuccess) visible.value = false
   } catch (error) {

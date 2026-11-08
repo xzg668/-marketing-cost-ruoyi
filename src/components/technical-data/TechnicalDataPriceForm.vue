@@ -30,6 +30,7 @@
         <template v-else-if="['SHARED', 'ASSIGNED'].includes(selected.status)">
           <el-alert :type="selected.status === 'SHARED' ? 'success' : 'info'" :closable="false" :title="selected.status === 'SHARED' ? '已有资料，本项无需重复补录' : '原任务办理中，本项无需重复补录'" />
           <p>{{ selected.message }}</p>
+          <p v-if="owner(selected)?.productMaterialNo">价格来源产品：{{ owner(selected).productMaterialNo }}</p>
           <el-button v-if="owner(selected)" link type="primary" @click="viewOriginal">查看原资料</el-button>
         </template>
         <template v-else>

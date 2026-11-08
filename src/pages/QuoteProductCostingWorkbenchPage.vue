@@ -1834,9 +1834,13 @@ function resetCurrentInputTabs() {
 }
 
 async function loadAlternativeFeatureStatus(showError = true) {
+  // 当前计价树已按实际来源解析替代组；图库树没有替代组时无需再查 U9 正式 BOM。
   if (!oaNo.value || !itemId.value
+      || !effectiveBom.value.alternativeSelections?.length
       || ['NO_BOM', 'ENTRY_PENDING'].includes(workbench.value.bomStatus?.bomStatus)) {
     alternativeFeatureEnabled.value = false
+    alternativeDrawerVisible.value = false
+    clearAlternativePreview()
     alternativeSummary.value = emptyAlternativeSummary()
     return
   }

@@ -6,7 +6,7 @@ const base = '/api/v1/household-inquiries'
 const quiet = { suppressErrorToast: true }
 export const fetchHouseholdInquiries = params => request(base, { ...quiet, params })
 export const fetchHouseholdInquiry = id => request(`${base}/${id}`, quiet)
-export const fetchHouseholdHistory = params => request(`${base}/history`, { ...quiet, params })
+export const fetchHouseholdHistory = ({ sourceId, ...params }) => request(sourceId ? `${base}/${sourceId}/history` : `${base}/history`, { ...quiet, params })
 export const fetchHouseholdFinancial = id => request(`${base}/${id}/financial-reference`, quiet)
 export const fetchHouseholdImport = id => request(`${base}/imports/${id}`, quiet)
 export const downloadHouseholdOriginal = (id, filename = '家用询价原件.xls', options) => downloadAuthenticatedBlob(`${base}/${id}/original`, filename, options)

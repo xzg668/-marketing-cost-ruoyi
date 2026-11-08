@@ -318,7 +318,7 @@ const submitRow = async () => {
     threeExpenseTotalRate: parseNumber(formModel.value.threeExpenseTotalRate),
     oemExpenseRate: parseNumber(formModel.value.oemExpenseRate),
     sourceType: 'MANUAL',
-    businessUnitType: productCategory === '家代商代销产品' ? 'HOUSEHOLD' : 'COMMERCIAL',
+    businessUnitType: 'COMMERCIAL',
   }
   try {
     if (editingId.value) {

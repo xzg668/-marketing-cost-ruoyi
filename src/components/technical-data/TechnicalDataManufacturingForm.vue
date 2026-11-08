@@ -20,23 +20,24 @@
         <el-table-column prop="quantityPerParent" label="BOM 用量" width="100" />
         <el-table-column label="原材料料号" min-width="190">
           <template #default="{ row }">
-            <el-input v-if="canEdit" v-model="draft[row.sourceNodeId].rawMaterialNo" :aria-label="`${row.name}原材料料号`" placeholder="填写采购原材料料号" @input="changed" @change="lookup(row)" />
+            <el-input v-if="canEdit && !draft[row.sourceNodeId]?.reuseReference" v-model="draft[row.sourceNodeId].rawMaterialNo" :aria-label="`${row.name}原材料料号`" placeholder="填写采购原材料料号" @input="changed" @change="lookup(row)" />
             <span v-else>{{ draft[row.sourceNodeId]?.rawMaterialNo || '尚未填写' }}</span>
             <p v-if="options[row.sourceNodeId]" class="note">{{ options[row.sourceNodeId].name }}<br>图号：{{ options[row.sourceNodeId].drawingNo || '档案未提供' }}<br>{{ options[row.sourceNodeId].specification }} · {{ options[row.sourceNodeId].unit }}</p>
+            <p v-if="draft[row.sourceNodeId]?.reuseReference" class="note">引用 {{ draft[row.sourceNodeId].sourceProductCode }} 已填资料，无需重复填写；保存后用于本产品。</p>
             <p v-if="lookupErrors[row.sourceNodeId]" class="error">{{ lookupErrors[row.sourceNodeId] }}</p>
           </template>
         </el-table-column>
         <el-table-column label="单件净长（mm）" min-width="145">
-          <template #default="{ row }"><el-input v-if="canEdit" v-model="draft[row.sourceNodeId].netLengthMm" type="number" min="0" :aria-label="`${row.name}单件净长`" @input="changed" /><span v-else>{{ displayValue(draft[row.sourceNodeId]?.netLengthMm) }}</span></template>
+          <template #default="{ row }"><el-input v-if="canEdit && !draft[row.sourceNodeId]?.reuseReference" v-model="draft[row.sourceNodeId].netLengthMm" type="number" min="0" :aria-label="`${row.name}单件净长`" @input="changed" /><span v-else>{{ displayValue(draft[row.sourceNodeId]?.netLengthMm) }}</span></template>
         </el-table-column>
         <el-table-column label="单件净重（g）· 只读" min-width="150">
           <template #default="{ row }">{{ netWeightGrams(row) }}</template>
         </el-table-column>
         <el-table-column label="单件毛重（kg）" min-width="145">
-          <template #default="{ row }"><el-input v-if="canEdit" v-model="draft[row.sourceNodeId].grossWeightKg" type="number" min="0" step="any" :aria-label="`${row.name}单件毛重`" @input="changed" /><span v-else>{{ displayValue(draft[row.sourceNodeId]?.grossWeightKg) }}</span></template>
+          <template #default="{ row }"><el-input v-if="canEdit && !draft[row.sourceNodeId]?.reuseReference" v-model="draft[row.sourceNodeId].grossWeightKg" type="number" min="0" step="any" :aria-label="`${row.name}单件毛重`" @input="changed" /><span v-else>{{ displayValue(draft[row.sourceNodeId]?.grossWeightKg) }}</span></template>
         </el-table-column>
         <el-table-column v-if="canEdit" label="操作" width="75">
-          <template #default="{ row }"><el-button link type="danger" @click="clear(row)">清除</el-button></template>
+          <template #default="{ row }"><el-button v-if="!draft[row.sourceNodeId]?.reuseReference" link type="danger" @click="clear(row)">清除</el-button></template>
         </el-table-column>
       </el-table>
       <p v-if="!editableRows.length && !state.source?.unavailableReason && !waiting.length" class="note">当前没有需要填写的原材料关系。</p>
@@ -96,12 +97,15 @@ function install(value) {
   Object.keys(options).forEach(key => delete options[key])
   Object.keys(lookupErrors).forEach(key => delete lookupErrors[key])
   const saved = new Map((value.saved?.items || []).map(row => [String(row.parentSourceNodeId), row]))
+  const reused = new Map((value.reusedItems || []).map(row => [String(row.parentSourceNodeId), row]))
   for (const row of editableRows.value) {
-    const previous = saved.get(String(row.sourceNodeId))
+    const reference = reused.get(String(row.sourceNodeId))
+    const previous = saved.get(String(row.sourceNodeId)) || reference
     draft[row.sourceNodeId] = { rawMaterialNo: previous?.rawMaterialNo || '',
-      netLengthMm: previous?.netLengthMm ?? '', grossWeightKg: previous?.grossWeightKg ?? '' }
-    if (previous) options[row.sourceNodeId] = { name: previous.evidence?.rawMaterialName,
-      drawingNo: previous.rawMaterialDrawingNo, specification: previous.evidence?.rawMaterialSpec, unit: previous.unit }
+      netLengthMm: previous?.netLengthMm ?? '', grossWeightKg: previous?.grossWeightKg ?? '',
+      ...(reference ? { reuseReference: reference.sourceReference, sourceProductCode: reference.sourceProductCode } : {}) }
+    if (previous) options[row.sourceNodeId] = { name: previous.evidence?.rawMaterialName || previous.rawMaterialName,
+      drawingNo: previous.rawMaterialDrawingNo, specification: previous.evidence?.rawMaterialSpec || previous.rawMaterialSpec, unit: previous.unit }
   }
 }
 function changed() { emit('dirty', true) }
@@ -148,7 +152,10 @@ async function save(next) {
   const items = editableRows.value.filter(row => {
     const value = draft[row.sourceNodeId]
     return value.rawMaterialNo || value.netLengthMm !== '' || value.grossWeightKg !== ''
-  }).map(row => ({ parentSourceNodeId: Number(row.sourceNodeId), ...draft[row.sourceNodeId] }))
+  }).map(row => {
+    const { rawMaterialNo, netLengthMm, grossWeightKg, reuseReference } = draft[row.sourceNodeId]
+    return { parentSourceNodeId: Number(row.sourceNodeId), rawMaterialNo, netLengthMm, grossWeightKg, reuseReference }
+  })
   saving.value = true
   emit('busy', true)
   error.value = ''

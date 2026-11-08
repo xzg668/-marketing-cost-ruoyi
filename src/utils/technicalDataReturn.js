@@ -23,7 +23,7 @@ export function returnMessage(result) {
     ? 'OA技术员更新结果尚未确认，资料仍为只读；原报价员核实OA更新成功后，可继续本次退回。'
     : `OA ${step}结果尚未确认，资料仍为只读；请核实原请求，勿重复退回。`
   if (result.status === 'REJECT_READY') return '技术员已回传，流程尚未退回，资料仍为只读；可继续本次退回。'
-  if (result.status === 'RETURN_FAILED') return `技术员已回传，但流程退回未成功，资料仍为只读：${result.oaResult?.message || '请核实退回结果'}${result.oaResult?.errorCode ? `（${result.oaResult.errorCode}）` : ''}`
+  if (result.status === 'RETURN_FAILED') return `技术员已回传，但流程退回未成功，资料仍为只读：${result.oaResult?.message || '请核实退回结果'}${result.oaResult?.errorCode ? `（${result.oaResult.errorCode}）` : ''}。OA处理后可继续原退回，或重新发起退回。`
   if (['PREPARED', 'SENDING', 'OA_ACCEPTED'].includes(result.status)) return '退回处理中，请刷新本次结果。'
   const code = result.oaResult?.errorCode
   return `${result.status === 'NOT_SENT' ? '退回未发送' : 'OA 未同意退回'}：${result.oaResult?.message || '请核实接口结果'}${code ? `（${code}）` : ''}`

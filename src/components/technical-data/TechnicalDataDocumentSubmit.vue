@@ -29,7 +29,7 @@ const emit = defineEmits(['busy', 'open-document'])
 const user = useTechnicalDataIdentity(), busy = ref(false), pendingRequest = ref(null)
 const keyName = computed(() => `technical-document-submit:${user.userId}:${props.document.formId}`)
 const message = computed(() => technicalSubmissionMessage(props.document, user.userId))
-const terminal = status => ['SUCCESS', 'REJECTED', 'NOT_SENT'].includes(status)
+const terminal = status => ['SUCCESS', 'RETURNED', 'REJECTED', 'NOT_SENT'].includes(status)
 
 function clearPending() { sessionStorage.removeItem(keyName.value); pendingRequest.value = null }
 watch(() => props.document, document => {
@@ -53,6 +53,7 @@ async function submit(replay) {
     if (!pendingRequest.value) return
     const result = await submitTechnicalDataDocument(props.document.formId, pendingRequest.value)
     if (result.status === 'SUCCESS') ElMessage.success('本人资料已提交审批')
+    else if (result.status === 'RETURNED') ElMessage.warning('已退回，待修改；修改保存后可重新提交')
     else ElMessage.warning(result.oaResult?.message || 'OA 结果尚未确认，请查看提交状态')
     if (terminal(result.status)) clearPending()
     await props.refresh()

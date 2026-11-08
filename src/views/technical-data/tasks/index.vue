@@ -23,7 +23,7 @@
     <el-alert v-if="scopedOaNo" :title="`当前仅查看报价单：${scopedOaNo}`" type="info" :closable="false">
       <el-button v-if="canManage" link type="primary" @click="router.push({ name: 'ingest-quote-request-detail', params: { oaNo: scopedOaNo } })">返回本单核算</el-button>
     </el-alert>
-    <el-alert v-if="fixedSubmission" title="本次已提交资料，只读查看。" type="info" :closable="false" />
+    <el-alert v-if="fixedSubmission" title="本次提交资料快照，仅供查看；当前办理状态见列表。" type="info" :closable="false" />
     <div v-if="!fixedSubmission" class="filters">
       <el-select v-model="filters.taskStatus" :disabled="submissionBusy" clearable placeholder="全部状态" aria-label="处理状态" @change="search">
         <el-option v-for="status in statuses" :key="status" :label="taskStatusLabel(status)" :value="status" />
@@ -65,7 +65,9 @@
       </el-table-column>
       <el-table-column v-for="module in TECHNICAL_DATA_MODULES" :key="module.code" :label="module.code === 'MANUFACTURING' ? '电子图库制造件明细' : module.label" :min-width="module.code === 'MANUFACTURING' ? 155 : 122">
         <template #default="{ row }">
-          <span v-if="!canViewSupplementOverview && !row.assignedModules.includes(module.code) && !findModule(row.product, module.code)?.requirementReasonCode?.startsWith('SHARED_MODULE_')" class="not-assigned">—</span>
+          <el-tooltip v-if="!canViewSupplementOverview && !row.assignedModules.includes(module.code) && !findModule(row.product, module.code)?.requirementReasonCode?.startsWith('SHARED_MODULE_')" :content="moduleReason(row, module.code)" placement="top">
+            <el-tag :type="unassignedModulePresentation(row.product, module.code).type" size="small">{{ unassignedModulePresentation(row.product, module.code).label }}</el-tag>
+          </el-tooltip>
           <el-tooltip v-else :content="moduleReason(row, module.code)" placement="top" :show-after="250">
             <button type="button" class="module-button" :disabled="!moduleAction(row, module.code)" :class="{ owned: row.assignedModules.includes(module.code), muted: !findModule(row.product, module.code)?.required }" @click="open(row, module.code)">
               <el-tag :type="modulePresentation(row.product, module.code, row.taskStatus).type" size="small">{{ modulePresentation(row.product, module.code, row.taskStatus).label }}</el-tag>
@@ -74,6 +76,7 @@
               <span v-if="moduleAction(row, module.code)" class="module-action">{{ moduleAction(row, module.code) }}</span>
             </button>
           </el-tooltip>
+          <el-button v-if="module.code === 'PRICE' && !canViewSupplementOverview && row.editableModules.some(code => ['MANUFACTURING','PACKAGE','SOLDER','PRICE'].includes(code))" link type="primary" :loading="rechecking" @click="recheckBomPrices(row)">检查价格</el-button>
           <el-button v-if="module.code === 'PRICE' && canManage && findModule(row.product, 'PRICE')?.required" link type="primary" @click="priceGapRow = row">查看缺价明细</el-button>
         </template>
       </el-table-column>
@@ -128,7 +131,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { useTechnicalDataIdentity } from '../../../composables/useTechnicalDataIdentity'
-import { fetchTechnicalDataProducts, checkTechnicalDataSources, fetchTechnicalDataTask, fetchTechnicalDataWorkflow, fetchTechnicalDataDocument, startAdminTechnicalDataEntry } from '../../../api/technicalDataTasks'
+import { fetchTechnicalDataProducts, checkTechnicalDataSources, fetchTechnicalDataTask, fetchTechnicalDataWorkflow, fetchTechnicalDataDocument, startAdminTechnicalDataEntry, checkTechnicalDataBomPrices } from '../../../api/technicalDataTasks'
 import TechnicalDataProductEditor from '../../../components/technical-data/TechnicalDataProductEditor.vue'
 import TechnicalDataDocumentSubmit from '../../../components/technical-data/TechnicalDataDocumentSubmit.vue'
 import { submittedDocumentRows } from '../../../utils/technicalDataDocument'
@@ -138,7 +141,7 @@ import TechnicalDataPersonSelect from '../../../components/technical-data/Techni
 import TechnicalDataPriceGapDialog from '../../../components/technical-data/TechnicalDataPriceGapDialog.vue'
 import TechnicalDataEntryPreviewDialog from '../../../components/technical-data/TechnicalDataEntryPreviewDialog.vue'
 import { showErrorOnce } from '../../../utils/errorHandler'
-import { TECHNICAL_DATA_MODULES, findModule, moduleName, modulePresentation, technicalModuleSummary, isTechnicalModuleStatusOnly, taskStatusLabel, taskStatusType, workbenchRowKey, canDispatchWorkbenchRow, workbenchDispatchRow } from '../../../utils/technicalDataWorkbench'
+import { TECHNICAL_DATA_MODULES, findModule, moduleName, unassignedModulePresentation, modulePresentation, technicalModuleSummary, isTechnicalModuleStatusOnly, taskStatusLabel, taskStatusType, workbenchRowKey, canDispatchWorkbenchRow, workbenchDispatchRow, needsBomPriceCheck } from '../../../utils/technicalDataWorkbench'
 
 const router = useRouter(), route = useRoute(), user = useTechnicalDataIdentity()
 const resolvedOaNo = ref('')
@@ -166,7 +169,7 @@ const returnSelection = computed(() => selected.value.filter(canReturnRow))
 let generation = 0
 
 function persistState() { sessionStorage.setItem(storageKey.value, JSON.stringify(filters)) }
-async function load() {
+async function load(autoCheck = true) {
   const request = ++generation
   loading.value = true; accessDenied.value = false; documentError.value = ''; persistState()
   try {
@@ -179,7 +182,9 @@ async function load() {
     }
     if (fixedSubmission.value && document) {
       records.value = submittedDocumentRows(document); total.value = records.value.length
-      summary.value = { ...emptySummary(), total: total.value, submitted: total.value }
+      summary.value = { ...emptySummary(), total: total.value,
+        pending: records.value.filter(row => ['PARTIALLY_RETURNED', 'RETURN_PENDING'].includes(row.taskStatus)).length,
+        submitted: records.value.filter(row => ['SUBMITTED', 'APPROVED'].includes(row.taskStatus)).length }
       canViewSupplementOverview.value = true; personalDocuments.value = []; selected.value = []
       return
     }
@@ -190,6 +195,11 @@ async function load() {
           editableModules: document.readOnly ? [] : workflow.editableModules }
       }))
       if (request !== generation) return
+      if (autoCheck !== false && !document.readOnly) {
+        const pending = rows.filter(row => needsBomPriceCheck(row.product, row.editableModules))
+        for (const row of pending) await checkTechnicalDataBomPrices(row.product.id)
+        if (pending.length) return load(false)
+      }
       canViewSupplementOverview.value = document.readOnly
       personalDocuments.value = document.readOnly ? [] : [document]
       summary.value = { total: rows.length, pending: rows.filter(r => ['PENDING','IN_PROGRESS','PARTIALLY_RETURNED'].includes(r.taskStatus)).length,
@@ -204,6 +214,11 @@ async function load() {
     }
     const result = await fetchTechnicalDataProducts({ ...filters, oaNo: scopedOaNo.value || undefined, keyword: filters.keyword.trim(), size: 20 })
     if (request !== generation) return
+    if (autoCheck !== false && !result.canViewSupplementOverview) {
+      const pending = result.records.filter(row => needsBomPriceCheck(row.product, row.editableModules))
+      for (const row of pending) await checkTechnicalDataBomPrices(row.product.id)
+      if (pending.length) return load(false)
+    }
     records.value = result.records; total.value = result.total; summary.value = result.summary
     canViewSupplementOverview.value = Boolean(result.canViewSupplementOverview)
     selected.value = []
@@ -223,6 +238,16 @@ async function load() {
     if ([401, 403].includes(Number(error?.resultCode))) accessDenied.value = true
     else showErrorOnce(error, '补录工作台加载失败')
   } finally { if (request === generation) loading.value = false }
+}
+async function recheckBomPrices(row) {
+  rechecking.value = true
+  try {
+    const result = await checkTechnicalDataBomPrices(row.product.id)
+    await load(false)
+    if (result.issues?.length) ElMessage.warning(result.issues.join('；'))
+    else ElMessage.success(result.missing ? `还有 ${result.missing} 项价格需补录` : '检查完成，已有价格无需重复填写')
+  } catch (cause) { showErrorOnce(cause, '价格检查失败，已填资料保留') }
+  finally { rechecking.value = false }
 }
 function openDocument(formId) {
   if (!submissionBusy.value) router.push({ name: 'technical-data-document-workbench', params: { formId } })
@@ -257,7 +282,7 @@ function moduleAction(row, code) {
   return '查看'
 }
 function productAction(row) {
-  if (row.taskStatus === 'PARTIALLY_RETURNED') return '查看并修改'
+  if (row.taskStatus === 'PARTIALLY_RETURNED' && row.editableModules.length) return '查看并修改'
   if (row.editableModules.length) return '继续补录'
   return '查看资料'
 }
