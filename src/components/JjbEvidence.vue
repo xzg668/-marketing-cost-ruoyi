@@ -9,12 +9,30 @@
         <dt>本次金额</dt><dd>{{ savedMoney(selected.amount) || '未记录金额' }}</dd>
         <template v-if="selected.unitPrice != null"><dt>{{ selected.kind === 'HOUSEHOLD' ? '询价单价 P' : '单价' }}</dt><dd>{{ selected.unitPrice }}</dd></template>
         <template v-if="selected.quantity != null"><dt>本次用量 Q</dt><dd>{{ selected.quantity }}</dd></template>
+        <dt>计量单位</dt><dd>{{ selected.unit || '历史未记录' }}</dd>
+        <dt>采用的价格来源</dt><dd>{{ selected.priceSource || '见下方保存依据' }}</dd>
         <template v-if="selected.baseAmount != null"><dt>采用基数</dt><dd>{{ selected.baseAmount }}</dd></template>
         <dt>费用／费率口径</dt><dd>{{ rowBasis(selected) || '历史未记录' }}</dd>
         <template v-if="selected.coefficient != null"><dt>本次属性系数 K</dt><dd>{{ selected.coefficient }}</dd></template>
         <template v-if="selected.paths?.length"><dt>实际计价路径</dt><dd>{{ selected.paths.join('；') }}</dd></template>
         <dt>说明</dt><dd>{{ selected.remark || '' }}</dd>
       </dl>
+      <article v-for="(line, index) in selected.manufacturing || []" :key="index" class="monthly-evidence" aria-label="制造件计算明细">
+        <h4>{{ line.processType || '历史未记录加工方式' }} · {{ line.childMaterialNo }} {{ line.childMaterialName }}</h4>
+        <dl>
+          <dt>采用单价</dt><dd>{{ line.rawUnitPrice ?? '历史未记录' }} {{ line.rawPriceUnit }}</dd>
+          <dt>毛重</dt><dd>{{ line.grossWeightG ?? '历史未记录' }} g</dd>
+          <dt>净重</dt><dd>{{ line.netWeightG ?? '历史未记录' }} g</dd>
+          <dt>废料重量</dt><dd>{{ line.scrapWeightKg ?? '历史未记录' }} kg</dd>
+          <dt>废料</dt><dd>{{ line.scrapCode || '无废料／历史未记录' }} {{ line.scrapName }}</dd>
+          <dt>废料单价</dt><dd>{{ line.scrapUnitPrice ?? '历史未记录' }} 元/kg</dd>
+          <dt>材料金额</dt><dd>{{ line.materialAmount ?? '历史未记录' }} 元/件</dd>
+          <dt>废料抵扣</dt><dd>{{ line.scrapDeduction ?? '历史未记录' }} 元/件</dd>
+          <dt>算法</dt><dd>{{ line.formula || '历史未记录' }}</dd>
+          <dt>代入计算</dt><dd>{{ line.substitution || '历史未记录' }}</dd>
+          <dt>制造件合计单价</dt><dd>{{ line.parentTotalCostPrice ?? '历史未记录' }} 元/件</dd>
+        </dl>
+      </article>
       <section v-if="selected.householdCalculation?.calculatedW != null" class="monthly-evidence" aria-label="家用W列计算核对">
         <h4>家用 W 列计算核对</h4>
         <p>{{ selected.householdCalculation.formula }}</p>
@@ -25,7 +43,8 @@
       <article v-for="price in selectedPrices" :key="price.id" class="monthly-evidence" :data-monthly-price-id="price.id">
         <h4>已采用月价 #{{ price.id }} · {{ price.materialCode }}</h4>
         <dl><dt>保存单价</dt><dd>{{ price.price }} {{ price.currency }}/{{ price.unit }}</dd>
-          <dt>来源</dt><dd>{{ price.sourceType }} #{{ price.sourceId || '历史未记录' }}<span v-if="price.sourceVersion"> · 版本 {{ price.sourceVersion }}</span><span v-if="price.sourceBatch"> · 批次 {{ price.sourceBatch }}</span></dd>
+          <dt>来源表与记录</dt><dd>{{ price.sourceDetails?.name || price.sourceType }} · {{ price.sourceDetails?.table }} #{{ price.sourceId || '历史未记录' }}<span v-if="price.sourceVersion"> · 版本 {{ price.sourceVersion }}</span><span v-if="price.sourceBatch"> · 批次 {{ price.sourceBatch }}</span></dd>
+          <template v-for="field in sourceFields.filter(field => price.sourceDetails?.[field.key] != null)" :key="field.key"><dt>{{ field.label }}</dt><dd>{{ price.sourceDetails[field.key] }}</dd></template>
           <dt>供应商</dt><dd>{{ price.supplier || '不适用／未记录' }}</dd>
           <dt>适用组织</dt><dd>{{ price.applicableOrganizations.join('、') }}</dd><dt>本次消费组织</dt><dd>{{ price.consumerOrganizations.join('、') }}</dd>
           <dt>税口径</dt><dd>{{ price.taxBasis === 'INCLUDED' ? '含税来源口径' : price.taxBasis === 'EXCLUDED' ? '不含税来源口径' : price.taxBasis }}</dd>
@@ -33,12 +52,21 @@
         </dl>
       </article>
     </div>
+    <p v-else role="status">该版本没有记录所选物料的核算底稿。</p>
   </section>
 </template>
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { savedMoney, rowBasis, sheetTotals } from '../utils/jjbSheet'
+import { selectEvidenceRow } from '../utils/jjbEvidence'
 const props = defineProps({ sheet: { type: Object, required: true }, initialTrace: { type: Object, default: null } })
+const sourceFields = [
+  ['sourcePrice','原来源表单价'], ['originalMonth','来源月份'], ['file','来源文件'], ['sheet','原表页签'],
+  ['row','原表行号'], ['document','来源单据'], ['orderNo','采购订单号'], ['orderLineNo','订单行号'],
+  ['effectiveFrom','有效期起'], ['effectiveTo','有效期止'],
+  ['selectionReason','当时采用原因'], ['ratios','当时供货比率'], ['effectivePriceTable','财务有效价表'],
+  ['effectivePriceId','财务有效价记录'], ['effectivePrice','采用的财务有效单价'],
+].map(([key, label]) => ({ key, label }))
 const householdFields = [
   ['inquirySourceMonth','询价来源月份'],['pricingMonth','核算月份'],['financeMonth','基价来源月份'],
   ['matchKind','来源匹配方式'],['matchedSpecification','匹配的型号/规格'],
@@ -51,11 +79,8 @@ const householdFields = [
 const selectedKey = ref('')
 watch(() => [props.sheet, props.initialTrace], () => {
   const initial = props.initialTrace
-  const found = props.sheet.rows.find(row => row.key === initial?.rowKey
-    || initial?.costCode && row.code === initial.costCode
-    || initial?.partItemId && row.partItemIds?.includes(initial.partItemId)
-    || initial?.costItemId && row.costItemIds?.includes(initial.costItemId))
-  selectedKey.value = found?.key || props.sheet.rows[0]?.key || ''
+  const found = selectEvidenceRow(props.sheet.rows, initial)
+  selectedKey.value = found?.key || ''
 }, { immediate: true })
 const selected = computed(() => props.sheet.rows.find(row => row.key === selectedKey.value))
 const selectedPrices = computed(() => props.sheet.monthlyPrices.filter(price => selected.value?.monthlyPriceIds?.includes(price.id)))

@@ -16,6 +16,7 @@
       :cost-run-no="effectiveCostRunNo"
       :version-no="displayCostRunNo"
       :initial-trace="selectedTrace"
+      :saved-sheet="sheet"
     />
   </div>
 </template>

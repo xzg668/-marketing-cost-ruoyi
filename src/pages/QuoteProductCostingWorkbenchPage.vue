@@ -570,6 +570,7 @@
               :item-id="itemId"
               :period-month="workbench.periodMonth"
               :reviews="pricePrepare.supplierPriceReviews || []"
+              :materials="pricePrepare.supplierPriceReviewMaterials || []"
               :prepare-no="pricePrepare.oaScenario?.batch?.prepareNo || ''"
               :readonly="historyViewMode || costRunActionLoading"
               @updated="completePriceSourceMaintenance"
@@ -1166,6 +1167,7 @@
     <CostRunTraceDrawer
       v-model="traceDrawerVisible"
       :cost-run-no="traceVersion?.costRunNo || ''"
+      :saved-sheet="costRun.sheet"
       :initial-trace="traceVersion?.initialTrace || null"
       :version-no="traceVersion?.displayVersionNo || traceVersion?.versionNo || ''"
     />
@@ -3027,6 +3029,7 @@ function tabBadgeLabel(tab) {
     return '自动检查'
   }
   if (code === 'PRICE_PREPARE') {
+    if (tab?.status === 'STALE' && latestPrepare.value.status === 'SUCCESS') return '已生成（需更新）'
     const gapCount = currentPriceSourceGapCount()
     if (gapCount > 0) return `缺 ${gapCount} 项`
     if (tab?.status === 'DONE' && pricePrepareReady.value) return '已生成'
@@ -3037,7 +3040,7 @@ function tabBadgeLabel(tab) {
     const versionNo = currentSuccessVersion.value?.displayVersionNo || currentSuccessVersion.value?.versionNo
     if (hasRunningCostVersion.value && versionNo) return '正在重新核算'
     if (hasRunningCostVersion.value) return '正在核算'
-    if (currentCostingBlockText.value) return '待重新核算'
+    if (currentCostingBlockText.value) return currentSuccessVersion.value?.id ? '已核算（需更新）' : '待重新核算'
     // 当前无阻断时，保留已确认成功版本，不受旧步骤 PENDING 标记影响。
     if (currentSuccessVersion.value?.id && versionNo) return '核算成功'
     if (isBlockedTab(tab)) return '未就绪'

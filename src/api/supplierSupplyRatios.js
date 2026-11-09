@@ -32,3 +32,6 @@ export const importSupplierSupplyRatioExcel = (payload) =>
 
 export const fetchSupplierSupplyRatioChanges = (params) =>
   request(`${BASE_URL}/changes`, { params })
+
+export const updateSupplierSupplyRatio = (id, payload) =>
+  request(`${BASE_URL}/${id}`, { method: 'PUT', body: payload, suppressErrorToast: true })

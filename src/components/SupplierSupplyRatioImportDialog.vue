@@ -17,7 +17,7 @@
         >
           <el-icon class="upload-icon"><UploadFilled /></el-icon>
           <div class="upload-title">拖拽或点击选择 Excel</div>
-          <div class="upload-tip">支持 .xls / .xlsx</div>
+          <div class="upload-tip">支持 .xls / .xlsx；工作表名不限，按物料代码、物料名称、供应商名称、供货比例表头识别</div>
         </el-upload>
         <div v-if="uploadFileName" class="selected-file">
           <el-icon><Document /></el-icon>
@@ -35,7 +35,7 @@
             <span v-if="sheetNames.length > 1" class="sheet-hint">有多个供货比率工作表，请选择本次要导入的表。</span>
           </el-form-item>
           <el-form-item label="未填写比例">
-            <span class="ratio-note">空白或“补充”的记录照常导入，比例留空；填写 0% 表示退出供货，旧版本仍可追溯。</span>
+            <span class="ratio-note">空白或“补充”的记录照常导入，比例留空；填写 0% 表示退出供货，旧版本仍可追溯。可选“取价规则”列填写“无供货比例取最高价”，比率无法确定供应商时自动取最高有效价；空白沿用原确认流程。</span>
           </el-form-item>
         </el-form>
         <section v-if="importResult" class="import-result">
@@ -72,6 +72,7 @@ import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Document, DocumentChecked, UploadFilled } from '@element-plus/icons-vue'
 import { read as readWorkbook } from 'xlsx'
+import { findSupplierRatioSheets } from '../utils/supplierSupplyRatioWorkbook'
 import { getCmsCostUploadFile, getCmsCostUploadFileName, validateCmsCostFile } from '../api/cmsCost'
 import { importSupplierSupplyRatioExcel } from '../api/supplierSupplyRatios'
 const visible = defineModel({ type: Boolean, default: false })
@@ -98,11 +99,11 @@ async function handleUploadChange(file) {
   uploadFileName.value = getCmsCostUploadFileName(raw)
   importResult.value = null
   try {
-    const workbook = readWorkbook(await raw.arrayBuffer(), { type: 'array', bookSheets: true })
+    const workbook = readWorkbook(await raw.arrayBuffer(), { type: 'array', sheetRows: 21 })
     // 工作表位置不影响识别；多个候选必须由用户选择。
-    sheetNames.value = workbook.SheetNames.filter((name) => /供货比[例率利]/.test(name.replace(/[\s\u3000]+/g, '')))
+    sheetNames.value = findSupplierRatioSheets(workbook)
     if (sheetNames.value.length === 1) selectedSheet.value = sheetNames.value[0]
-    if (!sheetNames.value.length) ElMessage.warning('未找到名称包含供货比例或供货比率的工作表')
+    if (!sheetNames.value.length) ElMessage.warning('未找到供货比例数据表，前21行需包含：物料代码、物料名称、供应商名称、供货比例')
   } catch (error) {
     uploadFile.value = null
     ElMessage.error('Excel 无法读取，请检查文件格式')

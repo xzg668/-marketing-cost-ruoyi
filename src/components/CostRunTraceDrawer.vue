@@ -222,6 +222,7 @@ import { netLossPercent } from '../utils/netLossRate'
 const sheet = ref(null)
 
 const props = defineProps({
+  savedSheet: { type: Object, default: null },
   modelValue: {
     type: Boolean,
     default: false,
@@ -416,6 +417,11 @@ async function loadTraces() {
   selectedDetail.value = null
   sheet.value = null
   try {
+    if (props.savedSheet?.identity?.monthly && props.savedSheet.identity.costRunNo === runNo) {
+      sheet.value = props.savedSheet
+      traceRows.value = []
+      return
+    }
     const response = await fetchCostRunTraces(runNo)
     if (request !== traceRequest || runNo !== props.costRunNo) return
     sheet.value = response?.sheet || null

@@ -215,7 +215,7 @@ export const currentCostingBlockLabel = ({ historyView = false, workspaceStatus,
     WAIT_PRICE: '缺少价格，待重新核算',
     WAIT_BOM: '缺少 BOM，待重新核算',
     WAIT_PRICE_TYPE: '待按当前顺序重新检查价格',
-    STALE: '输入已变化，待重新核算',
+    STALE: '当前输入或核算规则已变化，需重新核算；已保存结果仍可查看',
     FAILED: '本次核算失败',
   }
   return labels[workspaceStatus] || (overallStatus === 'BLOCKED' ? '本次核算受阻' : '')

@@ -3,11 +3,17 @@
     <div class="supplier-review__heading">
       <h3>供货比率确认</h3>
       <span v-if="refreshing">导入已完成，正在自动取价…</span>
+      <el-button v-hasPermi="['ingest:quote:list']" type="primary" plain
+        :loading="exporting" :disabled="readonly" @click="exportRatios">导出供货比率补齐表</el-button>
     </div>
-    <el-table :data="reviews" border>
+    <p class="supplier-review__help">导出包含各物料的完整供应商集合及已有比率，补齐后可到供货比率表导入；型号未维护时留空。</p>
+    <el-table :data="tableRows" border>
       <el-table-column label="物料代码" min-width="170">
         <template #default="{ row }">{{ row.scope.materialCode }}</template>
       </el-table-column>
+      <el-table-column prop="materialName" label="名称" min-width="150" show-overflow-tooltip />
+      <el-table-column prop="specification" label="规格" min-width="180" show-overflow-tooltip />
+      <el-table-column prop="model" label="型号" min-width="180" show-overflow-tooltip />
       <el-table-column label="说明" min-width="300">
         <template #default="{ row }">{{ row.message }}</template>
       </el-table-column>
@@ -29,6 +35,7 @@
     <el-dialog v-model="confirmVisible" title="供货比率新增审核" width="720px" :close-on-click-modal="false">
       <template v-if="selected">
         <p class="supplier-review__material">物料 {{ selected.scope.materialCode }} · {{ selected.scope.pricingDate }}</p>
+        <p class="supplier-review__material">{{ selected.materialName || '名称未维护' }} · 规格：{{ selected.specification || '未维护' }} · 型号：{{ selected.model || '未维护' }}</p>
         <el-table :data="selected.candidates" border>
           <el-table-column label="供应商" min-width="210">
             <template #default="{ row }">{{ row.price.supplierName || row.price.supplierCode }}</template>
@@ -56,9 +63,9 @@
 </template>
 
 <script setup>
-import { onUnmounted, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { confirmSupplierPriceReview, fetchQuotePricePrepare } from '../api/quoteRequests'
+import { confirmSupplierPriceReview, exportQuoteSupplierRatios, fetchQuotePricePrepare } from '../api/quoteRequests'
 import { formatPercent } from '../utils/supplierSupplyRatio'
 import SupplierSupplyRatioImportDialog from './SupplierSupplyRatioImportDialog.vue'
 
@@ -67,6 +74,7 @@ const props = defineProps({
   itemId: { type: [String, Number], required: true },
   periodMonth: { type: String, required: true },
   reviews: { type: Array, default: () => [] },
+  materials: { type: Array, default: () => [] },
   readonly: Boolean,
   prepareNo: { type: String, default: '' },
 })
@@ -77,9 +85,34 @@ const confirmVisible = ref(false)
 const importVisible = ref(false)
 const saving = ref(false)
 const refreshing = ref(false)
+const exporting = ref(false)
+const tableRows = computed(() => {
+  const materials = new Map(props.materials.map(material => [material.scopeKey, material]))
+  return props.reviews.map(review => ({ ...review, ...materials.get(review.scopeKey) }))
+})
+let exportController
 let timer
 let disposed = false
 let importStartedAt = 0
+
+async function exportRatios() {
+  const scope = JSON.stringify([props.oaNo, String(props.itemId), props.periodMonth])
+  exportController?.abort()
+  const controller = new AbortController()
+  exportController = controller
+  exporting.value = true
+  const isCurrent = () => !disposed && !props.readonly
+    && scope === JSON.stringify([props.oaNo, String(props.itemId), props.periodMonth])
+  try {
+    await exportQuoteSupplierRatios(props.oaNo, props.itemId, props.periodMonth, {
+      signal: controller.signal, isCurrent,
+    })
+  } catch (error) {
+    if (!controller.signal.aborted && isCurrent()) ElMessage.error(error.message || '导出失败，请重试')
+  } finally {
+    if (exportController === controller) exporting.value = false
+  }
+}
 
 function openReview(row) {
   selected.value = row
@@ -151,7 +184,7 @@ async function poll() {
 }
 
 watch(() => props.reviews, () => schedulePoll(), { immediate: true })
-onUnmounted(() => { disposed = true; clearTimeout(timer) })
+onUnmounted(() => { disposed = true; clearTimeout(timer); exportController?.abort() })
 </script>
 
 <style scoped>
@@ -161,4 +194,5 @@ onUnmounted(() => { disposed = true; clearTimeout(timer) })
 .supplier-review__heading span, .supplier-review__material { color: #606266; font-size: 13px; }
 .supplier-review__choices { display: flex; flex-direction: column; align-items: flex-start; }
 .supplier-review__note { color: #a66a14; font-size: 13px; margin: 10px 0 0; }
+.supplier-review__help { color: #606266; font-size: 13px; line-height: 1.6; }
 </style>

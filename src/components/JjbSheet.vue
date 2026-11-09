@@ -5,27 +5,28 @@
       <table class="jjb-table" aria-label="产品成本计算一览表">
         <colgroup><col v-for="(column, index) in jjbColumns" :key="column[0]" :style="{ width: `${jjbColumnWidths[index] / totalWidth * 100}%` }" /></colgroup>
         <thead>
-          <tr class="jjb-title"><th colspan="15"><h2>产品成本计算一览表</h2></th></tr>
+          <tr class="jjb-title"><th :colspan="jjbColumns.length"><h2>产品成本计算一览表</h2></th></tr>
           <tr v-for="(header, index) in headers" :key="index" class="jjb-header" :style="{ height: `${header.height}px` }">
             <td v-for="cell in header.cells" :key="cell.column" :colspan="cell.colspan" :class="{ 'header-label': cell.label }" :title="cell.value">{{ cell.value }}</td>
           </tr>
-          <tr class="jjb-columns"><th v-for="(column, index) in jjbColumns" :key="column[0]" scope="col" :class="{ 'metal-column': index >= 6 && index <= 9 }">{{ column[1] }}</th></tr>
+          <tr class="jjb-columns"><th v-for="(column, index) in jjbColumns" :key="column[0]" scope="col" :class="{ 'metal-column': ['grossWeight', 'netWeight', 'rawUnitPrice', 'scrapUnitPrice'].includes(column[0]) }">{{ column[1] }}</th></tr>
         </thead>
         <tbody v-for="group in groups" :key="group.code" :data-section="group.code">
           <tr v-for="(row, index) in group.rows" :key="row.key" :data-row-key="row.key" :data-row-code="row.code" :data-kind="row.kind" :class="[`kind-${row.kind.toLowerCase()}`, { 'summary-row': row.code === 'MANUFACTURE_COST' }]">
             <td v-for="cell in sheetRowCells(row, group, index)" :key="cell.column" :colspan="cell.colspan" :rowspan="cell.rowspan" :data-column="cell.key" :class="{ numeric: numericColumns.has(cell.key), 'side-label': cell.label }" :title="cell.key === 'basis' ? rowBasis(row) : cell.value">
-              <button v-if="cell.key === 'amount' && row.amount != null" class="jjb-trace-link" type="button" @click="$emit('trace', row)">{{ savedMoney(row.amount) }}</button>
+              <button v-if="cell.key === 'code' && row.code && ['PART', 'HOUSEHOLD', 'EXPLANATION'].includes(row.kind)" class="jjb-trace-link" type="button" :aria-label="`查看 ${row.code} 的核算底稿`" @click="$emit('trace', row)">{{ cell.value }}</button>
+              <button v-else-if="cell.key === 'amount' && row.amount != null" class="jjb-trace-link" type="button" @click="$emit('trace', row)">{{ savedMoney(row.amount) }}</button>
               <template v-else>{{ cell.value }}</template>
             </td>
           </tr>
         </tbody>
         <tbody class="jjb-totals">
           <tr v-for="total in totals" :key="total.key" :data-total="total.key">
-            <th colspan="3" scope="row">{{ total.name }}</th><td></td><td></td>
+            <th colspan="3" scope="row">{{ total.name }}</th><td></td><td></td><td></td>
             <td class="numeric" data-column="amount">{{ savedMoney(total.amount) }}</td>
             <td v-for="column in 9" :key="column">{{ column === 8 && total.amount == null ? '历史未记录' : '' }}</td>
           </tr>
-          <tr class="jjb-note"><td colspan="15">成本版本：{{ sheet.identity.versionNo || sheet.identity.costRunNo }}；核算月份：{{ sheet.identity.pricingMonth }}。金额为元/件；产品属性系数已包含在保存金额中。{{ sheet.header.descriptionBasis }}</td></tr>
+          <tr class="jjb-note"><td :colspan="jjbColumns.length">成本版本：{{ sheet.identity.versionNo || sheet.identity.costRunNo }}；核算月份：{{ sheet.identity.pricingMonth }}。金额为元/件；产品属性系数已包含在保存金额中。{{ sheet.header.descriptionBasis }}</td></tr>
         </tbody>
       </table>
     </div>
@@ -45,7 +46,7 @@ const numericColumns = new Set(['unitPrice', 'quantity', 'amount', 'grossWeight'
 <style scoped>
 .jjb-sheet { background:#fff; color:#000; padding:8px; }
 .jjb-scroll { overflow:auto; }
-.jjb-table { border-collapse:collapse; table-layout:fixed; width:100%; min-width:1480px; border:2px solid #000; font:12px SimSun,"Songti SC",serif; }
+.jjb-table { border-collapse:collapse; table-layout:fixed; width:100%; min-width:1560px; border:2px solid #000; font:12px SimSun,"Songti SC",serif; }
 .jjb-table th,.jjb-table td { border:1px solid #000; padding:2px 3px; height:24px; box-sizing:border-box; text-align:center; vertical-align:middle; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .jjb-title th { height:57px; border:0; }
 .jjb-title h2 { margin:0; font-size:24px; font-weight:700; letter-spacing:2px; }

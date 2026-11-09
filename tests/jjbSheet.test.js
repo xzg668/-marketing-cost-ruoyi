@@ -15,9 +15,9 @@ test('decimal display preserves huge values, negative differences, explicit zero
   assert.throws(() => savedMoney(1.234567), /十进制文本/)
   assert.throws(() => savedMoney('1.23456789'), /十进制文本/)
 })
-test('A through O retain D=P E=Q F=Ai without arithmetic', () => {
-  assert.equal(jjbColumns.length, 15)
-  assert.deepEqual(jjbColumns.slice(3, 6).map(x => x[0]), ['unitPrice', 'quantity', 'amount'])
+test('A through P retain D=price E=quantity F=unit G=amount without arithmetic', () => {
+  assert.equal(jjbColumns.length, 16)
+  assert.deepEqual(jjbColumns.slice(3, 7).map(x => x[0]), ['unitPrice', 'quantity', 'unit', 'amount'])
   const row = { kind: 'HOUSEHOLD', householdRate: '0.085', salesRate: '0.25' }
   assert.equal(rowBasis(row), 'H=8.5%；S=25%')
   assert.equal(ratePercent('0.000000123456789012'), '0.0000123456789012%')

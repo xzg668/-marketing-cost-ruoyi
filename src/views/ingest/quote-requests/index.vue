@@ -82,6 +82,7 @@
         <template #default="{ row }">{{ statusLabel('quoteScenario', row.quoteScenario) }}</template>
       </el-table-column>
       <el-table-column prop="customer" label="客户名称" min-width="180" />
+      <el-table-column prop="salespersonName" label="营业员姓名" min-width="120" show-overflow-tooltip />
       <el-table-column prop="applyDate" label="申请日期" width="120" />
       <el-table-column prop="applicantUnit" label="申请单位" min-width="160" />
       <el-table-column prop="applicantDept" label="申请部门" min-width="140" />

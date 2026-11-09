@@ -12,7 +12,7 @@
       </div>
     </section>
 
-    <el-alert class="ratio-policy" title="财务更新过的料号以本次完整供货比率为准，旧集合中未出现的供应商转为历史；未导入的料号持续沿用原值。0%表示退出供货，空白表示未填写，无需每月重传或填写生效日期。" type="info" :closable="false" show-icon />
+    <el-alert class="ratio-policy" title="Excel按料号整组更新，未导入的料号沿用原值；单条编辑保留同料号的其他供应商。0%表示退出供货，空白表示未填写，无需每月重传或填写生效日期。" type="info" :closable="false" show-icon />
     <section class="query-panel">
       <el-form :model="filters" class="query-form" :inline="true" label-width="78px">
         <el-form-item label="物料代码">
@@ -28,7 +28,7 @@
           <el-input v-model="filters.supplierName" clearable placeholder="供应商名称" />
         </el-form-item>
         <el-form-item label="供应商代码"><el-input v-model="filters.supplierCode" clearable placeholder="供应商代码" /></el-form-item>
-        <el-form-item label="导入批次"><el-input v-model="filters.sourceBatchNo" clearable placeholder="批次号" /></el-form-item>
+        <el-form-item label="变更批次"><el-input v-model="filters.sourceBatchNo" clearable placeholder="批次号" /></el-form-item>
         <el-form-item label="来源">
           <el-select v-model="filters.sourceType" clearable placeholder="全部" style="width: 120px">
             <el-option
@@ -67,7 +67,8 @@
             <el-tag v-if="row.supplyRatio !== null && Number(row.supplyRatio) === 0" size="small" type="info">退出供货</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="来源" width="95">
+        <el-table-column prop="selectionRule" label="取价规则" min-width="210" show-overflow-tooltip />
+      <el-table-column label="来源" width="95">
           <template #default="{ row }">
             <el-tag size="small" :type="sourceTagType(row.sourceType)">
               {{ row.sourceType || '-' }}
@@ -85,8 +86,10 @@
           </template>
         </el-table-column>
         <el-table-column prop="updatedAt" label="更新时间" width="170" />
-        <el-table-column label="操作" width="130" fixed="right">
+        <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
+            <el-button v-if="row.isActive === 1" v-hasPermi="['base:supplier-supply-ratio:import']"
+              type="primary" link @click="openEdit(row)">编辑</el-button>
             <el-button type="primary" link @click="openChanges(row)">变更记录</el-button>
           </template>
         </el-table-column>
@@ -103,6 +106,7 @@
     </section>
 
     <SupplierSupplyRatioImportDialog v-model="importDialogVisible" @imported="onRatioImported" />
+    <SupplierSupplyRatioEditDialog v-model="editDialogVisible" :row="editingRow" @saved="fetchRows" />
 
     <el-dialog v-model="changeDialogVisible" title="供货关系变更记录 / 批次明细" width="92%">
       <el-form :inline="true" :model="changeFilters">
@@ -127,9 +131,9 @@
         <el-table-column label="版本关联" width="140"><template #default="{ row }">{{ row.previousVersionId ?? '新增' }} → {{ row.after?.isActive === 0 ? '历史' : row.versionId }}</template></el-table-column>
         <el-table-column prop="changeReason" label="变更原因" min-width="180" />
         <el-table-column prop="changedByName" label="操作人" width="130" />
-        <el-table-column prop="changedAt" label="导入时间" width="180" />
+        <el-table-column prop="changedAt" label="变更时间" width="180" />
         <el-table-column prop="importFileName" label="导入文件" min-width="200" />
-        <el-table-column prop="batchNo" label="导入批次" min-width="210" />
+        <el-table-column prop="batchNo" label="变更批次" min-width="210" />
         <template #empty><el-empty description="没有匹配的变更记录；历史版本可在主表切换查看" /></template>
       </el-table>
       <BasePagination v-model:current-page="changePage" v-model:page-size="changePageSize" :total="changeTotal" />
@@ -144,6 +148,7 @@ import { useRoute } from 'vue-router'
 import { RefreshLeft, RefreshRight, Search, Upload } from '@element-plus/icons-vue'
 import BasePagination from '../components/BasePagination.vue'
 import SupplierSupplyRatioImportDialog from '../components/SupplierSupplyRatioImportDialog.vue'
+import SupplierSupplyRatioEditDialog from '../components/SupplierSupplyRatioEditDialog.vue'
 import { formatPercent, normalizeSupplierRatioChange, supplierRatioChangeFields } from '../utils/supplierSupplyRatio'
 import { fetchSupplierSupplyRatios, fetchSupplierSupplyRatioChanges, normalizeSupplierSupplyRatioPage } from '../api/supplierSupplyRatios'
 
@@ -156,6 +161,7 @@ const initialFilters = () => ({ materialCode: '', materialName: '', specModel: '
 const filters = reactive(initialFilters())
 const tableRows = ref([]), total = ref(0), currentPage = ref(1), pageSize = ref(20), loading = ref(false)
 const importDialogVisible = ref(false), changeDialogVisible = ref(false), changeLoading = ref(false)
+const editDialogVisible = ref(false), editingRow = ref(null)
 const changeFilters = reactive({ materialCode: '', supplierCode: '', batchNo: '' })
 const changeRows = ref([]), changeTotal = ref(0), changePage = ref(1), changePageSize = ref(20)
 const sourceTagType = (value) => SOURCE_TYPE_OPTIONS.find((option) => option.value === value)?.tag || ''
@@ -170,6 +176,7 @@ async function fetchRows() {
 function applyFilters() { currentPage.value = 1; fetchRows() }
 function resetFilters() { Object.assign(filters, initialFilters()); applyFilters() }
 function openImportDialog() { importDialogVisible.value = true }
+function openEdit(row) { editingRow.value = row; editDialogVisible.value = true }
 function onRatioImported() { filters.isActive = 1; applyFilters() }
 async function fetchChanges() {
   changeLoading.value = true

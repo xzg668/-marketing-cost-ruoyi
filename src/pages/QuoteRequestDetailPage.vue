@@ -684,11 +684,8 @@ function viewCostResult(result) {
   if (result?.resultType !== 'QUOTE_COST') return selectCostResult(result)
   if (!result.versionId || !costResultDialog.row) return
   costResultDialog.selected = result
-  if (String(result.versionId) === String(costResultDialog.row.confirmedCostVersionId)) {
-    costResultDialog.visible = false
-    openCostingWorkbench(costResultDialog.row, { tab: 'PRODUCT_DETAIL' })
-    return
-  }
+  // Every saved version opens its saved result. The latest version must not enter
+  // the preparation workspace and load all current BOM/price checks first.
   openSelectedQuoteCostResult()
 }
 

@@ -1,12 +1,12 @@
 // Values are already rounded by the saved-version reader. Never calculate a formal amount here.
 export const jjbColumns = Object.freeze([
   ['code', '子件编码'], ['name', '部品名'], ['drawingNo', '部品图号'], ['unitPrice', '部品单价'],
-  ['quantity', '部品用量'], ['amount', '部品价格'], ['grossWeight', '毛重'], ['netWeight', '净重'],
+  ['quantity', '部品用量'], ['unit', '计量单位'], ['amount', '部品价格'], ['grossWeight', '毛重'], ['netWeight', '净重'],
   ['rawUnitPrice', '原材料\n单价'], ['scrapUnitPrice', '废料\n单价'], ['material', '材质'],
   ['shape', '形态属性'], ['priceSource', '价格来源'], ['remark', '备注\n（手填）'], ['basis', '备注-CMS\n来源信息'],
 ])
-// Exact relative column widths from the supplied 见机表3, A:O.
-export const jjbColumnWidths = Object.freeze([15.9166666667, 19, 20.4166666667, 14.5, 17.5, 15.75, 17.8333333333, 13.5833333333, 13.25, 18.4166666667, 19.0833333333, 14.8333333333, 21.25, 13.4166666667, 13.5833333333])
+// Reference widths with a measurement-unit column beside the saved quantity, A:P.
+export const jjbColumnWidths = Object.freeze([15.9166666667, 19, 20.4166666667, 14.5, 17.5, 10, 15.75, 17.8333333333, 13.5833333333, 13.25, 18.4166666667, 19.0833333333, 14.8333333333, 21.25, 13.4166666667, 13.5833333333])
 
 export function sheetHeaderRows(sheet) {
   const h = sheet.header || {}, q = h.quotation || {}, id = sheet.identity || {}
@@ -16,7 +16,7 @@ export function sheetHeaderRows(sheet) {
     ['父件名称', h.productName, null, '父件型号', h.productModel, '业务类型', q.businessType, '事业部', q.division, '美国柜装黄铜', '', 'H65黄铜边料', '', '/', ''],
     ['一级编码', id.productCode, null, '父件规格', q.spec, '客户图号', h.customerDrawing, '客户Cu\n（元/公斤）', savedMoney(q.customerCuPrice), '白银', savedMoney(q.silverPrice), '黄金', savedMoney(q.goldPrice), '/', ''],
   ]
-  return values.map((row, index) => ({ height: [48, 64, 57, 60][index], cells: row.flatMap((value, column) => column === 2 ? [] : [{ column, colspan: column === 1 ? 2 : 1, value: value ?? '', label: [0, 3, 5, 7, 9, 11, 13].includes(column) }]) }))
+  return values.map((row, index) => ({ height: [48, 64, 57, 60][index], cells: row.flatMap((value, column) => column === 2 ? [] : [{ column: column >= 5 ? column + 1 : column, colspan: [1, 4].includes(column) ? 2 : 1, value: value ?? '', label: [0, 3, 5, 7, 9, 11, 13].includes(column) }]) }))
 }
 
 export function sheetRowCells(row, group, index) {
@@ -28,7 +28,7 @@ export function sheetRowCells(row, group, index) {
   } else {
     cells[grouped || row.kind === 'SUBTOTAL' ? 2 : 1].value = row.name || ''
     cells[grouped || row.kind === 'SUBTOTAL' ? 2 : 1].key = 'name'
-    for (let c = 3; c <= 9; c++) cells[c].value = row[jjbColumns[c][0]] ?? ''
+    for (let c = 3; c <= 10; c++) cells[c].value = row[jjbColumns[c][0]] ?? ''
   }
   if (grouped) {
     if (index === 0) Object.assign(cells[0], { value: group.label, rowspan: group.rows.length, label: true })
@@ -41,15 +41,15 @@ export function sheetRowCells(row, group, index) {
   if (row.kind === 'PROPERTY') {
     cells[0].value = '产品属性'; cells[0].label = true
     cells[1].value = ''; cells[2].value = row.name === '产品属性' ? row.remark || '' : row.name || ''
-    cells[5].value = row.coefficient ?? ''; cells[5].key = 'coefficient'
+    cells[6].value = row.coefficient ?? ''; cells[6].key = 'coefficient'
   }
-  if (row.kind === 'HOUSEHOLD') cells[12].value = '家用部件含二项费用询价'
+  if (row.kind === 'HOUSEHOLD') cells[13].value = row.priceSource || '询价（家用部件）'
   if (['LOSS', 'MANUFACTURE'].includes(row.code)) {
     cells[3].value = ratePercent(row.rate); cells[3].key = 'rate'
   }
-  cells[13].value = row.remark || ''
+  cells[14].value = row.remark || ''
   // Detailed source identities remain available through the existing trace action and tooltips.
-  cells[14].value = (row.rate != null && !['LOSS', 'MANUFACTURE'].includes(row.code)) || ['HOUSEHOLD', 'FEE'].includes(row.kind) ? rowBasis(row) : ''
+  cells[15].value = (row.rate != null && !['LOSS', 'MANUFACTURE'].includes(row.code)) || ['HOUSEHOLD', 'FEE'].includes(row.kind) ? rowBasis(row) : ''
   return cells.filter(c => !c.omit)
 }
 export const sectionLabels = Object.freeze({

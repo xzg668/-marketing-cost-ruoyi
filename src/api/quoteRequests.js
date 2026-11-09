@@ -117,6 +117,19 @@ export const confirmSupplierPriceReview = (oaNo, itemId, body) =>
     body,
   })
 
+export const supplierRatioExportUrl = (oaNo, itemId, periodMonth) =>
+  `/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/supplier-price-reviews/export?periodMonth=${encodeURIComponent(periodMonth)}`
+
+export const exportQuoteSupplierRatios = async (oaNo, itemId, periodMonth, options) => {
+  if (!oaNo || !itemId || !periodMonth) throw new Error('导出需要明确的报价产品和核算月份')
+  const filename = `供货比率补齐_${oaNo}_${itemId}_${periodMonth}.xlsx`.replace(/[\\/:*?"<>|]/g, '_')
+  const token = localStorage.getItem('token')
+  return downloadAuthenticatedBlob(supplierRatioExportUrl(oaNo, itemId, periodMonth), filename, {
+    ...options,
+    isCurrent: () => token === localStorage.getItem('token') && (options?.isCurrent?.() ?? true),
+  })
+}
+
 export const fetchQuoteCostRun = (oaNo, itemId, params) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/cost-run`, { params })
 

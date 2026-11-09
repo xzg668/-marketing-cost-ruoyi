@@ -52,11 +52,12 @@
         </template>
       </el-table-column>
       <el-table-column prop="createTime" label="创建时间" width="170" />
-      <el-table-column label="操作" width="280" fixed="right">
+      <el-table-column label="操作" width="360" fixed="right">
         <template #default="{ row }">
           <el-button v-hasPermi="['system:user:edit']" link type="primary" @click="handleEdit(row)">编辑</el-button>
           <el-button v-hasPermi="['system:user:edit']" link type="primary" @click="handleAssignRoles(row)">分配角色</el-button>
           <el-button v-hasPermi="['system:user:edit']" link type="warning" @click="handleResetPwd(row)">重置密码</el-button>
+          <el-button v-if="canManageQuoteScope" link type="primary" @click="quoteScopeUser = row">报价范围</el-button>
           <el-button v-hasPermi="['system:user:remove']" link type="danger" @click="handleDelete(row)">删除</el-button>
         </template>
       </el-table-column>
@@ -148,6 +149,8 @@
       </template>
     </el-dialog>
 
+    <QuoteScopeDialog v-if="quoteScopeUser" :user="quoteScopeUser" @close="quoteScopeUser = null" />
+
     <!-- 分配角色弹窗 -->
     <el-dialog v-model="roleDialogVisible" title="分配角色" width="420px" destroy-on-close>
       <el-checkbox-group v-model="selectedRoleIds">
@@ -167,7 +170,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   listUsers, createUser, updateUser, deleteUser,
@@ -176,6 +179,13 @@ import {
 // T04：新增用户表单需要部门树 + 岗位多选的下拉数据源
 import { getDeptTreeSelect } from '../../../api/system/dept'
 import { listAllPosts } from '../../../api/system/post'
+
+import QuoteScopeDialog from './QuoteScopeDialog.vue'
+import { useUserStore } from '../../../store/modules/user'
+
+const actor = useUserStore()
+const canManageQuoteScope = computed(() => actor.roles.some(role => role.toLowerCase() === 'admin'))
+const quoteScopeUser = ref(null)
 
 const loading = ref(false)
 const userList = ref([])

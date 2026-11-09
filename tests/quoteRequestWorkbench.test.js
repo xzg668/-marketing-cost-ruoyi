@@ -816,7 +816,7 @@ it('current blockage takes precedence while historical frozen success remains re
   assert.equal(currentCostingBlockLabel({workspaceStatus:'SUCCESS', overallStatus:'PENDING'}), '')
   assert.equal(currentCostingBlockLabel({workspaceStatus:'WAIT_PRICE', overallStatus:'BLOCKED', historyView:true}), '')
   assert.equal(currentCostingBlockLabel({workspaceStatus:'RUNNING', overallStatus:'BLOCKED'}), '')
-  assert.equal(currentCostingBlockLabel({workspaceStatus:'STALE'}), '输入已变化，待重新核算')
+  assert.equal(currentCostingBlockLabel({workspaceStatus:'STALE'}), '当前输入或核算规则已变化，需重新核算；已保存结果仍可查看')
 })
 
 

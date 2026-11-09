@@ -23,3 +23,9 @@ export const assignRoles = (id, data) =>
 
 export const listRoles = () =>
   request('/api/v1/system/user/roles')
+
+export const getQuoteScope = (id) =>
+  request(`/api/v1/system/user/${id}/quote-scope`)
+
+export const saveQuoteScope = (id, quoteScope) =>
+  request(`/api/v1/system/user/${id}/quote-scope`, { method: 'PUT', body: { quoteScope } })
