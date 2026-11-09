@@ -36,7 +36,7 @@
       <section v-if="selected.householdCalculation?.calculatedW != null" class="monthly-evidence" aria-label="家用W列计算核对">
         <h4>家用 W 列计算核对</h4>
         <p>{{ selected.householdCalculation.formula }}</p>
-        <p>铜锌价格：元/公斤；重量：克。客户未填时采用保存的财务基价。</p>
+        <p>铜锌价格：元/公斤；重量：克。美国柜装黄铜、H65黄铜边料按本单保存的铜价档位取值；其他因素沿用本单填写值或原基准。</p>
         <dl><template v-for="field in householdFields" :key="field.key"><dt>{{ field.label }}</dt><dd>{{ selected.householdCalculation[field.key] ?? '未记录' }}</dd></template></dl>
       </section>
       <div v-for="source in selected.sources" :key="`${source.table}:${source.id}`" class="source-note">来源：{{ source.table || '历史未记录' }}<span v-if="source.id != null"> #{{ source.id }}</span> {{ source.description || '' }}</div>
@@ -61,6 +61,8 @@ import { savedMoney, rowBasis, sheetTotals } from '../utils/jjbSheet'
 import { selectEvidenceRow } from '../utils/jjbEvidence'
 const props = defineProps({ sheet: { type: Object, required: true }, initialTrace: { type: Object, default: null } })
 const sourceFields = [
+  ['financialScenarioPrice','基准口径单价 P0'], ['customerScenarioPrice','客户口径单价 P1'],
+  ['customerCuBand','客户Cu选中档位'], ['factorSubstitution','材料因素代入依据'],
   ['sourcePrice','原来源表单价'], ['originalMonth','来源月份'], ['file','来源文件'], ['sheet','原表页签'],
   ['row','原表行号'], ['document','来源单据'], ['orderNo','采购订单号'], ['orderLineNo','订单行号'],
   ['effectiveFrom','有效期起'], ['effectiveTo','有效期止'],
