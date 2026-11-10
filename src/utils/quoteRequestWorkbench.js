@@ -75,6 +75,7 @@ export const INGEST_STATUS_OPTIONS = [
 ]
 
 export const CALC_STATUS_OPTIONS = [
+  { value: '待核算', label: '待核算', type: 'warning' },
   { value: '未核算', label: '未核算', type: 'info' },
   { value: '试算中', label: '试算中', type: 'warning' },
   { value: '已核算', label: '已核算', type: 'success' },
@@ -192,6 +193,7 @@ export function formatDateTime(value) {
 export function quoteRequestCompletionValue(row) {
   if (!row) return 'NOT_DONE'
   const calcStatus = normalizeCalcStatus(row.calcStatus)
+  if (calcStatus === '待核算') return 'NOT_DONE'
   const costRunStatus = normalizeText(row.costRunStatus || row.costStatus || row.runStatus).toUpperCase()
   if (calcStatus === '已核算') return 'DONE'
   if (['DONE', 'SUCCESS', 'COMPLETED', 'FINISHED'].includes(costRunStatus)) return 'DONE'

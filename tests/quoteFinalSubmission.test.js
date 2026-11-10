@@ -43,3 +43,19 @@ test('读取失败清空旧成本并禁用提交，不继续显示过期金额',
   const h = harness({ fetch: async () => { if (fail) throw Error('读取失败'); return ready }, submit: async () => {} })
   await flush(); fail = true; await h.refresh(); assert.equal(h.costsByItem.value.size, 0); assert.equal(h.canSubmit.value, false); h.scope.stop()
 })
+
+ test('returned quote can submit existing costs without recalculation', async () => {
+  const requests = []
+  const state = { ...ready, status: 'RETURNED', readyProducts: 1, totalProducts: 1 }
+  const h = harness({ fetch: async () => state, submit: async (_, body) => {
+    requests.push(body)
+    return { ...state, status: 'SUBMITTED', canConfirm: false }
+  } })
+  await h.refresh()
+  assert.equal(h.canSubmit.value, true)
+  await h.submit()
+  assert.equal(requests.length, 1)
+  assert.equal(requests[0].fingerprint, state.fingerprint)
+  assert.equal(h.canSubmit.value, false)
+  h.scope.stop()
+})

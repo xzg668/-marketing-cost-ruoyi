@@ -1,7 +1,7 @@
 <template>
   <section class="final-submission" aria-label="整单成本提交" :aria-busy="loading || sending">
     <div class="submission-summary">
-      <strong>已核算 {{ state?.readyProducts ?? '—' }} / {{ totalProducts }}</strong>
+      <strong>{{ state?.status === 'RETURNED' ? '可提交成本' : '已核算' }} {{ state?.readyProducts ?? '—' }} / {{ totalProducts }}</strong>
       <span v-if="message" class="submission-message" :class="{ 'is-warning': error || state?.error || state?.status === 'UNKNOWN' }" role="status">{{ message }}</span>
     </div>
     <el-button type="primary" :loading="sending" :disabled="!canSubmit" @click="$emit('submit')">
@@ -23,7 +23,9 @@ const message = computed(() => {
   if (state.status === 'PENDING') return '提交处理中；若长时间未返回，请核实 OA 结果'
   if (state.status === 'UNKNOWN') return state.error || 'OA 提交结果待确认，请核实原流程'
   if (state.status === 'REJECTED' || state.status === 'NOT_SENT') return state.error || '上次提交未成功，核对后可重新提交'
-  if (state.returnReason) return `领导退回：${state.returnReason}。${state.canConfirm ? '重算已完成，可以重新提交' : (state.error || '请重新核算')}`
+  if (state.status === 'RETURNED') return state.canConfirm
+    ? '可确认现有成本并再次提交，也可重新核算'
+    : state.error || '请完成缺失的成本后再提交'
   // 未核算的产品由进度和明细状态说明；全部核算后仍不能提交时保留具体原因。
   return state.readyProducts === props.totalProducts ? state.error || '' : ''
 })

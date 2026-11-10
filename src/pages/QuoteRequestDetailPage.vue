@@ -42,7 +42,7 @@
 
     <el-alert v-if="detail.oaWorkflow" :closable="false" show-icon
       :type="detail.oaWorkflow.syncError ? 'warning' : 'info'"
-      :title="'OA流程：' + quoteOaWorkflowLabel(detail.oaWorkflow, finalState)"
+      :title="'OA流程：' + quoteOaWorkflowLabel(detail.oaWorkflow, finalState, detail.calcStatus)"
       :description="detail.oaWorkflow.syncError || detail.oaWorkflow.reason || undefined" />
 
     <QuoteCostingPreparationPanel :oa-no="oaNo" :state="materialState" :checks="materialChecks" :products="productRows" :error="materialError" @refresh="materials.refresh" @view-gap="openCostingGap" />

@@ -128,6 +128,10 @@ export function quoteItemWorkflow(item, drawingWorkspace) {
     return state(base, 'READY', priceReadyLabel(historyPriceCount), 'READY_FOR_COSTING', '可核算',
       'START_COSTING', '核算本产品', '当前资料已准备，可核算本产品')
   }
+  if (item?.calcStatus === '待核算') {
+    return state(base, 'READY', priceReadyLabel(historyPriceCount), 'READY_FOR_COSTING', '待核算',
+      'START_COSTING', '核算本产品', '流程已进入核算环节，已有保存结果仍可查看和核对')
+  }
   if (calculated) {
     return state(base, 'READY', priceReadyLabel(historyPriceCount), 'COMPLETED', '核算完成',
       'VIEW_COSTING_RESULT', '查看结果', historyPriceCount > 0

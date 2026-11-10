@@ -23,3 +23,11 @@ test('提交处理、未知、审批和完成显示真实提交状态', () => {
     assert.equal(quoteOaWorkflowLabel({ state: 'COSTING', label: '待核算' }, { ...ready, status }), label)
   }
 })
+
+test('COSTING通知统一显示待核算，已有成本和退回原因不能覆盖节点状态', () => {
+  for (const state of ['COSTING', 'RECOSTING']) {
+    assert.equal(quoteOaWorkflowLabel({ state, label: '待核算' },
+      { ...ready, status: 'RETURNED', canConfirm: true }), '待核算')
+    assert.equal(quoteOaWorkflowLabel({ state, label: '待核算' }, ready, '待核算'), '待核算')
+  }
+})

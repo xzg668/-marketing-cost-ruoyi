@@ -105,6 +105,7 @@ describe('T11 报价单接入工作台工具', () => {
       ['已完成', '未完成'],
     )
     assert.equal(quoteRequestCompletionLabel({ calcStatus: '已核算' }), '已完成')
+    assert.equal(quoteRequestCompletionLabel({ calcStatus: '待核算', costRunStatus: 'SUCCESS' }), '未完成')
     assert.equal(quoteRequestCompletionLabel({ calcStatus: 'CALCULATED' }), '已完成')
     assert.equal(quoteRequestCompletionLabel({ calcStatus: '未核算' }), '未完成')
     assert.equal(quoteRequestCompletionTagType({ calcStatus: '已核算' }), 'success')
@@ -113,7 +114,7 @@ describe('T11 报价单接入工作台工具', () => {
   it('核算状态下拉只展示业务状态，不重复展示兼容状态码', () => {
     assert.deepEqual(
       CALC_STATUS_OPTIONS.map((item) => item.label),
-      ['未核算', '试算中', '已核算'],
+      ['待核算', '未核算', '试算中', '已核算'],
     )
     assert.equal(new Set(CALC_STATUS_OPTIONS.map((item) => item.label)).size, CALC_STATUS_OPTIONS.length)
   })
