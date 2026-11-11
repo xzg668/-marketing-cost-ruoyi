@@ -57,6 +57,10 @@ export function quoteItemCostStatus(item, cost) {
   return { code: workflow.currentStatus, label: workflow.currentStatusLabel || '待检查' }
 }
 
+export function quoteItemCostAmount(cost) {
+  return cost?.status === 'READY' ? cost.totalCost ?? null : null
+}
+
 export function quoteItemWorkflow(item, drawingWorkspace) {
   const workspace = item?.costingWorkspace || null
   const workspaceStatus = String(workspace?.workspaceStatus || '').toUpperCase()
@@ -71,7 +75,8 @@ export function quoteItemWorkflow(item, drawingWorkspace) {
     assigneeName: item?.technicianName || '',
   }
 
-  if (workspace?.inputChanged || workspaceStatus === 'STALE') {
+  if ((workspace?.inputChanged || workspaceStatus === 'STALE')
+      && !['QUEUED', 'RUNNING', 'WAIT_BOM', 'WAIT_TECH_DATA', 'WAIT_PRICE_TYPE', 'WAIT_PRICE', 'SYSTEM_FAILED'].includes(workspaceStatus)) {
     return state(base, 'STALE', '核算输入已变化', 'STALE', '待重新核算',
       'RESTART_COSTING', '重新核算',
       '规则、替代料、包装或价格来源已变化；重新核算后才会替换当前结果。')

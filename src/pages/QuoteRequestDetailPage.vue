@@ -151,7 +151,7 @@
               <div class="state-message">不含税、不含运费</div>
             </template>
             <template #default="{ row }">
-              <span>{{ finalCosts.get(String(row.id))?.totalCost ?? '—' }}</span>
+              <span>{{ quoteItemCostAmount(finalCosts.get(String(row.id))) ?? '—' }}</span>
             </template>
           </el-table-column>
           <el-table-column label="电子图库" width="170" fixed="right">
@@ -378,7 +378,7 @@ import QuoteCostingPreparationPanel from '../components/quotation/QuoteCostingPr
 import { useQuoteFinalSubmission } from '../composables/useQuoteFinalSubmission'
 import { useQuoteCostingPreparation } from '../composables/useQuoteCostingPreparation'
 import { useQuoteBatchCosting } from '../composables/useQuoteBatchCosting'
-import { withQuoteItemWorkflow, hasQuoteItemCostingGap, quoteItemCostStatus } from '../utils/quoteItemWorkflow'
+import { withQuoteItemWorkflow, hasQuoteItemCostingGap, quoteItemCostStatus, quoteItemCostAmount } from '../utils/quoteItemWorkflow'
 import { workflowStatusTagType } from '../utils/workflowStatus'
 import {
   QUOTE_SCENARIO_OPTIONS,
