@@ -34,6 +34,20 @@ function harness(overrides = {}) {
   return { ...api, oaNo, scope, timers, events, tick }
 }
 
+test('整单还在运行时，已完成产品也及时刷新并保持继续轮询', async () => {
+  let success = 0
+  const h = harness({ fetchProgress: async () => ({ active: true, status: 'RUNNING', successCount: success }) })
+  await h.loadBatchProgress()
+  success = 1
+  await h.tick()
+  assert.deepEqual(h.events, ['refresh'])
+  assert.equal(h.batchRun.value.active, true)
+  assert.equal(h.timers.size, 1)
+  await h.tick()
+  assert.deepEqual(h.events, ['refresh'])
+  h.scope.stop()
+})
+
 test('活动任务及时刷新，读取失败保留退避，完成后停止轮询', async () => {
   const delays = []
   let calls = 0

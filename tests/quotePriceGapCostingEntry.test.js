@@ -2,6 +2,11 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { hasQuoteItemCostingGap, withQuoteItemWorkflow } from '../src/utils/quoteItemWorkflow.js'
 
+test('上次成本待重算且本次有缺口时，仍计入待处理汇总；只有输入变化不冒充缺资料', () => {
+  assert.equal(hasQuoteItemCostingGap({ costingWorkspace: { workspaceStatus: 'STALE', gapCount: 1, lastErrorMessage: '材料301210119未取得价格' } }), true)
+  assert.equal(hasQuoteItemCostingGap({ costingWorkspace: { workspaceStatus: 'STALE', gapCount: 0 } }), false)
+})
+
 for (const workspaceStatus of ['WAIT_PRICE', 'WAIT_PRICE_TYPE']) {
   for (const hasCost of [false, true]) {
     test(`${workspaceStatus} ${hasCost ? '已有成本' : '首次核算'}：补录后可重新检查核算，同时保留缺口入口`, () => {
@@ -32,8 +37,8 @@ for (const workspaceStatus of ['WAIT_PRICE', 'WAIT_PRICE_TYPE']) {
 
 for (const [code, label, status] of [
   ['SUPPLIER_RATIO_REVIEW_REQUIRED', '缺供货比率', 'MISSING_SUPPLIER_RATIO'],
-  ['PRICE_AND_SUPPLIER_RATIO_MISSING', '缺价格/供货比率', 'MISSING_PRICE'],
-  ['PRICE_MISSING', '缺价格', 'MISSING_PRICE'],
+  ['PRICE_AND_SUPPLIER_RATIO_MISSING', '价格/供货比率待处理', 'MISSING_PRICE'],
+  ['PRICE_MISSING', '价格待核对', 'MISSING_PRICE'],
 ]) {
   test(`真实缺口${code}：显示具体原因且保留再次核算`, () => {
     const [item] = withQuoteItemWorkflow({ items: [{ id: 162, costingWorkspace: {

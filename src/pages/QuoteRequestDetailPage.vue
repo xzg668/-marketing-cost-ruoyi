@@ -45,7 +45,7 @@
       :title="'OA流程：' + quoteOaWorkflowLabel(detail.oaWorkflow, finalState, detail.calcStatus)"
       :description="detail.oaWorkflow.syncError || detail.oaWorkflow.reason || undefined" />
 
-    <QuoteCostingPreparationPanel :oa-no="oaNo" :state="materialState" :checks="materialChecks" :products="productRows" :error="materialError" @refresh="materials.refresh" @view-gap="openCostingGap" />
+    <QuoteCostingPreparationPanel :oa-no="oaNo" :state="materialState" :checks="materialChecks" :products="productRows" :error="materialError" :exporting="gapExporting" @refresh="materials.refresh" @view-gap="openCostingGap" @export-gap="exportCostingGaps" />
     <el-alert v-if="drawingReviewCount" :title="`${drawingReviewCount} 个产品的电子图库有差异，请在产品明细中点击“去修正”。`" type="warning" :closable="false" show-icon />
 
 
@@ -100,6 +100,9 @@
           <el-table-column label="业务类型" prop="businessType" min-width="110">
             <template #default="{ row }">{{ row.businessType || '未填写' }}</template>
           </el-table-column>
+          <el-table-column label="预计年用量（万只）" min-width="160" align="right">
+            <template #default="{ row }">{{ row.annualVolume ?? '未填写' }}</template>
+          </el-table-column>
           <el-table-column label="包装类型" prop="packageType" min-width="120">
             <template #default="{ row }">{{ row.packageType || '-' }}</template>
           </el-table-column>
@@ -152,7 +155,10 @@
             </template>
             <template #default="{ row }">
               <span>{{ finalCosts.get(String(row.id))?.totalCost ?? '—' }}</span>
-              <div v-if="finalCosts.get(String(row.id))?.status === 'STALE'" class="state-message">待重新核算</div>
+              <el-tooltip v-if="finalCosts.get(String(row.id))?.status === 'STALE'"
+                :content="row.costingWorkspace?.lastErrorMessage || finalCosts.get(String(row.id))?.message || '本次核算尚未完成'">
+                <div class="state-message">{{ finalCosts.get(String(row.id))?.totalCost != null ? '上次成本，本次待重算' : '待重新核算' }}</div>
+              </el-tooltip>
             </template>
           </el-table-column>
           <el-table-column label="电子图库" width="170" fixed="right">
@@ -357,7 +363,7 @@ import { fetchQuoteCostingPreparation, prepareQuoteCosting, fetchDrawingVerifica
 import { useDrawingCostingContinuation } from '../composables/useDrawingCostingContinuation'
 import { useUserStore } from '../store/modules/user'
 import { fetchAuxiliaryClassifications } from '../api/auxiliaryClassification'
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onScopeDispose, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
@@ -373,6 +379,7 @@ import {
   fetchCurrentQuoteBatchCostRun,
   fetchQuoteRequestDetail,
   submitQuoteProductCostRun,
+  exportQuoteCostingGaps,
 } from '../api/quoteRequests'
 import QuoteCostingPreparationPanel from '../components/quotation/QuoteCostingPreparationPanel.vue'
 import { useQuoteFinalSubmission } from '../composables/useQuoteFinalSubmission'
@@ -400,6 +407,19 @@ const loading = ref(false)
 const checking = ref(false)
 const confirming = ref(false)
 const actionLoadingId = ref('')
+const gapExporting = ref('')
+let gapExportGeneration = 0
+watch(oaNo, () => { gapExportGeneration++; gapExporting.value = '' })
+onScopeDispose(() => { gapExportGeneration++ })
+async function exportCostingGaps(category) {
+  if (gapExporting.value) return
+  const generation = gapExportGeneration, number = oaNo.value
+  const isCurrent = () => generation === gapExportGeneration && oaNo.value === number
+  gapExporting.value = category
+  try { await exportQuoteCostingGaps(number, category, { isCurrent }) }
+  catch (failure) { if (isCurrent()) ElMessage.error(failure?.message || '缺口导出失败，请重试') }
+  finally { if (isCurrent()) gapExporting.value = '' }
+}
 const activeTab = ref('items')
 const detail = ref({})
 const drawingStates = reactive({})

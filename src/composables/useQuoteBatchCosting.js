@@ -61,11 +61,14 @@ export function useQuoteBatchCosting(oaNo, {
   async function acceptProgress(next, scope, isCurrent, submitted = false) {
     if (!isCurrent()) return
     const finished = Boolean(next && !next.active && (submitted || batchRun.value?.active))
+    const completed = value => ['successCount', 'waitingInputCount', 'failedCount', 'skippedCurrentCount']
+      .reduce((sum, key) => sum + (Number(value?.[key]) || 0), 0)
+    const progressed = Boolean(next?.active && completed(next) > completed(batchRun.value))
     retryRead = false
     batchRun.value = next
-    if (finished) {
+    if (finished || progressed) {
       refreshPending = true
-      onFinished(next)
+      if (finished) onFinished(next)
     }
     if (refreshPending) {
       // 即使任务已结束也重试详情读取，避免进度完成而产品行仍显示“核算中”。

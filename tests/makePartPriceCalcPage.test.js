@@ -63,7 +63,7 @@ describe('MPPG-09 制造件价格生成页面', () => {
       '回收单价\\(元/kg\\)',
       '委外加工费',
       '状态',
-      '备注',
+      '处理说明',
     ]) {
       assert.match(pageContent, new RegExp(`label="${label}"`))
     }

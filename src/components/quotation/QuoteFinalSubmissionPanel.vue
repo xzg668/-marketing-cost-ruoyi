@@ -1,7 +1,7 @@
 <template>
   <section class="final-submission" aria-label="整单成本提交" :aria-busy="loading || sending">
     <div class="submission-summary">
-      <strong>{{ state?.status === 'RETURNED' ? '可提交成本' : '已核算' }} {{ state?.readyProducts ?? '—' }} / {{ totalProducts }}</strong>
+      <strong>可提交成本 {{ state?.readyProducts ?? '—' }} / {{ totalProducts }}</strong>
       <span v-if="message" class="submission-message" :class="{ 'is-warning': error || state?.error || state?.status === 'UNKNOWN' }" role="status">{{ message }}</span>
     </div>
     <el-button type="primary" :loading="sending" :disabled="!canSubmit" @click="$emit('submit')">

@@ -535,7 +535,7 @@ describe('T11 报价单接入页面契约', () => {
     assert.equal(workflows[3].nextAction, 'RESTART_COSTING')
     assert.equal(workflows[4].currentStatusLabel, '可核算')
     assert.equal(workflows[4].nextAction, 'START_COSTING')
-    assert.equal(workflows[5].currentStatusLabel, '缺价格')
+    assert.equal(workflows[5].currentStatusLabel, '价格待核对')
     assert.equal(workflows[5].nextAction, 'RESTART_COSTING')
     assert.equal(workflows[5].assigneeName, '财务报价')
     assert.equal(workflows[5].message, '缺少财务基准价格')

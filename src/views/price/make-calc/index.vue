@@ -194,7 +194,7 @@
             <el-table-column label="是否完整取价" width="125">
               <template #default="{ row }">
                 <el-tag size="small" :type="row.priceComplete ? 'success' : 'danger'">
-                  {{ row.priceComplete ? '已取全价' : '缺价格' }}
+                  {{ row.priceComplete ? '已取全价' : '待核对' }}
                 </el-tag>
               </template>
             </el-table-column>
@@ -205,7 +205,7 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="remark" label="备注" min-width="220" show-overflow-tooltip />
+            <el-table-column prop="displayReason" label="处理说明" min-width="260" show-overflow-tooltip />
             <el-table-column label="操作" width="118" fixed="right">
               <template #default="{ row }">
                 <el-button type="primary" link @click="openTrace(row)">查看计算追溯</el-button>
@@ -258,7 +258,7 @@
             <el-table-column prop="missingMaterialNo" label="要补价的料号" width="150" show-overflow-tooltip />
             <el-table-column prop="missingMaterialName" label="补价物料名称" min-width="150" show-overflow-tooltip />
             <el-table-column prop="priceType" label="价格类型" width="110" show-overflow-tooltip />
-            <el-table-column prop="reason" label="缺价原因" min-width="220" show-overflow-tooltip />
+            <el-table-column prop="displayReason" label="待处理原因" min-width="260" show-overflow-tooltip />
             <template #empty>
               <el-empty description="暂无缺价清单" />
             </template>
@@ -422,7 +422,18 @@ const currentMonthText = () => {
 
 const traceText = computed(() => {
   if (!traceRow.value) return ''
-  return traceRow.value.remark || '暂无计算追溯'
+  const row = traceRow.value
+  const materialPriceUnit = ['RAW', '原材料加工'].includes(row.itemProcessType) ? '元/千克'
+    : ['BLANK', '毛坯加工'].includes(row.itemProcessType) ? '元/件' : '（单位待核实）'
+  const lines = [row.displayReason || '请核对本次计算资料',
+    `制造件：${row.parentMaterialNo || '未记录'}；材料：${row.childMaterialNo || '未记录'}`,
+    `毛重：${row.grossWeightG == null ? '未取得' : row.grossWeightG + ' 克'}`,
+    `净重：${row.netWeightG == null ? '未取得' : row.netWeightG + ' 克'}`,
+    `材料单价：${row.rawUnitPrice == null ? '未取得' : row.rawUnitPrice + ' ' + materialPriceUnit}`,
+    `废料 ${row.scrapCode || '未记录'} 回收单价：${row.scrapUnitPrice == null ? '未取得' : row.scrapUnitPrice + ' 元/千克'}`]
+  if (row.remark?.includes('净重按U9副产品反算')) lines.push('净重依据：毛重扣除U9中匹配的废料产出重量。')
+  else if (row.remark?.includes('净重取 parent 理论净重')) lines.push('净重依据：使用制造件档案的理论净重。')
+  return lines.join('\n')
 })
 
 const buildParams = () => ({

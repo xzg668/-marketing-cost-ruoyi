@@ -10,6 +10,19 @@ export const fetchQuoteRequests = (params) =>
 export const fetchQuoteRequestDetail = (oaNo) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}`)
 
+export const fetchQuoteCostingGapDetails = (oaNo, category) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/costing-gaps`, { params: { category }, suppressErrorToast: true })
+
+export const exportQuoteCostingGaps = async (oaNo, category, options) => {
+  const labels = { RATIO: '缺供货比率', PRICE: '缺价格', OTHER: '其他原因' }
+  if (!oaNo || !labels[category]) throw new Error('请选择报价单和缺口类别')
+  const token = localStorage.getItem('token')
+  return downloadAuthenticatedBlob(`/api/v1/quote-requests/${encodePath(oaNo)}/costing-gaps/export?category=${category}`,
+    `${labels[category]}_${oaNo}.xlsx`.replace(/[\\/:*?"<>|]/g, '_'), {
+      ...options, isCurrent: () => token === localStorage.getItem('token') && (options?.isCurrent?.() ?? true),
+    })
+}
+
 const drawingWorkspacePath = (oaNo, itemId) =>
   `/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/drawing-verifications`
 
