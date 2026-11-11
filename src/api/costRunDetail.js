@@ -8,3 +8,6 @@ export const fetchCostRunTraces = (costRunNo) =>
 
 export const fetchCostRunTraceDetail = (costRunNo, traceId) =>
   request(`/api/v1/cost-run/detail/${encodeURIComponent(String(costRunNo || '').trim())}/traces/${encodeURIComponent(String(traceId ?? '').trim())}`)
+
+export const fetchCostAmountComposition = (costRunNo, params) =>
+  request(`/api/v1/cost-run/detail/${encodeURIComponent(String(costRunNo || '').trim())}/composition`, { params })

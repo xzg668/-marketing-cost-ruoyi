@@ -167,8 +167,8 @@
             <el-table-column prop="parentMaterialName" label="名称" min-width="170" show-overflow-tooltip />
             <el-table-column prop="drawingNo" label="图号" min-width="140" show-overflow-tooltip />
             <el-table-column prop="itemProcessType" label="料件类型" width="110" />
-            <el-table-column prop="grossWeightG" label="毛重(g)" width="105" align="right">
-              <template #default="{ row }">{{ formatNumber(row.grossWeightG) }}</template>
+            <el-table-column prop="grossWeightG" label="毛重(g)" min-width="220" align="right">
+              <template #default="{ row }">{{ grossWeightWithSource(formatNumber(row.grossWeightG), manufacturingGrossWeightSource(row)) }}</template>
             </el-table-column>
             <el-table-column prop="netWeightG" label="净重(g)" width="105" align="right">
               <template #default="{ row }">{{ formatNumber(row.netWeightG) }}</template>
@@ -320,6 +320,7 @@
 </template>
 
 <script setup>
+import { grossWeightWithSource, manufacturingGrossWeightSource } from '../../../utils/jjbSheet'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
@@ -427,7 +428,7 @@ const traceText = computed(() => {
     : ['BLANK', '毛坯加工'].includes(row.itemProcessType) ? '元/件' : '（单位待核实）'
   const lines = [row.displayReason || '请核对本次计算资料',
     `制造件：${row.parentMaterialNo || '未记录'}；材料：${row.childMaterialNo || '未记录'}`,
-    `毛重：${row.grossWeightG == null ? '未取得' : row.grossWeightG + ' 克'}`,
+    `毛重：${row.grossWeightG == null ? '未取得' : grossWeightWithSource(row.grossWeightG, manufacturingGrossWeightSource(row)) + ' 克'}`,
     `净重：${row.netWeightG == null ? '未取得' : row.netWeightG + ' 克'}`,
     `材料单价：${row.rawUnitPrice == null ? '未取得' : row.rawUnitPrice + ' ' + materialPriceUnit}`,
     `废料 ${row.scrapCode || '未记录'} 回收单价：${row.scrapUnitPrice == null ? '未取得' : row.scrapUnitPrice + ' 元/千克'}`]

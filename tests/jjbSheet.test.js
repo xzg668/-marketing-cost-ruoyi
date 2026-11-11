@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { savedMoney, rowBasis, ratePercent, sheetGroups, sheetTotals, jjbColumns, sheetHeaderRows } from '../src/utils/jjbSheet.js'
+import { savedMoney, rowBasis, ratePercent, sheetGroups, sheetTotals, jjbColumns, sheetHeaderRows, sheetRowCells, manufacturingGrossWeightSource, grossWeightWithSource } from '../src/utils/jjbSheet.js'
 
 test('报价员使用保存成本的核算人，不借用需求申请人', () => {
   const rows = sheetHeaderRows({ header: { quotation: { quoterName: '罗思雅', applicantName: '需求申请人' } } })
@@ -38,4 +38,14 @@ test('totals never derive missing old fields or reapply coefficients', () => {
   assert.equal(rowBasis({ kind: 'FEE', feeState: 'MISSING' }), '未填写')
   assert.equal(rowBasis({ kind: 'FEE', feeState: 'EXPLICIT_NONE' }), '明确无费用')
   assert.equal(rowBasis({ kind: 'FEE', feeState: 'LEGACY' }), '历史保存值')
+})
+
+test('blank gross provenance is displayed from saved evidence while the decimal stays numeric', () => {
+  const row = { kind: 'PART', grossWeight: '298.14', manufacturing: [{ grossWeightSource: 'SRM联动价表' }] }
+  assert.equal(sheetRowCells(row, { code: 'ORDINARY_PARTS' }, 0)[7].value, '298.14（SRM联动价表）')
+  assert.equal(row.grossWeight, '298.14')
+  assert.equal(manufacturingGrossWeightSource({ itemProcessType: '毛坯加工', remark: '毛重来源=SRM区间价表；毛重取本次采用报价净重' }), 'SRM区间价表')
+  assert.equal(manufacturingGrossWeightSource({ itemProcessType: '原材料加工', remark: '毛重来源=SRM区间价表；' }), '')
+  assert.equal(grossWeightWithSource('0', 'U9 BOM用量'), '0（U9 BOM用量）')
+  assert.equal(grossWeightWithSource(null, 'SRM联动价表'), '')
 })

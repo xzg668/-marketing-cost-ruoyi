@@ -17,11 +17,12 @@
         <template v-if="selected.paths?.length"><dt>实际计价路径</dt><dd>{{ selected.paths.join('；') }}</dd></template>
         <dt>说明</dt><dd>{{ selected.remark || '' }}</dd>
       </dl>
+      <CostAmountComposition v-if="compositionSelector" :cost-run-no="sheet.identity.costRunNo" v-bind="compositionSelector" />
       <article v-for="(line, index) in selected.manufacturing || []" :key="index" class="monthly-evidence" aria-label="制造件计算明细">
         <h4>{{ line.processType || '历史未记录加工方式' }} · {{ line.childMaterialNo }} {{ line.childMaterialName }}</h4>
         <dl>
           <dt>采用单价</dt><dd>{{ line.rawUnitPrice ?? '历史未记录' }} {{ line.rawPriceUnit }}</dd>
-          <dt>毛重</dt><dd>{{ line.grossWeightG ?? '历史未记录' }} g</dd>
+          <dt>毛重</dt><dd>{{ grossWeightWithSource(line.grossWeightG, line.grossWeightSource) || '历史未记录' }} g</dd>
           <dt>净重</dt><dd>{{ line.netWeightG ?? '历史未记录' }} g</dd>
           <dt>废料重量</dt><dd>{{ line.scrapWeightKg ?? '历史未记录' }} kg</dd>
           <dt>废料</dt><dd>{{ line.scrapCode || '无废料／历史未记录' }} {{ line.scrapName }}</dd>
@@ -57,8 +58,9 @@
 </template>
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { savedMoney, rowBasis, sheetTotals } from '../utils/jjbSheet'
+import { savedMoney, rowBasis, sheetTotals, grossWeightWithSource } from '../utils/jjbSheet'
 import { selectEvidenceRow } from '../utils/jjbEvidence'
+import CostAmountComposition from './CostAmountComposition.vue'
 const props = defineProps({ sheet: { type: Object, required: true }, initialTrace: { type: Object, default: null } })
 const sourceFields = [
   ['financialScenarioPrice','基准口径单价 P0'], ['customerScenarioPrice','客户口径单价 P1'],
@@ -85,6 +87,14 @@ watch(() => [props.sheet, props.initialTrace], () => {
   selectedKey.value = found?.key || ''
 }, { immediate: true })
 const selected = computed(() => props.sheet.rows.find(row => row.key === selectedKey.value))
+const compositionSelector = computed(() => {
+  const row = selected.value
+  if (!props.sheet.identity.costRunNo || !row) return null
+  if ((row.code?.startsWith('AUX_') || ['DIRECT_LABOR','INDIRECT_LABOR','OVERHAUL','TOOLING_REPAIR','WATER_POWER','DEPT_OTHER'].includes(row.code)) && row.costItemIds?.length === 1)
+    return { costItemId: row.costItemIds[0] }
+  if (['PART','HOUSEHOLD'].includes(row.kind) && row.partItemIds?.length === 1) return { partItemId: row.partItemIds[0] }
+  return null
+})
 const selectedPrices = computed(() => props.sheet.monthlyPrices.filter(price => selected.value?.monthlyPriceIds?.includes(price.id)))
 </script>
 <style scoped>

@@ -43,6 +43,8 @@ export function sheetRowCells(row, group, index) {
     cells[1].value = ''; cells[2].value = row.name === '产品属性' ? row.remark || '' : row.name || ''
     cells[6].value = row.coefficient ?? ''; cells[6].key = 'coefficient'
   }
+  const grossSource = row.manufacturing?.length === 1 ? row.manufacturing[0].grossWeightSource : null
+  if (row.grossWeight != null && grossSource) cells[7].value = `${row.grossWeight}（${grossSource}）`
   if (row.kind === 'HOUSEHOLD') cells[13].value = row.priceSource || '询价（家用部件）'
   if (['LOSS', 'MANUFACTURE'].includes(row.code)) {
     cells[3].value = ratePercent(row.rate); cells[3].key = 'rate'
@@ -102,4 +104,19 @@ export function sheetTotals(sheet) {
     { key: 'CU_DIFFERENCE', name: '材料成本差异', amount: sheet?.totals?.cuMaterialAdjustment ?? null },
     { key: 'TOTAL_2', name: '不含税总成本2', amount: sheet?.totals?.finalQuoteAmount ?? null },
   ]
+}
+
+// Provenance comes from this calculation's saved remark, never from today's source tables.
+export function manufacturingGrossWeightSource(row) {
+  if (row?.itemProcessType !== '毛坯加工') return ''
+  const remark = row.remark || ''
+  if (remark.includes('毛重来源=SRM联动价表；')) return 'SRM联动价表'
+  if (remark.includes('毛重来源=SRM区间价表；')) return 'SRM区间价表'
+  if (remark.includes('毛重取U9 BOM用量')) return 'U9 BOM用量'
+  if (remark.includes('毛重按本件净重加U9副产品废料重反算')) return remark.includes('净重取父子材料净重配置') ? '父子净重配置＋U9副产品重量反算' : 'U9理论净重＋副产品重量反算'
+  if (remark.includes('毛重按本件净重加0g废料重反算')) return 'U9理论净重＋确认无废料'
+  return ''
+}
+export function grossWeightWithSource(value, source) {
+  return value == null || value === '' ? '' : `${value}${source ? `（${source}）` : ''}`
 }

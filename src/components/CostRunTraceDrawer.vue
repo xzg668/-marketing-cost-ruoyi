@@ -117,8 +117,8 @@
                   </template>
                 </el-table-column>
                 <el-table-column prop="itemProcessType" label="加工类型" width="110" />
-                <el-table-column label="下料重量(g)" width="120" align="right">
-                  <template #default="{ row }">{{ formatValue(row.grossWeightG) }}</template>
+                <el-table-column label="下料重量(g)" min-width="220" align="right">
+                  <template #default="{ row }">{{ grossWeightWithSource(formatValue(row.grossWeightG), manufacturingGrossWeightSource(row)) }}</template>
                 </el-table-column>
                 <el-table-column label="净重(g)" width="100" align="right">
                   <template #default="{ row }">{{ formatValue(row.netWeightG) }}</template>
@@ -212,6 +212,7 @@
 </template>
 
 <script setup>
+import { grossWeightWithSource, manufacturingGrossWeightSource } from '../utils/jjbSheet'
 import { computed, ref, watch } from 'vue'
 import JjbEvidence from './JjbEvidence.vue'
 import { ElMessage } from 'element-plus'
