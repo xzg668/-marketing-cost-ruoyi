@@ -140,12 +140,9 @@
           </el-table-column>
           <el-table-column label="当前状态" min-width="160">
             <template #default="{ row }">
-              <el-tag :type="needsCostRecalculation(row) ? 'warning' : workflowStatusTagType(row.workflow?.currentStatus)" effect="plain">
-                {{ needsCostRecalculation(row) ? '待重新核算' : row.workflow?.currentStatusLabel || '待检查' }}
+              <el-tag :type="workflowStatusTagType(displayCostStatus(row).code)" effect="plain">
+                {{ displayCostStatus(row).label }}
               </el-tag>
-              <div v-if="row.workflow?.message && !needsCostRecalculation(row)" class="state-message" :title="row.workflow.message">
-                {{ row.workflow.message }}
-              </div>
             </template>
           </el-table-column>
           <el-table-column label="核算成本（元/只）" width="170" align="right" fixed="right">
@@ -155,10 +152,6 @@
             </template>
             <template #default="{ row }">
               <span>{{ finalCosts.get(String(row.id))?.totalCost ?? '—' }}</span>
-              <el-tooltip v-if="finalCosts.get(String(row.id))?.status === 'STALE'"
-                :content="row.costingWorkspace?.lastErrorMessage || finalCosts.get(String(row.id))?.message || '本次核算尚未完成'">
-                <div class="state-message">{{ finalCosts.get(String(row.id))?.totalCost != null ? '上次成本，本次待重算' : '待重新核算' }}</div>
-              </el-tooltip>
             </template>
           </el-table-column>
           <el-table-column label="电子图库" width="170" fixed="right">
@@ -385,7 +378,7 @@ import QuoteCostingPreparationPanel from '../components/quotation/QuoteCostingPr
 import { useQuoteFinalSubmission } from '../composables/useQuoteFinalSubmission'
 import { useQuoteCostingPreparation } from '../composables/useQuoteCostingPreparation'
 import { useQuoteBatchCosting } from '../composables/useQuoteBatchCosting'
-import { withQuoteItemWorkflow, hasQuoteItemCostingGap } from '../utils/quoteItemWorkflow'
+import { withQuoteItemWorkflow, hasQuoteItemCostingGap, quoteItemCostStatus } from '../utils/quoteItemWorkflow'
 import { workflowStatusTagType } from '../utils/workflowStatus'
 import {
   QUOTE_SCENARIO_OPTIONS,
@@ -451,6 +444,7 @@ const itemsTableRef = ref()
 const finalSubmission = useQuoteFinalSubmission(oaNo, { fetch: fetchQuoteFinalSubmission, submit: confirmQuoteFinalSubmission })
 const { state: finalState, loading: finalLoading, sending: finalSending, error: finalError, canSubmit: canSubmitFinal, costsByItem: finalCosts } = finalSubmission
 function needsCostRecalculation(row) { return finalCosts.value.get(String(row.id))?.status === 'STALE' }
+function displayCostStatus(row) { return quoteItemCostStatus(row, finalCosts.value.get(String(row.id))) }
 function canRegenerateCost(row) {
   return finalCosts.value.get(String(row.id))?.status === 'READY'
     && detail.value.oaWorkflow?.canCost !== false
@@ -753,7 +747,7 @@ async function submitSingleProductCosting(row, reason, periodMonth) {
   actionLoadingId.value = rowActionKey(row)
   try {
     // 电子图库自动接续沿用已经采用的技术版本，不自动认可新补录内容。
-    const options = { itemId: row.id, force: reason === 'INPUT_CHANGED', ...(periodMonth ? { periodMonth } : {}) }
+    const options = { itemId: row.id, force: false, ...(periodMonth ? { periodMonth } : {}) }
     const outcome = reason === 'ELECTRONIC_DRAWING_RESOLVED' ? null : await materials.submit(options)
     if (reason !== 'ELECTRONIC_DRAWING_RESOLVED' && !outcome) return
     if (outcome) await drawingContinuation.remember(outcome, options)

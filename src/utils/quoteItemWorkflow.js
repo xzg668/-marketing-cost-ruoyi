@@ -44,6 +44,19 @@ export function hasQuoteItemCostingGap(item) {
     || item?.workflow?.nextAction === 'VIEW_COSTING_GAP'
 }
 
+/** The result column owns amounts; the status column owns the current business state. */
+export function quoteItemCostStatus(item, cost) {
+  const workspace = item?.costingWorkspace
+  const hasCurrentBlock = ['WAIT_BOM', 'WAIT_TECH_DATA', 'WAIT_PRICE_TYPE', 'WAIT_PRICE', 'SYSTEM_FAILED', 'QUEUED', 'RUNNING']
+    .includes(String(workspace?.workspaceStatus || '').toUpperCase())
+  const workflow = hasCurrentBlock
+    ? quoteItemWorkflow({ ...item, costingWorkspace: { ...workspace, inputChanged: false } })
+    : item?.workflow || quoteItemWorkflow(item)
+  if (cost?.status === 'READY' && workspace?.workspaceStatus === 'SUCCESS') return { code: 'COMPLETED', label: '核算完成' }
+  if (cost?.status === 'STALE' && !hasCurrentBlock) return { code: 'STALE', label: '待重新核算' }
+  return { code: workflow.currentStatus, label: workflow.currentStatusLabel || '待检查' }
+}
+
 export function quoteItemWorkflow(item, drawingWorkspace) {
   const workspace = item?.costingWorkspace || null
   const workspaceStatus = String(workspace?.workspaceStatus || '').toUpperCase()

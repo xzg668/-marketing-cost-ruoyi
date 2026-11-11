@@ -54,7 +54,7 @@ export function sheetRowCells(row, group, index) {
 }
 export const sectionLabels = Object.freeze({
   ORDINARY_PARTS: '普通部品', MATERIAL_DETAIL: '辅料、焊料、包装及其他费用', ORDINARY: '普通成本',
-  THREE_EXPENSES: '三项费用', HOUSEHOLD: '家用询价部件', PRODUCT_FEES: '新品费用',
+  THREE_EXPENSES: '三项费用', SEPARATE_PARTS: '单独计费零件', HOUSEHOLD: '家用询价部件', PRODUCT_FEES: '新品费用',
   PROPERTY: '产品属性', HISTORICAL_DETAIL: '历史费用原始明细',
 })
 export function sheetGroups(sheet) {
@@ -85,6 +85,10 @@ export function ratePercent(value) {
   return `${match[1]}${whole}${fraction ? `.${fraction}` : ''}%`
 }
 export function rowBasis(row) {
+  if (row.separateCalculation?.manufactureRate != null) {
+    const c = row.separateCalculation
+    return `基础金额 ${c.baseAmount}；净损失率 ${ratePercent(c.lossRate)}；零件制造费用率 ${ratePercent(c.manufactureRate)}；三项费用率 ${ratePercent(c.threeExpenseRate)}`
+  }
   if (row.kind === 'HOUSEHOLD') return `H=${ratePercent(row.householdRate)}；S=${ratePercent(row.salesRate)}`
   if (row.kind === 'PROPERTY') return row.coefficient == null ? '' : `系数 ${row.coefficient}（已在保存金额中应用）`
   if (row.kind === 'FEE') return ({ MISSING: '未填写', EXPLICIT_NONE: '明确无费用', EXPLICIT_AMOUNT: '有效填写金额', LEGACY: '历史保存值' })[row.feeState] || ''
