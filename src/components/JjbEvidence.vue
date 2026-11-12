@@ -59,7 +59,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { savedMoney, rowBasis, sheetTotals, grossWeightWithSource } from '../utils/jjbSheet'
-import { selectEvidenceRow } from '../utils/jjbEvidence'
+import { selectEvidenceRow, selectAmountComposition } from '../utils/jjbEvidence'
 import CostAmountComposition from './CostAmountComposition.vue'
 const props = defineProps({ sheet: { type: Object, required: true }, initialTrace: { type: Object, default: null } })
 const sourceFields = [
@@ -87,14 +87,7 @@ watch(() => [props.sheet, props.initialTrace], () => {
   selectedKey.value = found?.key || ''
 }, { immediate: true })
 const selected = computed(() => props.sheet.rows.find(row => row.key === selectedKey.value))
-const compositionSelector = computed(() => {
-  const row = selected.value
-  if (!props.sheet.identity.costRunNo || !row) return null
-  if ((row.code?.startsWith('AUX_') || ['DIRECT_LABOR','INDIRECT_LABOR','OVERHAUL','TOOLING_REPAIR','WATER_POWER','DEPT_OTHER'].includes(row.code)) && row.costItemIds?.length === 1)
-    return { costItemId: row.costItemIds[0] }
-  if (['PART','HOUSEHOLD'].includes(row.kind) && row.partItemIds?.length === 1) return { partItemId: row.partItemIds[0] }
-  return null
-})
+const compositionSelector = computed(() => selectAmountComposition(selected.value, props.sheet.identity.costRunNo))
 const selectedPrices = computed(() => props.sheet.monthlyPrices.filter(price => selected.value?.monthlyPriceIds?.includes(price.id)))
 </script>
 <style scoped>

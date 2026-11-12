@@ -6,6 +6,10 @@ export const compositionColumns = Object.freeze([
   ['materialCode', '部品料号'], ['materialName', '部品名称'],
   ['originalCent', 'CMS原金额（分）'], ['amountYuan', '明细金额（元）'],
   ['quantity', '用量'], ['unitPrice', '采用单价'],
+  ['parentBaseQty', '包装母件底数'], ['childBaseQty', '子件底数（旧算法用）'],
+  ['packageQuantity', '本次包装组件BOM用量'], ['effectiveQuantity', '折算后子件用量'],
+  ['childAmount', '子件金额合计／分项小计'], ['coefficient', '包装系数'], ['coefficientBasis', '系数依据'],
+  ['quantityBasis', '用量算法'], ['calculation', '代入计算'],
   ['workshopCode', '车间代码'], ['workshopName', '车间名称'],
   ['workingHours', 'CMS工时'], ['funding', 'CMS经费'],
   ['division', '事业部'], ['directLabor', '直接人工（元）'], ['indirectLabor', '辅助人工（元）'], ['laborTotal', '人工合计（元）'], ['manhourRate', '工时工资率'],
@@ -18,7 +22,13 @@ export const compositionColumns = Object.freeze([
 ].map(([key, label]) => ({ key, label })))
 
 export function visibleCompositionColumns(view) {
-  return compositionColumns.filter(column => view?.composition?.rows?.some(row => row[column.key] != null && row[column.key] !== ''))
+  const packaging = ['OTHER_EXP_PACKAGE','BOM_BUCKET_PACKAGE'].includes(view?.costCode)
+  const columns = compositionColumns.filter(column => view?.composition?.rows?.some(row => row[column.key] != null && row[column.key] !== ''))
+    .map(column => packaging && column.key === 'path' ? { ...column, label: '保存的包装BOM路径' }
+      : packaging && column.key === 'baseAmount' ? { ...column, label: '包装金额基数' } : column)
+  if (!packaging) return columns
+  const first = ['materialCode','materialName','unitPrice','quantity','parentBaseQty','packageQuantity','amountYuan','calculation']
+  return columns.sort((a,b) => (first.includes(a.key) ? first.indexOf(a.key) : first.length) - (first.includes(b.key) ? first.indexOf(b.key) : first.length))
 }
 export function compositionSummary(view) {
   const evidence = view.composition
@@ -40,7 +50,7 @@ function centsToYuan(cents) {
   return `${sign}${digits.slice(0, -2)}.${digits.slice(-2)}${fraction}`
 }
 export function compositionPaths(view) {
-  return (view.composition.rows || []).flatMap(row => String(row.path || '').split(/[;；]/).map(path => path.trim()).filter(Boolean).map(path => {
+  return (view.composition.rows || []).filter(row => !row.kind?.startsWith('PACKAGE')).flatMap(row => String(row.path || '').split(/[;；]/).map(path => path.trim()).filter(Boolean).map(path => {
     const cents = /\((-?\d+(?:\.\d+)?)\)$/.exec(path)?.[1]
     const excluded = String(view.composition.note || '').includes(`CMS #${row.sourceId}：${path}`)
     return { sourceId: row.sourceId, period: row.period, parentCode: row.parentCode,
@@ -54,8 +64,11 @@ export function compositionWorkbook(view) {
   const summary = XLSX.utils.aoa_to_sheet([['核对项目', '内容'], ...compositionSummary(view)])
   summary['!cols'] = [{ wch: 30 }, { wch: 110 }]
   XLSX.utils.book_append_sheet(book, summary, '金额及计算方法')
-  const columns = visibleCompositionColumns(view)
+  const packaging = ['OTHER_EXP_PACKAGE','BOM_BUCKET_PACKAGE'].includes(view.costCode)
+  const detailRows = packaging ? view.composition.rows.filter(row => row.kind === 'PACKAGE_COMPONENT') : view.composition.rows
+  const columns = visibleCompositionColumns({ ...view, composition: { ...view.composition, rows: detailRows } })
   const numeric = new Set(['originalCent','amountYuan','quantity','unitPrice','workingHours','funding',
+    'parentBaseQty','childBaseQty','packageQuantity','effectiveQuantity','childAmount','coefficient',
     'directLabor','indirectLabor','laborTotal','manhourRate','baseAmount','rate','quoteRatio','upliftRatio',
     'budgetAmount','totalWorkMinutes','planRate'])
   function cell(key, value) {
@@ -67,16 +80,27 @@ export function compositionWorkbook(view) {
     return { t: 'n', v: Number(text), z: scale ? `0.${'0'.repeat(scale)}` : '0' }
   }
   const detail = XLSX.utils.aoa_to_sheet([columns.map(column => column.label),
-    ...(view.composition.rows || []).map(row => columns.map(column => cell(column.key, row[column.key])))])
+    ...(detailRows || []).map(row => columns.map(column => cell(column.key, row[column.key])))])
   // Monetary columns can be summed. Codes/IDs and decimals beyond Excel precision remain text.
   detail['!cols'] = columns.map(column => ({ wch: column.key === 'path' ? 100 : 24 }))
   if (columns.length) detail['!autofilter'] = { ref: detail['!ref'] }
   XLSX.utils.book_append_sheet(book, detail, '来源明细')
+  if (packaging) {
+    const rows = view.composition.rows.filter(row => row.kind !== 'PACKAGE_COMPONENT')
+    const columns = visibleCompositionColumns({ ...view, composition: { ...view.composition, rows } })
+    const labels = { PACKAGE_FEE_PARAMETERS: '保存的包装系数参数', PACKAGE_PARENT: '包装组件合计', PACKAGE_TOTAL: '最终包装费用' }
+    const sheet = XLSX.utils.aoa_to_sheet([
+      ['项目', ...columns.map(column => column.label)],
+      ...rows.map(row => [labels[row.kind] || row.kind, ...columns.map(column => cell(column.key, row[column.key]))]),
+    ])
+    sheet['!cols'] = [{ wch: 26 }, ...columns.map(column => ({ wch: column.key === 'calculation' ? 110 : 26 }))]
+    XLSX.utils.book_append_sheet(book, sheet, '包装汇总及系数')
+  }
   const sources = XLSX.utils.aoa_to_sheet([
     ['来源期间', '父件料号', '科目代码', '生效来源合计（元）', '原始来源表', '原始记录ID'],
     ...(view.composition.sources || []).map(row => [row.period, row.parentCode, row.subjectCode, row.amountYuan, row.table, row.rowIds])])
   sources['!cols'] = [{ wch: 16 }, { wch: 22 }, { wch: 16 }, { wch: 24 }, { wch: 38 }, { wch: 80 }]
-  XLSX.utils.book_append_sheet(book, sources, '采用来源')
+  if (!packaging || view.composition.sources?.length) XLSX.utils.book_append_sheet(book, sources, '采用来源')
   const paths = compositionPaths(view)
   if (paths.length) {
     const pathSheet = XLSX.utils.aoa_to_sheet([

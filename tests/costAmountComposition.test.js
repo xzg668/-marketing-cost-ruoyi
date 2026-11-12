@@ -49,3 +49,18 @@ test('zero values, long identifiers and formula-like CMS text retain literal val
   assert.ok(visibleCompositionColumns(data).some(column => column.key === 'amountYuan'))
   assert.ok(Object.values(sheet).every(cell => !cell?.f))
 })
+
+test('packaging export retains child price, usage, both denominators and the actual coefficient', () => {
+  const data = view(); data.costCode = 'OTHER_EXP_PACKAGE';data.costName = '包装费用'
+  data.composition.rows = [
+    { kind: 'PACKAGE_COMPONENT', parentCode: 'PACK', materialCode: '0001', unitPrice: '12', quantity: '2', parentBaseQty: '100', childBaseQty: '10', packageQuantity: '3', amountYuan: '0.72000000', path: '/TOP/PACK/0001/', calculation: '12 × 2 ÷ 100 × 3 = 0.72' },
+    { kind: 'PACKAGE_TOTAL', baseAmount: '0.84', coefficient: '1.07', amountYuan: '0.898800', coefficientBasis: '本次保存的包装系数' },
+  ]
+  assert.deepEqual(compositionPaths(data), [])
+  const book = compositionWorkbook(data), rows = XLSX.utils.sheet_to_json(book.Sheets['来源明细'])
+  assert.equal(rows[0]['部品料号'], '0001');assert.equal(rows[0]['采用单价'], 12)
+  assert.equal(rows[0]['包装母件底数'], 100);assert.equal(rows[0]['本次包装组件BOM用量'], 3)
+  assert.equal(rows.length, 1)
+  assert.equal(XLSX.utils.sheet_to_json(book.Sheets['包装汇总及系数'])[0]['包装系数'], 1.07)
+  assert.ok(visibleCompositionColumns(data).some(column => column.key === 'path' && column.label === '保存的包装BOM路径'))
+})

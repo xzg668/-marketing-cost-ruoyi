@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { selectEvidenceRow } from '../src/utils/jjbEvidence.js'
+import { selectEvidenceRow, selectAmountComposition } from '../src/utils/jjbEvidence.js'
 import { parse, babelParse } from '@vue/compiler-sfc'
 import { readFileSync } from 'node:fs'
 
@@ -9,6 +9,11 @@ test('clicking a child material selects that exact row even when its parent shar
   assert.equal(selectEvidenceRow(rows, { rowKey: 'child', partItemId: 10 }).code, 'RAW')
   assert.equal(selectEvidenceRow(rows, { rowKey: 'missing', partItemId: 10 }), undefined)
   assert.equal(selectEvidenceRow(rows, null).code, 'BASE')
+})
+
+test('a merged packaging fee opens its own amount even when several cost and part ids are attached', () => {
+  assert.deepEqual(selectAmountComposition({ key: 'COST:45', code: 'OTHER_EXP_PACKAGE', costItemIds: [9,45], partItemIds: [7,8] }, 'SAVED'), { costItemId: '45' })
+  assert.equal(selectAmountComposition({ key: 'COST:99', code: 'OTHER_EXP_PACKAGE', costItemIds: [9,45] }, 'SAVED'), null)
 })
 
 test('latest and older saved versions both open the selected saved result without preparation', () => {

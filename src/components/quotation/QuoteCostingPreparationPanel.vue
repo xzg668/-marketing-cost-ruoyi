@@ -1,16 +1,16 @@
 <template>
-  <section class="costing-preparation" aria-label="资料情况" :aria-busy="!state && !error">
+  <section v-if="visibleCategories.length || error || availability.error.value" class="costing-preparation" aria-label="资料情况" :aria-busy="!state && !error">
     <div class="preparation-head">
       <div class="preparation-title"><strong>资料情况</strong>
-        <span :class="{ 'is-error': error }" role="status">{{ error || (pendingCount ? `${pendingCount} 个产品待处理，资料齐全的产品可继续核算` : state?.message) || '正在读取资料状态…' }}</span>
+        <span :class="{ 'is-error': error || availability.error.value }" role="status">{{ error || availability.error.value || (pendingCount ? `${pendingCount} 个产品待处理，资料齐全的产品可继续核算` : state?.message) || '正在读取资料状态…' }}</span>
       </div>
       <div class="preparation-actions">
         <el-button v-if="state?.hasSupplement" link type="primary" @click="viewSupplement">补录工作台</el-button>
-        <el-button link @click="$emit('refresh')">刷新</el-button>
+        <el-button link @click="refresh">刷新</el-button>
       </div>
     </div>
-    <div v-if="pendingCount" class="gap-categories">
-      <article v-for="category in categories" :key="category.value" class="gap-category">
+    <div v-if="visibleCategories.length" class="gap-categories">
+      <article v-for="category in visibleCategories" :key="category.value" class="gap-category">
         <div><strong>{{ category.title }}</strong><p>{{ category.hint }}</p></div>
         <div class="category-actions">
           <el-button link type="primary" :aria-label="`查看${category.exportTitle}物料`" @click="viewDetails(category)">查看明细</el-button>
@@ -49,6 +49,7 @@ import { computed, onScopeDispose, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { hasQuoteItemCostingGap } from '../../utils/quoteItemWorkflow'
 import { fetchQuoteCostingGapDetails } from '../../api/quoteRequests'
+import { useCostingGapAvailability } from '../../composables/useCostingGapAvailability'
 const props = defineProps({ oaNo: String, state: Object, checks: { type: Array, default: () => [] }, products: { type: Array, default: () => [] }, error: String, exporting: String })
 const emit = defineEmits(['refresh', 'view-gap', 'export-gap'])
 const router = useRouter()
@@ -61,15 +62,30 @@ const pendingCount = computed(() => new Set([
   ...props.products.filter(hasQuoteItemCostingGap).map(row => String(row.id)),
   ...props.checks.filter(row => !['READY', 'SUCCESS'].includes(row.pipelineStatus)).map(row => String(row.oaFormItemId)),
 ]).size)
-const detail = reactive({ visible: false, title: '', rows: [], loading: false, error: '' })
+const availability = useCostingGapAvailability(computed(() => props.oaNo), pendingCount,
+  computed(() => [props.state, props.products.map(row => [row.id, row.costingWorkspace?.workspaceStatus,
+    row.costingWorkspace?.lastErrorCode, row.costingWorkspace?.lastErrorMessage, row.costingWorkspace?.gapCount]),
+  props.checks.map(row => [row.oaFormItemId,row.pipelineStatus,row.message])]), fetchQuoteCostingGapDetails)
+const visibleCategories = computed(() => categories.filter(category => availability.counts.value[category.value] > 0))
+function refresh() { emit('refresh') }
+const detail = reactive({ visible: false, title: '', category: '', rows: [], loading: false, error: '' })
 const sourceDetail = ref(null)
+watch(availability.details, current => {
+  if (!detail.visible || !Object.keys(current).length) return
+  const rows = current[detail.category]
+  if (!rows?.length) detail.visible = false
+  else detail.rows = rows
+})
+watch(availability.error, value => { if (value) detail.visible = false })
 let generation = 0
 watch(() => props.oaNo, () => { generation++; detail.visible = false; sourceDetail.value = null })
 onScopeDispose(() => { generation++ })
 async function viewDetails(category) {
   const version = ++generation, number = props.oaNo
   sourceDetail.value = null
-  Object.assign(detail, { visible: true, title: category.title, rows: [], loading: true, error: '' })
+  Object.assign(detail, { visible: true, title: category.title, category: category.value, rows: [], loading: true, error: '' })
+  const cached = availability.details.value[category.value]
+  if (cached) { detail.rows = cached; detail.loading = false; return }
   try {
     const result = await fetchQuoteCostingGapDetails(number, category.value)
     if (version === generation && props.oaNo === number) detail.rows = result?.records || []
@@ -90,7 +106,7 @@ function viewSupplement() { router.push({ path: '/collaboration/tasks', query: {
 .preparation-title { flex-wrap: wrap; color: #606c80; }
 .preparation-title strong { color: #303133; font-size: 15px; }
 .is-error { color: #c45656; }
-.gap-categories { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+.gap-categories { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-top: 16px; }
 .gap-category { padding: 16px; background: #f8fafc; border: 1px solid #e5eaf0; border-radius: 6px; }
 .gap-category strong { color: #303133; }
 .gap-category p { margin: 8px 0 16px; font-size: 13px; color: #7b8798; line-height: 1.5; }
