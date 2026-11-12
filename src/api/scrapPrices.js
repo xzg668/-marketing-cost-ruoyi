@@ -4,6 +4,7 @@ const base = '/api/v1/scrap-prices'
 
 export const fetchScrapPrices = (params) => request(base, { params })
 export const fetchScrapPrice = (id) => request(`${base}/${id}`)
+export const trialScrapPrice = (id, body) => request(`${base}/${id}/trial`, { method: 'POST', body })
 export const editScrapPrice = (id, body) => request(`${base}/${id}`, { method: 'PATCH', body })
 
 const upload = (file, priceMonth, previewFingerprint) => {

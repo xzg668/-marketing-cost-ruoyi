@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { displayPrice, importCanConfirm, scrapEditForm, scrapEditPayload, scrapFactorDetails } from '../src/pages/scrapPriceUtils.js'
+import { displayPrice, importCanConfirm, scrapEditForm, scrapEditPayload, scrapFactorDetails, scrapTrialPayload } from '../src/pages/scrapPriceUtils.js'
 
 const fixed = {
   id: 7, materialCode: '301990752', materialName: '废软磁不锈铁沫', unit: 'KG',
@@ -84,5 +84,24 @@ describe('废料维护的金额、规则和导入边界', () => {
     }) }
     assert.equal(scrapFactorDetails(row)[0].price, '90.123456789123456789')
     assert.equal(scrapFactorDetails({ ...row, calculationJson: '{}' })[0].price, null)
+  })
+})
+
+describe('废料试算直接输入公式影响因素', () => {
+  it('黄铜输入Brass值，保留小数精度和加载修订，不改成客户Cu', () => {
+    const row = { rowVersion: 7, factorBindingsJson: '{"Brass":"AVG|美国柜装黄铜"}' }
+    assert.deepEqual(scrapTrialPayload(row, { Brass: ' 55.123456789123456789 ' }), {
+      expectedVersion: 7, inputs: { Brass: '55.123456789123456789' },
+    })
+  })
+  it('铜、铝和多因素按公式实际变量输入，0值可以试算', () => {
+    const row = { rowVersion: 1, factorBindingsJson: '{"Cu":"AVG|1#CU","Al":"AVG|A00"}' }
+    assert.deepEqual(scrapTrialPayload(row, { Cu: '90', Al: '0' }).inputs, { Cu: '90', Al: '0' })
+    assert.throws(() => scrapTrialPayload(row, { Cu: '90' }), /Al/)
+  })
+  it('空白、负数和非十进制值不能作为因素试算值', () => {
+    for (const Cu of ['', '-1', '1e5', 'Infinity', 'NaN', '.5', null]) {
+      assert.throws(() => scrapTrialPayload(linked, { Cu }), /Cu/)
+    }
   })
 })

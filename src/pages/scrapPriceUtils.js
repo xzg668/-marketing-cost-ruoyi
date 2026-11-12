@@ -91,3 +91,13 @@ export const scrapFactorDetails = (row) => {
     price: factors[key]?.price ?? null,
   }))
 }
+
+export const scrapTrialPayload = (row, inputs) => {
+  const values = {}
+  for (const variable of Object.keys(JSON.parse(row.factorBindingsJson || '{}'))) {
+    const value = String(inputs?.[variable] ?? '').trim()
+    if (!/^\d+(\.\d+)?$/.test(value)) throw new Error(`因素 ${variable} 的试算值须不小于0（含税元/公斤）`)
+    Object.defineProperty(values, variable, { value, enumerable: true })
+  }
+  return { expectedVersion: row.rowVersion, inputs: values }
+}
