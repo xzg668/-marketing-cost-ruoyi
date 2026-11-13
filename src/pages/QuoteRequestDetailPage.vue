@@ -200,6 +200,11 @@
         </el-table>
       </el-tab-pane>
 
+      <el-tab-pane label="多源物料形态" name="material-shapes" lazy>
+        <QuoteOrderMaterialShapes :oa-no="oaNo" :active="activeTab === 'material-shapes'"
+          :readonly="detail.oaWorkflow?.canCost === false" :busy="batchRun?.active || batchSubmitting"
+          :material-code="String(route.query.materialCode || '')" @saved="refreshQuoteState(false)" @cost="submitWholeQuoteCosting" />
+      </el-tab-pane>
       <el-tab-pane label="操作日志" name="logs">
         <el-descriptions :column="2" border>
           <el-descriptions-item label="流水 ID">{{ detail.ingestLog?.id || '-' }}</el-descriptions-item>
@@ -361,6 +366,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import QuoteFinalSubmissionPanel from '../components/quotation/QuoteFinalSubmissionPanel.vue'
+import QuoteOrderMaterialShapes from '../components/quotation/QuoteOrderMaterialShapes.vue'
 import { quoteOaWorkflowLabel } from '../utils/quoteOaWorkflowLabel.js'
 import DrawingVerificationPanel from '../components/quotation/DrawingVerificationPanel.vue'
 import {
@@ -413,7 +419,8 @@ async function exportCostingGaps(category) {
   catch (failure) { if (isCurrent()) ElMessage.error(failure?.message || '缺口导出失败，请重试') }
   finally { if (isCurrent()) gapExporting.value = '' }
 }
-const activeTab = ref('items')
+const activeTab = ref(route.query.tab === 'material-shapes' ? 'material-shapes' : 'items')
+watch(() => route.query.tab, value => { if (value === 'material-shapes') activeTab.value = value })
 const detail = ref({})
 const drawingStates = reactive({})
 const productRows = computed(() => withQuoteItemWorkflow(detail.value, drawingStates, materialState.value).items)

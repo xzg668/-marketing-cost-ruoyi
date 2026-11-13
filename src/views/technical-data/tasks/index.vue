@@ -20,15 +20,16 @@
       <div><span>已提交</span><b>{{ summary.submitted }}</b></div>
     </div>
 
-    <el-alert v-if="scopedOaNo" :title="`当前仅查看报价单：${scopedOaNo}`" type="info" :closable="false">
+    <el-alert v-if="scopedOaNo" :title="`当前仅查看报价单：${scopedOaNo}${scopedItemId ? ' · 当前产品' : ''}`" type="info" :closable="false">
       <el-button v-if="canManage" link type="primary" @click="router.push({ name: 'ingest-quote-request-detail', params: { oaNo: scopedOaNo } })">返回本单核算</el-button>
+      <el-button v-if="scopedItemId" link type="primary" @click="router.push({ path: '/collaboration/tasks' })">查看全部待补产品</el-button>
     </el-alert>
     <el-alert v-if="fixedSubmission" title="本次提交资料快照，仅供查看；当前办理状态见列表。" type="info" :closable="false" />
     <div v-if="!fixedSubmission" class="filters">
       <el-select v-model="filters.taskStatus" :disabled="submissionBusy" clearable placeholder="全部状态" aria-label="处理状态" @change="search">
         <el-option v-for="status in statuses" :key="status" :label="taskStatusLabel(status)" :value="status" />
       </el-select>
-      <el-date-picker v-model="filters.accountingMonth" :disabled="submissionBusy" type="month" value-format="YYYY-MM" placeholder="核算月份" @change="search" />
+      <el-date-picker v-model="filters.accountingMonth" :disabled="submissionBusy || !!scopedItemId" type="month" value-format="YYYY-MM" placeholder="核算月份" @change="search" />
       <el-input v-model="filters.keyword" :disabled="submissionBusy" clearable placeholder="任务号 / 产品 / 报价单" @keyup.enter="search" @clear="search" />
       <el-button type="primary" :disabled="submissionBusy" @click="search">查询</el-button>
       <el-button :disabled="submissionBusy" @click="reset">重置</el-button>
@@ -146,6 +147,8 @@ import { TECHNICAL_DATA_MODULES, findModule, moduleName, unassignedModulePresent
 const router = useRouter(), route = useRoute(), user = useTechnicalDataIdentity()
 const resolvedOaNo = ref('')
 const scopedOaNo = computed(() => resolvedOaNo.value || String(route.query.oaNo || ''))
+const scopedItemId = computed(() => route.query.oaFormItemId ? String(route.query.oaFormItemId) : '')
+const scopedMonth = computed(() => String(route.query.accountingMonth || route.query.periodMonth || route.query.pricingMonth || ''))
 const fixedSubmission = computed(() => String(route.query.submission || ''))
 const editorTaskId = computed(() => String(route.query.supplement || (route.query.module && route.params.taskId) || ''))
 const isEntry = computed(() => Boolean(route.meta.technicalDataEntry))
@@ -153,7 +156,7 @@ const canManage = computed(() => canViewSupplementOverview.value && !fixedSubmis
 const canAdminDirect = computed(() => canManage.value && (user.permissions?.some(value => ['*:*:*', 'technical:data:admin:operate'].includes(value)) || user.roles?.includes('admin')))
 const adminStarting = ref(false)
 const personalDocuments = ref([]), documentError = ref(''), submissionBusy = ref(false)
-const storageKey = computed(() => `technical-data-product-workbench-state:${user.userId}:${user.businessUnitType}`)
+const storageKey = computed(() => `technical-data-product-workbench-state:${user.userId}:${user.businessUnitType}${scopedItemId.value ? `:${scopedOaNo.value}:${scopedItemId.value}:${scopedMonth.value}` : ''}`)
 const filters = reactive({ taskStatus: '', accountingMonth: '', keyword: '', current: 1 })
 const statuses = computed(() => [...(canViewSupplementOverview.value ? ['UNASSIGNED'] : []), 'PENDING', 'IN_PROGRESS', 'PREPARED', 'SUBMITTED', 'RETURN_PENDING', 'PARTIALLY_RETURNED'])
 const records = ref([]), selected = ref([]), total = ref(0), loading = ref(false), accessDenied = ref(false), canViewSupplementOverview = ref(false)
@@ -212,7 +215,7 @@ async function load(autoCheck = true) {
       selected.value = []
       return
     }
-    const result = await fetchTechnicalDataProducts({ ...filters, oaNo: scopedOaNo.value || undefined, keyword: filters.keyword.trim(), size: 20 })
+    const result = await fetchTechnicalDataProducts({ ...filters, oaNo: scopedOaNo.value || undefined, oaFormItemId: scopedItemId.value || undefined, accountingMonth: scopedItemId.value ? scopedMonth.value : filters.accountingMonth, keyword: filters.keyword.trim(), size: 20 })
     if (request !== generation) return
     if (autoCheck !== false && !result.canViewSupplementOverview) {
       const pending = result.records.filter(row => needsBomPriceCheck(row.product, row.editableModules))
@@ -254,7 +257,7 @@ function openDocument(formId) {
 }
 
 function search() { if (submissionBusy.value) return; filters.current = 1; load() }
-function reset() { if (submissionBusy.value) return; Object.assign(filters, { taskStatus: '', accountingMonth: '', keyword: '', current: 1 }); load() }
+function reset() { if (submissionBusy.value) return; Object.assign(filters, { taskStatus: '', accountingMonth: scopedItemId.value ? scopedMonth.value : '', keyword: '', current: 1 }); load() }
 function canReturnRow(row) {
   return Boolean(row.taskId && (['RETURN_PENDING', 'PARTIALLY_RETURNED'].includes(row.taskStatus)
     || row.product.modules.some(module => module.required && ['SUBMITTED', 'APPROVED'].includes(module.moduleStatus))))
@@ -352,10 +355,10 @@ async function recheck(row) {
 onMounted(() => {
   try { const saved = JSON.parse(sessionStorage.getItem(storageKey.value) || '{}'); for (const key of Object.keys(filters)) if (key in saved) filters[key] = saved[key] }
   catch { sessionStorage.removeItem(storageKey.value) }
-  if (scopedOaNo.value || route.params.formId || route.params.taskId) Object.assign(filters, { taskStatus: '', accountingMonth: '', keyword: '', current: 1 })
+  if (scopedOaNo.value || route.params.formId || route.params.taskId) Object.assign(filters, { taskStatus: '', accountingMonth: scopedItemId.value ? scopedMonth.value : '', keyword: '', current: 1 })
   load()
 })
-watch(() => [route.query.oaNo, route.params.formId, route.params.taskId, fixedSubmission.value], () => { resolvedOaNo.value = ''; personalDocuments.value = []; reset() })
+watch(() => [route.query.oaNo, scopedItemId.value, scopedMonth.value, route.params.formId, route.params.taskId, fixedSubmission.value], () => { resolvedOaNo.value = ''; personalDocuments.value = []; reset() })
 onBeforeUnmount(() => { generation++; persistState() })
 </script>
 

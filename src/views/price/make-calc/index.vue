@@ -40,8 +40,8 @@
 
     <section class="summary-strip">
       <div class="summary-item">
-        <span>当前批次</span>
-        <strong :title="filters.calcBatchId">{{ filters.calcBatchId || '-' }}</strong>
+        <span>批次范围</span>
+        <strong :title="filters.calcBatchId">{{ filters.calcBatchId || '全部生成结果' }}</strong>
       </div>
       <div class="summary-item">
         <span>总行数</span>
@@ -337,7 +337,6 @@ import {
   MAKE_PART_PROCESS_TYPE_OPTIONS,
   MAKE_PART_STATUS_OPTIONS,
   exportMakePartPriceCalc,
-  fetchLatestMakePartPriceCalcBatch,
   fetchMakePartPriceCalcDetail,
   fetchMakePartPriceCalcPage,
   fetchMakePartPriceCalcStatusSummary,
@@ -497,23 +496,7 @@ const fetchAllRows = async () => {
   await Promise.all([fetchRows(), fetchGapRows()])
 }
 
-const loadLatestBatch = async () => {
-  const latest = await fetchLatestMakePartPriceCalcBatch({
-    oaNo: filters.oaNo,
-    businessUnitType: filters.businessUnitType,
-    parentMaterialNo: filters.parentMaterialNo,
-  })
-  if (latest) {
-    filters.calcBatchId = latest
-  }
-}
-
 const refreshLatest = async () => {
-  try {
-    await loadLatestBatch()
-  } catch (error) {
-    filters.calcBatchId = ''
-  }
   await fetchAllRows()
 }
 

@@ -6,17 +6,18 @@ import { test } from 'node:test'
 const page = fs.readFileSync(new URL('../src/pages/MaterialPriceSourcesPage.vue', import.meta.url), 'utf8')
 const script = page.match(/<script setup>([\s\S]*?)<\/script>/)[1].replace(/^import .*$/gm, '')
 const row = () => ({ materialCode: '00123', organization: '210', materialAttribute: null, automatic: false, version: 0, sourceType: 'FIXED', prices: [] })
-function harness(fetch, update = async () => {}, refresh = async () => ({ months: 2, sourceRows: 4 })) {
+function harness(fetch, update = async () => {}, refresh = async () => ({ months: 2, sourceRows: 4 }), bulk = async () => {}) {
   const calls = []
   const context = vm.createContext({
+    URLSearchParams, downloadAuthenticatedBlob: async (...args) => calls.push(args),
     computed: getter => ({ get value() { return getter() } }),
     reactive: value => value, ref: value => ({ value }), watch() {}, onMounted() {},
     useUserStore: () => ({ businessUnitType: 'COMMERCIAL', roles: ['finance_reviewer'], permissions: ['price:material-sources:edit', 'price:material-sources:refresh'] }),
     refreshMaterialPriceSources: refresh,
-    fetchMaterialPriceSources: fetch, updateMaterialPriceAttribute: update,
+    fetchMaterialPriceSources: fetch, updateMaterialPriceAttribute: update, updateMaterialPriceAttributes: bulk,
     ElMessage: { success: value => calls.push(value), error: value => calls.push(value) },
   })
-  vm.runInContext(script + '\nglobalThis.state = { filter, rows, total, error, loading, load, save, saving, refreshSources, refreshState, refreshing, rowKey, attributeOptions, attributeFilterOptions };', context)
+  vm.runInContext(script + '\nglobalThis.state = { filter, rows, total, error, loading, load, save, saving, refreshSources, refreshState, refreshing, rowKey, attributeOptions, attributeFilterOptions, selectedRows, batchAttribute, batchSaving, saveBatch, exporting, exportSources };', context)
   return { ...context.state, calls }
 }
 
@@ -114,4 +115,32 @@ test('手选项只有采购和委外，自制件仍能作为搜索条件', () =>
   const state = harness(async () => ({}))
   assert.deepEqual(Array.from(state.attributeOptions, item => item.value), ['PURCHASE', 'OUTSOURCE'])
   assert.equal(state.attributeFilterOptions.some(item => item.value === 'MANUFACTURE'), true)
+})
+
+test('batch source attributes preserve each source identity and version and make one atomic request', async () => {
+  const sent = [], rows = [row(), { ...row(), materialCode: '00456', sourceType: 'LINKED', version: 8 }]
+  const state = harness(async () => ({ month: '2026-11', rows, total: 2 }), undefined, undefined, async body => sent.push(body))
+  await state.load()
+  state.selectedRows.value = rows
+  state.batchAttribute.value = 'OUTSOURCE'
+  await state.saveBatch()
+  assert.equal(sent.length, 1)
+  assert.equal(sent[0][1].expectedVersion, 8)
+  assert.equal(sent[0][1].sourceType, 'LINKED')
+  assert.equal(sent[0][0].month, '2026-11')
+  assert.equal(state.selectedRows.value.length, 0)
+  assert.equal(state.batchSaving.value, false)
+})
+
+test('Excel export uses all filtered results without page limits and keeps a separate month', async () => {
+  const state = harness(async () => ({ month: '2026-11', rows: [], total: 0 }))
+  await state.load();state.filter.materialCode = '00123';state.filter.organization = '210';state.filter.materialAttribute = 'OUTSOURCE'
+  await state.exportSources()
+  const [path, filename] = state.calls[0]
+  assert.match(path, /material-price-sources\/export/)
+  assert.match(path, /materialCode=00123/)
+  assert.match(path, /materialAttribute=OUTSOURCE/)
+  assert.doesNotMatch(path, /page|size/)
+  assert.match(filename, /2026-11.*xlsx/)
+  assert.equal(state.exporting.value, false)
 })

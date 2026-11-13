@@ -36,8 +36,9 @@ export const fetchTechnicalDataProducts = ({
   accountingMonth,
   keyword,
   oaNo,
+  oaFormItemId,
 } = {}) => request('/api/v2/technical-data/products', {
-  params: { current, size, taskStatus, accountingMonth, keyword, oaNo },
+  params: { current, size, taskStatus, accountingMonth, keyword, oaNo, oaFormItemId },
   suppressErrorToast: true,
 })
 

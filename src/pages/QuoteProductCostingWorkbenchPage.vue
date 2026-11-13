@@ -9,7 +9,7 @@
           <el-button v-if="costingIssueVisible" link type="primary" @click="viewCostingIssue">
             {{ hasPriceGaps ? '查看缺口' : '查看原因' }}
           </el-button>
-          <el-button v-if="!historyViewMode && materialState?.hasSupplement" link type="primary" @click="router.push({ path: '/collaboration/tasks', query: { oaNo } })">
+          <el-button v-if="!historyViewMode && materialState?.hasSupplement" link type="primary" @click="openProductSupplement">
             技术补录
           </el-button>
         </div>
@@ -243,6 +243,9 @@
               :product="item" :month="displayedPeriodMonth" :revision="drawingBomRevision" />
             <div v-else class="pricing-bom-designer">
               <div class="pricing-bom-tree-column">
+            <div v-if="!historyViewMode && effectiveBomTreeData.length" class="bom-shape-batch">
+              <el-button link type="primary" @click="openOrderMaterialShapes()">到本单多源物料形态统一调整</el-button>
+            </div>
             <div class="bom-tree-panel" v-loading="effectiveBomLoading">
               <div v-if="workbenchLoadError" class="empty-tip">工作台读取失败：{{ workbenchLoadError }}</div>
               <div v-else-if="!hasProductIdentity" class="empty-tip">当前产品行无料号、型号和图号</div>
@@ -272,6 +275,7 @@
                     }"
                   >
                     <div class="effective-node-main">
+
                       <span class="node-code">{{ materialIdentityLabel(data) }}</span>
                       <span class="node-name">{{ data.materialName || '' }}</span>
                       <span v-if="!isStructureRootNode(data) && data.qtyPerParent != null" class="node-qty">× {{ data.qtyPerParent }}</span>
@@ -285,9 +289,8 @@
                       >
                         {{ effectiveShapeInfo(data).label }}
                       </el-tag>
-                      <QuoteMaterialShapeSelector v-if="data.multiPriceSource && canSelectAlternative && !historyViewMode"
-                        :node="data" :disabled="shapeSaving || costRunActionLoading || effectiveBomPreviewActive"
-                        @change="saveMaterialShape" />
+                      <el-button v-if="data.multiPriceSource && !historyViewMode" link type="primary"
+                        @click.stop="openOrderMaterialShapes(data.materialCode)">本单统一形态</el-button>
                       <el-tag
                         v-if="effectiveAlternativeInfo(data)"
                         class="effective-alternative-tag"
@@ -1214,7 +1217,6 @@ import BomNodeDetailDrawer from '../components/BomNodeDetailDrawer.vue'
 import BasePagination from '../components/BasePagination.vue'
 import CostRunTraceDrawer from '../components/CostRunTraceDrawer.vue'
 import JjbSheet from '../components/JjbSheet.vue'
-import QuoteMaterialShapeSelector from '../components/QuoteMaterialShapeSelector.vue'
 import { savedMoney } from '../utils/jjbSheet'
 import QuoteBomAlternativeDrawer from '../components/QuoteBomAlternativeDrawer.vue'
 import { fetchMonthlyRepriceActiveLock } from '../api/monthlyReprice'
@@ -1234,7 +1236,6 @@ import {
   prepareQuoteEffectiveBomCosting,
   previewQuoteEffectiveBomAlternative,
   selectQuoteBomAlternative,
-  selectQuoteMaterialShape,
   fetchSavedPricingBom,
   submitQuoteProductCostRun,
 } from '../api/quoteRequests'
@@ -1320,7 +1321,6 @@ const classificationRevision = ref(0)
 const loading = ref(false)
 const refreshingTabs = ref(false)
 const activeTab = ref('PRODUCT_DETAIL')
-const shapeSaving = ref(false)
 const quoteDetailsVisible = ref(false)
 const costingIssueDetailsVisible = ref(false)
 const workspaceRef = ref(null)
@@ -2284,25 +2284,9 @@ async function loadEffectiveBom(showError = true) {
   }
 }
 
-async function saveMaterialShape(node, selectedShape) {
-  if (shapeSaving.value || historyViewMode.value || !node.multiPriceSource || !canSelectAlternative.value) return
-  shapeSaving.value = true
-  try {
-    const result = await selectQuoteMaterialShape(oaNo.value, itemId.value, {
-      periodMonth: presentedEffectiveBom.value.costPeriodMonth || workbench.value.periodMonth,
-      materialCode: node.materialCode, organization: node.priceOrgCode || presentedEffectiveBom.value.priceOrgCode,
-      selectedShape, expectedVersion: node.shapeSelectionVersion || 0,
-      expectedVariantHash: presentedEffectiveBom.value.effectiveVariantHash,
-    })
-    effectiveBomPreview.value = null
-    effectiveBom.value = normalizeQuoteEffectiveBom(result)
-    await loadWorkbench({ resetTab: false, loadChildren: true })
-    ElMessage.success('本次报价形态已保存，正在重新核算')
-    await submitProductCosting('MATERIAL_SHAPE_CHANGED')
-  } catch (error) {
-    ElMessage.error(error?.message || '形态切换失败，请刷新后重试')
-    await loadEffectiveBom(false)
-  } finally { shapeSaving.value = false }
+function openOrderMaterialShapes(materialCode = '') {
+  if (historyViewMode.value) return
+  router.push({ name: 'ingest-quote-request-detail', params: { oaNo: oaNo.value }, query: { tab: 'material-shapes', ...(materialCode ? { materialCode } : {}) } })
 }
 
 const savedPricingBomVisible = ref(false), savedPricingBomTree = ref([])
@@ -2319,23 +2303,7 @@ async function openSavedPricingBom() {
 
 async function editShapeFromSheet(row) {
   if (historyViewMode.value || !row.multiPriceSource || !canSelectAlternative.value) return
-  activeTab.value = 'PRODUCT_DETAIL'
-  await loadEffectiveBom(false)
-  await nextTick()
-  const node = presentedEffectiveBom.value.nodes.find(value => value.materialCode === row.code)
-  if (!node) { ElMessage.warning('该料号未出现在当前计价BOM中，请查看本次计价树'); return }
-  const parents = new Map(presentedEffectiveBom.value.nodes.map(value => [value.nodeKey, value]))
-  const tree = Array.isArray(bomTreeRef.value)
-    ? bomTreeRef.value.find(candidate => candidate?.getNode) : bomTreeRef.value
-  let current = node
-  while (current?.parentNodeKey) {
-    const parent = tree?.getNode(current.parentNodeKey)
-    if (parent) parent.expand()
-    current = parents.get(current.parentNodeKey)
-  }
-  tree?.setCurrentKey(node.nodeKey)
-  await nextTick()
-  document.querySelector('.effective-bom-tree .is-current')?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  openOrderMaterialShapes(row.code)
 }
 
 async function preparePricingBomForNextStep(force = false) {
@@ -2584,6 +2552,12 @@ function openTechnicalPriceImport() {
     oaNo: correction.oaNo, oaFormItemId: String(correction.oaFormItemId),
     pricingMonth: correction.periodMonth, businessUnitType: correction.businessUnitType,
     technicalVersionId: String(correction.technicalVersionId), returnTo: priceSourceReturnTo(),
+  } })
+}
+
+function openProductSupplement() {
+  router.push({ path: '/collaboration/tasks', query: {
+    oaNo: oaNo.value, oaFormItemId: String(itemId.value), accountingMonth: displayedPeriodMonth.value,
   } })
 }
 
@@ -3440,6 +3414,7 @@ onMounted(() => initializeWorkbench())
 </script>
 
 <style scoped>
+.bom-shape-batch { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 0 0 12px; }
 .quality-details summary { cursor: pointer; }
 .quality-details p { margin: 8px 0 0; overflow-wrap: anywhere; }
 .costing-page {

@@ -80,6 +80,11 @@ export const selectQuoteMaterialShape = (oaNo, itemId, body) =>
     method: 'PATCH', body,
   })
 
+export const selectQuoteMaterialShapes = (oaNo, itemId, body) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/effective-bom/material-shape/batch`, {
+    method: 'PATCH', body,
+  })
+
 export const previewQuoteEffectiveBomAlternative = (oaNo, itemId, body) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/effective-bom/alternative-preview`, {
     method: 'POST',
@@ -215,3 +220,8 @@ export const fetchSavedPricingBom = (oaNo, itemId, versionId) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/effective-bom/material-shape`, {
     params: { versionId }, suppressErrorToast: true,
   })
+
+export const prepareQuoteOrderMaterialShapes = oaNo =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/material-shapes/prepare`, { method: 'POST', timeout: 600000, suppressErrorToast: true })
+export const saveQuoteOrderMaterialShapes = (oaNo, body) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/material-shapes`, { method: 'PATCH', body, timeout: 600000, suppressErrorToast: true })

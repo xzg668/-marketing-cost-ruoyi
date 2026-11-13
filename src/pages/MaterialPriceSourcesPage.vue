@@ -1,7 +1,7 @@
 <template>
   <div class="base-page">
     <el-card shadow="never">
-      <div class="heading"><h2>物料多形态属性价格表</h2><el-button v-if="canRefresh" type="primary" :loading="refreshing" @click="refreshSources">更新</el-button></div>
+      <div class="heading"><h2>物料多形态属性价格表</h2><div><el-button :loading="exporting" :disabled="loading || refreshing" @click="exportSources">导出 Excel</el-button><el-button v-if="canRefresh" type="primary" :loading="refreshing" @click="refreshSources">更新</el-button></div></div>
       <el-form :inline="true" @submit.prevent="search">
         <el-form-item label="价格月份"><el-date-picker v-model="filter.month" type="month" value-format="YYYY-MM" placeholder="最新资料月份" /></el-form-item>
         <el-form-item label="料号"><el-input v-model="filter.materialCode" placeholder="输入料号" clearable /></el-form-item>
@@ -14,7 +14,13 @@
     </el-card>
     <el-card shadow="never">
       <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" />
-      <el-table v-loading="loading" :data="rows" :row-key="rowKey" stripe border aria-label="物料价格来源汇总">
+      <div v-if="canEdit" class="heading" style="margin-bottom:12px">
+        <span>已选 {{ selectedRows.length }} 条来源</span>
+        <div><el-select v-model="batchAttribute" placeholder="批量设置料号属性" style="width:190px" :disabled="batchSaving"><el-option v-for="item in attributeOptions" :key="item.value" :label="item.label" :value="item.value" /><el-option label="清除属性" value="CLEAR" /></el-select>
+        <el-button type="primary" :loading="batchSaving" :disabled="!selectedRows.length || !batchAttribute || loading || refreshing" @click="saveBatch">批量保存</el-button></div>
+      </div>
+      <el-table v-loading="loading" :data="rows" :row-key="rowKey" stripe border aria-label="物料价格来源汇总" @selection-change="value => selectedRows = value">
+        <el-table-column v-if="canEdit" type="selection" width="48" :selectable="row => !row.automatic && !batchSaving" />
         <el-table-column prop="materialCode" label="料号" min-width="165" fixed />
         <el-table-column prop="materialModel" label="型号" min-width="140" show-overflow-tooltip />
         <el-table-column prop="materialSpec" label="规格" min-width="140" show-overflow-tooltip />
@@ -24,16 +30,17 @@
         <el-table-column prop="sourceLabel" label="来源地方" width="115" />
         <el-table-column label="价格" min-width="250"><template #default="{ row }">
           <div v-for="(price, index) in row.prices.slice(0, 2)" :key="index" class="price">
-            <strong>{{ price.value ?? '待生成' }}</strong><span v-if="price.value != null"> {{ price.currency || '' }}/{{ price.unit || '单位未注明' }} · {{ taxLabel(price.taxBasis) }}</span>
+            <strong>{{ price.value ?? (row.sourceType === 'MAKE' ? '自制缺价' : '待生成') }}</strong><span v-if="price.value != null"> {{ price.currency || '' }} · {{ taxLabel(price.taxBasis) }}</span>
             <div v-if="price.supplierName" class="hint">{{ price.supplierName }}</div>
           </div>
           <span v-if="!row.prices.length">待生成</span>
           <el-button v-if="row.prices.length" link type="primary" @click="priceDetail = row">价格明细{{ row.prices.length > 1 ? `（${row.prices.length}条）` : '' }}</el-button>
         </template></el-table-column>
+        <el-table-column label="单位" width="110"><template #default="{ row }">{{ [...new Set(row.prices.map(price => price.unit).filter(Boolean))].join('／') || '未注明' }}</template></el-table-column>
         <el-table-column label="料号属性" min-width="175" fixed="right"><template #default="{ row }">
           <el-tag v-if="row.automatic" type="success">自制件</el-tag>
           <el-select v-else-if="canEdit" :model-value="row.materialAttribute || ''" clearable placeholder="请选择" style="width:150px"
-            :disabled="loading || refreshing || saving.has(rowKey(row))" :aria-label="`${row.materialCode} ${row.sourceLabel} 料号属性`" @change="value => save(row, value)">
+            :disabled="batchSaving || loading || refreshing || saving.has(rowKey(row))" :aria-label="`${row.materialCode} ${row.sourceLabel} 料号属性`" @change="value => save(row, value)">
             <el-option v-for="item in attributeOptions" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
           <span v-else>{{ attributeLabel(row.materialAttribute) }}</span>
@@ -61,18 +68,23 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import BasePagination from '../components/BasePagination.vue'
 import { useUserStore } from '../store/modules/user'
-import { fetchMaterialPriceSources, updateMaterialPriceAttribute, refreshMaterialPriceSources } from '../api/materialPriceSources'
+import { fetchMaterialPriceSources, updateMaterialPriceAttribute, updateMaterialPriceAttributes, refreshMaterialPriceSources } from '../api/materialPriceSources'
+import { downloadAuthenticatedBlob } from '../utils/auxiliaryClassification'
 
 const user = useUserStore()
 const financeRole = computed(() => user.roles.some(role => ['admin', 'bu_director', 'finance_reviewer'].includes(role)))
 const allowed = permission => financeRole.value && (user.permissions.includes('*:*:*') || user.permissions.includes(permission))
-const canEdit = computed(() => allowed('price:material-sources:edit'))
+const hasPermission = permission => user.permissions.includes('*:*:*') || user.permissions.includes(permission)
+const canEdit = computed(() => allowed('price:material-sources:edit') ||
+  (hasPermission('price:material-sources:list') && hasPermission('quote:costing:bom:alternative-select')))
 const canRefresh = computed(() => allowed('price:material-sources:refresh'))
 const attributeOptions = [{ value: 'PURCHASE', label: '采购件' }, { value: 'OUTSOURCE', label: '委外加工件' }]
 const attributeFilterOptions = [{ value: 'MANUFACTURE', label: '自制件' }, ...attributeOptions]
 const defaults = () => ({ month: '', materialCode: '', organization: '', materialAttribute: '', page: 1, size: 20 })
 const filter = reactive(defaults())
 const rows = ref([]), total = ref(0), loading = ref(false), error = ref(''), refreshState = ref(null), refreshing = ref(false), priceDetail = ref(null)
+const selectedRows = ref([]), batchAttribute = ref(''), batchSaving = ref(false)
+const exporting = ref(false)
 const saving = reactive(new Set())
 const rowKey = row => `${row.organization}:${row.materialCode}:${row.sourceType}`
 const attributeLabel = value => attributeFilterOptions.find(item => item.value === value)?.label || ''
@@ -84,7 +96,7 @@ let displayedMonth = ''
 async function load() {
   const version = ++requestVersion
   const params = { ...filter }
-  loading.value = true; error.value = ''; priceDetail.value = null
+  loading.value = true; error.value = ''; priceDetail.value = null; selectedRows.value = []
   try {
     const result = await fetchMaterialPriceSources(params)
     if (version !== requestVersion) return
@@ -96,8 +108,30 @@ async function load() {
     rows.value = []; total.value = 0; error.value = cause?.message || '价格来源查询失败，请重试'
   } finally { if (version === requestVersion) loading.value = false }
 }
+async function saveBatch() {
+  if (batchSaving.value || !selectedRows.value.length || !batchAttribute.value) return
+  batchSaving.value = true
+  try {
+    await updateMaterialPriceAttributes(selectedRows.value.map(row => ({ month: displayedMonth,
+      organization: row.organization, materialCode: row.materialCode, sourceType: row.sourceType,
+      materialAttribute: batchAttribute.value === 'CLEAR' ? null : batchAttribute.value, expectedVersion: row.version })))
+    ElMessage.success('所选来源的料号属性已保存')
+    await load()
+  } catch (cause) { ElMessage.error(cause?.message || '批量保存失败，请刷新后重试'); await load() }
+  finally { batchSaving.value = false }
+}
 function search() { if (filter.page === 1) load(); else filter.page = 1 }
 function reset() { Object.assign(filter, defaults()); search() }
+async function exportSources() {
+  if (exporting.value) return
+  exporting.value = true
+  try {
+    const params = new URLSearchParams({ month: filter.month || displayedMonth || '', materialCode: filter.materialCode,
+      organization: filter.organization, materialAttribute: filter.materialAttribute })
+    await downloadAuthenticatedBlob(`/api/v1/material-price-sources/export?${params}`, `物料多形态属性价格表_${filter.month || displayedMonth || '全部'}.xlsx`)
+  } catch (cause) { ElMessage.error(cause?.message || '导出失败，请重试') }
+  finally { exporting.value = false }
+}
 async function refreshSources() {
   if (refreshing.value) return
   refreshing.value = true
