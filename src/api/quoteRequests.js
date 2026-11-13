@@ -75,6 +75,11 @@ export const rebuildQuoteEffectiveBom = (oaNo, itemId) =>
     method: 'POST',
   })
 
+export const selectQuoteMaterialShape = (oaNo, itemId, body) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/effective-bom/material-shape`, {
+    method: 'PATCH', body,
+  })
+
 export const previewQuoteEffectiveBomAlternative = (oaNo, itemId, body) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/effective-bom/alternative-preview`, {
     method: 'POST',
@@ -204,4 +209,9 @@ export const prepareQuoteCosting = (oaNo, body) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}/costing-preparation`, {
     // 整单资料检查先同步完成，再进入核算队列；100 产品并发时可能超过通用的 60 秒。
     method: 'POST', body, timeout: 600000, suppressErrorToast: true,
+  })
+
+export const fetchSavedPricingBom = (oaNo, itemId, versionId) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/effective-bom/material-shape`, {
+    params: { versionId }, suppressErrorToast: true,
   })

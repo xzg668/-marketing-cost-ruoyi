@@ -205,6 +205,15 @@
             </div>
 
             <el-alert
+              v-if="isWaitingForBom() && presentedEffectiveBom.nodes.length > 0"
+              type="warning"
+              show-icon
+              :closable="false"
+              class="inline-alert"
+              title="本体 BOM 已展示，缺失资料请在技术补录工作台补齐；资料齐全后才能核算成本。"
+            />
+
+            <el-alert
               v-if="effectiveBomBlocked && (!showDrawingBomPreview || storedCostingWorkspace.workspaceStatus === 'SYSTEM_FAILED')"
               type="error"
               show-icon
@@ -259,6 +268,7 @@
                       'effective-tree-parent': hasEffectiveBomChildren(data),
                       'effective-tree-root': isStructureRootNode(data),
                       'effective-tree-preview-change': isEffectiveBomPreviewChanged(data),
+                      'multi-price-material': data.multiPriceSource,
                     }"
                   >
                     <div class="effective-node-main">
@@ -275,6 +285,9 @@
                       >
                         {{ effectiveShapeInfo(data).label }}
                       </el-tag>
+                      <QuoteMaterialShapeSelector v-if="data.multiPriceSource && canSelectAlternative && !historyViewMode"
+                        :node="data" :disabled="shapeSaving || costRunActionLoading || effectiveBomPreviewActive"
+                        @change="saveMaterialShape" />
                       <el-tag
                         v-if="effectiveAlternativeInfo(data)"
                         class="effective-alternative-tag"
@@ -1034,7 +1047,16 @@
               title="存在旧的未完成试算，请重新核算生成成功版本"
             />
 
-            <JjbSheet v-if="costRun.sheet" :sheet="costRun.sheet" @trace="openSheetTrace" />
+            <el-button v-if="costRun.sheet" size="small" @click="openSavedPricingBom">查看本版本计价树</el-button>
+            <el-dialog v-model="savedPricingBomVisible" title="本版本计价树（只读）" width="85%">
+              <el-tree :data="savedPricingBomTree" node-key="nodeKey" default-expand-all :props="bomTreeProps">
+                <template #default="{ data }">
+                  <span :class="{ 'multi-price-material': data.multiPriceSource }">{{ data.materialCode }} {{ data.materialName }} × {{ data.qtyPerTop }} · {{ effectiveShapeInfo(data).label }}</span>
+                </template>
+              </el-tree>
+            </el-dialog>
+            <JjbSheet v-if="costRun.sheet" :sheet="costRun.sheet" :can-edit-shape="canSelectAlternative && !historyViewMode"
+              @trace="openSheetTrace" @edit-shape="editShapeFromSheet" />
 
             <el-table
               :data="costRunVersions"
@@ -1192,6 +1214,7 @@ import BomNodeDetailDrawer from '../components/BomNodeDetailDrawer.vue'
 import BasePagination from '../components/BasePagination.vue'
 import CostRunTraceDrawer from '../components/CostRunTraceDrawer.vue'
 import JjbSheet from '../components/JjbSheet.vue'
+import QuoteMaterialShapeSelector from '../components/QuoteMaterialShapeSelector.vue'
 import { savedMoney } from '../utils/jjbSheet'
 import QuoteBomAlternativeDrawer from '../components/QuoteBomAlternativeDrawer.vue'
 import { fetchMonthlyRepriceActiveLock } from '../api/monthlyReprice'
@@ -1211,6 +1234,8 @@ import {
   prepareQuoteEffectiveBomCosting,
   previewQuoteEffectiveBomAlternative,
   selectQuoteBomAlternative,
+  selectQuoteMaterialShape,
+  fetchSavedPricingBom,
   submitQuoteProductCostRun,
 } from '../api/quoteRequests'
 import { downloadAuthenticatedBlob } from '../utils/auxiliaryClassification'
@@ -1295,6 +1320,7 @@ const classificationRevision = ref(0)
 const loading = ref(false)
 const refreshingTabs = ref(false)
 const activeTab = ref('PRODUCT_DETAIL')
+const shapeSaving = ref(false)
 const quoteDetailsVisible = ref(false)
 const costingIssueDetailsVisible = ref(false)
 const workspaceRef = ref(null)
@@ -1762,15 +1788,15 @@ async function loadWorkbench(options = {}) {
     if (resetTab || !activeTab.value) {
       activeTab.value = 'PRODUCT_DETAIL'
     }
+    await loadEffectiveBom()
     if (isWaitingForBom()) {
-      applyStoredBomGap()
+      if (effectiveBom.value.nodes.length === 0 && effectiveBom.value.state !== 'ERROR') applyStoredBomGap()
       resetCurrentInputTabs()
       resetCostRunResult()
       activeRepriceLock.value = { locked: false }
       applyInputGapGuide()
       return
     }
-    await loadEffectiveBom()
     if (loadChildren) {
       await refreshAllTabData()
       inputTabsNeedRefresh.value = false
@@ -2256,6 +2282,60 @@ async function loadEffectiveBom(showError = true) {
   } finally {
     effectiveBomLoading.value = false
   }
+}
+
+async function saveMaterialShape(node, selectedShape) {
+  if (shapeSaving.value || historyViewMode.value || !node.multiPriceSource || !canSelectAlternative.value) return
+  shapeSaving.value = true
+  try {
+    const result = await selectQuoteMaterialShape(oaNo.value, itemId.value, {
+      periodMonth: presentedEffectiveBom.value.costPeriodMonth || workbench.value.periodMonth,
+      materialCode: node.materialCode, organization: node.priceOrgCode || presentedEffectiveBom.value.priceOrgCode,
+      selectedShape, expectedVersion: node.shapeSelectionVersion || 0,
+      expectedVariantHash: presentedEffectiveBom.value.effectiveVariantHash,
+    })
+    effectiveBomPreview.value = null
+    effectiveBom.value = normalizeQuoteEffectiveBom(result)
+    await loadWorkbench({ resetTab: false, loadChildren: true })
+    ElMessage.success('本次报价形态已保存，正在重新核算')
+    await submitProductCosting('MATERIAL_SHAPE_CHANGED')
+  } catch (error) {
+    ElMessage.error(error?.message || '形态切换失败，请刷新后重试')
+    await loadEffectiveBom(false)
+  } finally { shapeSaving.value = false }
+}
+
+const savedPricingBomVisible = ref(false), savedPricingBomTree = ref([])
+async function openSavedPricingBom() {
+  const version = costRun.value.sheet?.identity?.versionId
+  if (!version) return
+  try {
+    const saved = await fetchSavedPricingBom(oaNo.value, itemId.value, version)
+    if (!saved?.nodes?.length) { ElMessage.info('此历史版本未保存计价树快照'); return }
+    savedPricingBomTree.value = buildQuoteEffectiveBomTree(saved.nodes)
+    savedPricingBomVisible.value = true
+  } catch (error) { ElMessage.error(error?.message || '版本计价树读取失败') }
+}
+
+async function editShapeFromSheet(row) {
+  if (historyViewMode.value || !row.multiPriceSource || !canSelectAlternative.value) return
+  activeTab.value = 'PRODUCT_DETAIL'
+  await loadEffectiveBom(false)
+  await nextTick()
+  const node = presentedEffectiveBom.value.nodes.find(value => value.materialCode === row.code)
+  if (!node) { ElMessage.warning('该料号未出现在当前计价BOM中，请查看本次计价树'); return }
+  const parents = new Map(presentedEffectiveBom.value.nodes.map(value => [value.nodeKey, value]))
+  const tree = Array.isArray(bomTreeRef.value)
+    ? bomTreeRef.value.find(candidate => candidate?.getNode) : bomTreeRef.value
+  let current = node
+  while (current?.parentNodeKey) {
+    const parent = tree?.getNode(current.parentNodeKey)
+    if (parent) parent.expand()
+    current = parents.get(current.parentNodeKey)
+  }
+  tree?.setCurrentKey(node.nodeKey)
+  await nextTick()
+  document.querySelector('.effective-bom-tree .is-current')?.scrollIntoView({ block: 'center', behavior: 'smooth' })
 }
 
 async function preparePricingBomForNextStep(force = false) {
@@ -4310,4 +4390,5 @@ onMounted(() => initializeWorkbench())
     width: 100%;
   }
 }
+.multi-price-material { background: #fff4d6; border-radius: 4px; }
 </style>

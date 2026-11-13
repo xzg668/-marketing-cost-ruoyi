@@ -12,10 +12,12 @@
           <tr class="jjb-columns"><th v-for="(column, index) in jjbColumns" :key="column[0]" scope="col" :class="{ 'metal-column': ['grossWeight', 'netWeight', 'rawUnitPrice', 'scrapUnitPrice'].includes(column[0]) }">{{ column[1] }}</th></tr>
         </thead>
         <tbody v-for="group in groups" :key="group.code" :data-section="group.code">
-          <tr v-for="(row, index) in group.rows" :key="row.key" :data-row-key="row.key" :data-row-code="row.code" :data-kind="row.kind" :class="[`kind-${row.kind.toLowerCase()}`, { 'summary-row': row.code === 'MANUFACTURE_COST' }]">
+          <tr v-for="(row, index) in group.rows" :key="row.key" :data-row-key="row.key" :data-row-code="row.code" :data-kind="row.kind" :class="[`kind-${row.kind.toLowerCase()}`, { 'summary-row': row.code === 'MANUFACTURE_COST', 'multi-price-material': row.multiPriceSource }]">
             <td v-for="cell in sheetRowCells(row, group, index)" :key="cell.column" :colspan="cell.colspan" :rowspan="cell.rowspan" :data-column="cell.key" :class="{ numeric: numericColumns.has(cell.key), 'side-label': cell.label }" :title="cell.key === 'basis' ? rowBasis(row) : cell.value">
               <button v-if="cell.key === 'code' && row.code && ['PART', 'HOUSEHOLD', 'EXPLANATION'].includes(row.kind)" class="jjb-trace-link" type="button" :aria-label="`查看 ${row.code} 的核算底稿`" @click="$emit('trace', row)">{{ cell.value }}</button>
               <button v-else-if="cell.key === 'amount' && row.amount != null" class="jjb-trace-link" type="button" @click="$emit('trace', row)">{{ savedMoney(row.amount) }}</button>
+              <button v-else-if="cell.key === 'name' && row.multiPriceSource && canEditShape" class="jjb-trace-link" type="button"
+                :aria-label="`修改 ${row.code} 的本次报价形态`" @click="$emit('edit-shape', row)">{{ cell.value }}</button>
               <template v-else>{{ cell.value }}</template>
             </td>
           </tr>
@@ -35,8 +37,8 @@
 <script setup>
 import { computed } from 'vue'
 import { jjbColumns, jjbColumnWidths, sheetHeaderRows, sheetGroups, sheetRowCells, savedMoney, rowBasis, sheetTotals } from '../utils/jjbSheet'
-const props = defineProps({ sheet: { type: Object, required: true } })
-defineEmits(['trace'])
+const props = defineProps({ sheet: { type: Object, required: true }, canEditShape: Boolean })
+defineEmits(['trace', 'edit-shape'])
 const headers = computed(() => sheetHeaderRows(props.sheet))
 const groups = computed(() => sheetGroups(props.sheet))
 const totals = computed(() => sheetTotals(props.sheet))
@@ -67,6 +69,7 @@ tr[data-row-code="MATERIAL"] td[data-column="amount"] { font-weight:700; }
 .jjb-totals tr[data-total="TOTAL_2"] { border-bottom:2px solid #000; font-size:13px; }
 .jjb-trace-link { border:0; padding:0; background:none; color:inherit; font:inherit; cursor:pointer; }
 .jjb-trace-link:hover { text-decoration:underline; }
+.multi-price-material td { background: #fff4d6; }
 .jjb-table .jjb-note td { white-space:normal; text-align:left; height:38px; font-size:11px; }
 .jjb-warning { background:#fff6e1; padding:8px 12px; margin-bottom:10px; font:13px sans-serif; }
 @media print { .jjb-sheet { padding:0; } .jjb-scroll { overflow:visible; } .jjb-table { min-width:0; font-size:8pt; } }

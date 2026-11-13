@@ -94,6 +94,24 @@ test('opening inputs after costing refreshes the BOM and price tabs', async () =
   assert.equal(h.deps.loading.value, false)
 })
 
+test('missing bare-product packaging still loads the existing body BOM and keeps downstream inputs blocked', async () => {
+  const bodyBom = { state: 'DRAFT', nodes: Array.from({ length: 6 }, (_, id) => ({ id })) }
+  let queried = false
+  const h = harness({
+    isWaitingForBom: () => true,
+    applyStoredBomGap: () => { h.deps.effectiveBom.value = { state: 'BLOCKED', nodes: [] } },
+    resetCurrentInputTabs: () => {}, resetCostRunResult: () => {},
+    activeRepriceLock: ref({ locked: false }),
+    loadEffectiveBom: async () => { queried = true; h.deps.effectiveBom.value = bodyBom },
+  })
+
+  await h.load({ resetTab: true })
+
+  assert.equal(queried, true, 'WAIT_BOM must not hide a usable body BOM returned by the real endpoint')
+  assert.equal(h.deps.effectiveBom.value.nodes.length, 6)
+  assert.equal(h.calls.includes('allTabs'), false, 'displaying the body does not authorize costing')
+})
+
 test('a failed result header read releases loading and does not replace valid BOM with a false gap', async () => {
   const h = harness({ fetchQuoteCostingWorkbench: async () => { throw new Error('读取失败') } })
   await h.load({ costResultOnly: true })

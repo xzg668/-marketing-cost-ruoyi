@@ -22,8 +22,8 @@
         <h4>{{ line.processType || '历史未记录加工方式' }} · {{ line.childMaterialNo }} {{ line.childMaterialName }}</h4>
         <dl>
           <dt>采用单价</dt><dd>{{ line.rawUnitPrice ?? '历史未记录' }} {{ line.rawPriceUnit }}</dd>
-          <dt>毛重</dt><dd>{{ grossWeightWithSource(line.grossWeightG, line.grossWeightSource) || '历史未记录' }} g</dd>
-          <dt>净重</dt><dd>{{ line.netWeightG ?? '历史未记录' }} g</dd>
+          <dt>毛重</dt><dd>{{ grossWeightWithSource(line.grossWeightG, line.grossWeightSource) || '历史未记录' }} g <span v-if="line.grossWeightMaterialCode">（{{ line.grossWeightMaterialCode }}）</span></dd>
+          <dt>净重</dt><dd>{{ line.netWeightG ?? '历史未记录' }} g <span v-if="line.netWeightMaterialCode">（{{ line.netWeightMaterialCode }} · {{ line.netWeightSource }}）</span></dd>
           <dt>废料重量</dt><dd>{{ line.scrapWeightKg ?? '历史未记录' }} kg</dd>
           <dt>废料</dt><dd>{{ line.scrapCode || '无废料／历史未记录' }} {{ line.scrapName }}</dd>
           <dt>废料单价</dt><dd>{{ line.scrapUnitPrice ?? '历史未记录' }} 元/kg</dd>

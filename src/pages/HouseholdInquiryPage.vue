@@ -20,12 +20,13 @@
         <el-table-column label="来源价格口径" min-width="175"><template #default="{ row }">{{ row.priceContext.unit }} / {{ row.priceContext.currency }} / {{ inquiryTaxLabel(row.priceContext.taxBasis) }}</template></el-table-column>
         <el-table-column label="来源版本" width="105"><template #default="{ row }">V{{ row.revisionNo }}</template></el-table-column>
         <el-table-column v-if="sourceMonth" label="来源状态" width="130"><template #default="{ row }"><el-tag :type="row.sourceMonth === sourceMonth ? 'success' : 'info'">{{ row.sourceMonth === sourceMonth ? '当月导入' : '沿用历史询价' }}</el-tag></template></el-table-column>
-        <el-table-column v-if="canQuery" label="操作" width="125" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="detail(row)">来源 / 历史</el-button></template></el-table-column>
+        <el-table-column v-if="canQuery" label="操作" width="190" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="trial(row)">试算</el-button><el-button link type="primary" @click="detail(row)">来源 / 历史</el-button></template></el-table-column>
       </el-table>
       <el-pagination v-if="total" v-model:current-page="page" v-model:page-size="size" :page-sizes="[20, 50, 100]" :total="total" layout="total, sizes, prev, pager, next" @current-change="paginate" @size-change="resize" />
     </el-card>
     <HouseholdInquiryImportDialog v-if="canImport && scope" v-model="importOpen" :scope="scope" :source-month="sourceMonth" :can-download="canDownload" @imported="imported" />
     <HouseholdInquiryDetail v-if="canQuery && scope" v-model="detailOpen" :entry="selected" :scope="scope" :can-download="canDownload" />
+    <HouseholdInquiryTrial v-if="canQuery && scope" v-model="trialOpen" :entry="trialEntry" :scope="scope" :source-month="sourceMonth" />
     <el-dialog v-model="batchOpen" title="询价来源发布记录" width="900px" destroy-on-close>
       <el-alert v-if="batchError" :title="batchError" type="error" :closable="false" />
       <section v-if="batch && canDownload" aria-label="询价来源发布记录">
@@ -48,6 +49,7 @@ import { inquiryDecimal, inquiryPercent, inquiryTaxLabel, inquiryScope, inquiryA
 import { createInquiryList } from './householdInquiryList'
 import HouseholdInquiryImportDialog from '../components/household-inquiry/HouseholdInquiryImportDialog.vue'
 import HouseholdInquiryDetail from '../components/household-inquiry/HouseholdInquiryDetail.vue'
+import HouseholdInquiryTrial from '../components/household-inquiry/HouseholdInquiryTrial.vue'
 const route = useRoute(), router = useRouter(), user = useUserStore()
 const allowed = point => user.permissions.includes('*:*:*') || user.permissions.includes(`price:household-inquiry:${point}`)
 const canList = computed(() => allowed('list'))
@@ -57,6 +59,7 @@ const list = createInquiryList({ fetch: fetchHouseholdInquiries, scope: () => sc
 const { rows, total, loading, error } = toRefs(list.state)
 const page = ref(1), size = ref(20), materialCode = ref(''), sourceMonth = ref('')
 const importOpen = ref(false), detailOpen = ref(false), selected = ref(null), batchOpen = ref(false), batch = ref(null), batchError = ref('')
+const trialOpen = ref(false), trialEntry = ref(null)
 const batchId = computed(() => /^\d+$/.test(String(route.query.batchId || '')) ? String(route.query.batchId) : '')
 let batchSequence = 0, alive = true
 onBeforeUnmount(() => { alive = false; batchSequence++; list.dispose() })
@@ -68,6 +71,7 @@ watch([() => route.fullPath, scope, canList], () => {
 }, { immediate: true })
 watch([scope, canList], () => { importOpen.value = false; detailOpen.value = false; selected.value = null; batchOpen.value = false; batch.value = null; batchSequence++ }, { flush: 'sync' })
 watch(canDownload, value => { batchSequence++; if (!value) { batch.value = null; batchOpen.value = false } }, { flush: 'sync' })
+watch([scope, canQuery], () => { trialOpen.value = false; trialEntry.value = null }, { flush: 'sync' })
 function load() { return list.load({ materialCode: materialCode.value, sourceMonth: sourceMonth.value || undefined, page: page.value, size: size.value }) }
 function search() { page.value = 1; navigate() }
 function paginate() { navigate() }
@@ -78,6 +82,7 @@ function navigate() {
 }
 function refresh() { load() }
 function detail(row) { selected.value = row; detailOpen.value = true }
+function trial(row) { trialEntry.value = row; trialOpen.value = true }
 function imported(result) {
   sourceMonth.value = result.sourceMonth; materialCode.value = ''; page.value = 1
   const target = { path: route.path, query: { ...route.query, sourceMonth: result.sourceMonth, materialCode: undefined, page: undefined, batchId: String(result.batchId) } }

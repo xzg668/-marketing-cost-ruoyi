@@ -31,7 +31,7 @@ function pageFixture(query) {
     useRoute: () => route, useRouter: () => router, useUserStore: () => user, createInquiryList,
     fetchHouseholdInquiries: async query => { requests.push({ ...query }); return { rows: [], total: 0 } },
     fetchHouseholdImport() {}, downloadHouseholdImportOriginal() {},
-    HouseholdInquiryImportDialog: {}, HouseholdInquiryDetail: {},
+    HouseholdInquiryImportDialog: {}, HouseholdInquiryDetail: {}, HouseholdInquiryTrial: {},
   }))
   const state = app.mount({}).$.setupState
   return { app, state, route, requests }

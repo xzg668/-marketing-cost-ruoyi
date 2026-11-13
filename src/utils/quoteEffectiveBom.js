@@ -17,6 +17,7 @@ const SHAPE_SOURCE_LABELS = Object.freeze({
   STRUCTURE_ROOT: '产品结构根',
   FIXED_POLICY: '固定形态规则',
   SUPPLIER_RATIO: '供货比例规则',
+  QUOTATION_SELECTION: '本次报价形态选择',
 })
 
 const ALTERNATIVE_META = Object.freeze({
