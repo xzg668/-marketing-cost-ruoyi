@@ -2,6 +2,8 @@
   <el-dialog v-model="visible" title="月度调价 · 导入联动价和区间价文件夹" width="92%" :close-on-click-modal="!busy" :show-close="!busy" :close-on-press-escape="!busy">
     <p>目标月份：<strong>{{ month }}</strong>。请先维护当月财务基价；系统按主表识别价格，保留原公式和区间规则。</p>
     <div class="folder-actions">
+      <WorkbookActions kind="linked" template-label="下载联动价填写模板" />
+      <WorkbookActions kind="range" template-label="下载区间价填写模板" />
       <el-button type="primary" :disabled="busy || !month" @click="folderInput.click()">{{ report && report.status !== 'COMPLETE' ? '重新选择文件夹，补传或修正' : '选择文件夹并导入' }}</el-button>
       <input ref="folderInput" class="file-input" type="file" webkitdirectory directory multiple aria-label="选择价格文件夹" @change="onFolder" />
       <input ref="replacementInput" class="file-input" type="file" aria-label="选择修正后的价格文件" @change="onReplacement" />
@@ -72,6 +74,7 @@
 </template>
 
 <script setup>
+import WorkbookActions from './WorkbookActions.vue'
 import { computed, ref, watch } from 'vue'
 import { useUserStore } from '../store/modules/user'
 import * as api from '../api/monthlyPriceFolders'

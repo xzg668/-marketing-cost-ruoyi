@@ -32,14 +32,18 @@
       <div v-if="displayRows.length" class="composition-table"><table><thead><tr><th v-for="column in columns" :key="column.key">{{ column.label }}</th></tr></thead>
         <tbody><tr v-for="(row, index) in displayRows" :key="index"><td v-for="column in columns" :key="column.key" :class="{ 'path-cell': column.key === 'path' }">{{ row[column.key] ?? '' }}</td></tr></tbody></table></div>
       <p v-else>未记录可展开的原始分项，核对说明及已保存依据可下载。</p>
-      <details v-if="paths.length"><summary>展开 CMS 路径分项（{{ paths.length }} 项）</summary><ol><li v-for="(path,index) in paths" :key="index"><p>{{ path.path }}</p><p>{{ path.originalCent || '未记录' }} 分 → {{ path.amountYuan || '未记录' }} 元；{{ path.treatment }}</p></li></ol></details>
+      <template v-if="exclusionRows.length"><h5>本单工资剔除明细</h5><p>以下剔除额已从上方来源原金额扣除，不再重复扣减。完整路径及来源记录随明细一起下载。</p>
+        <div class="composition-table"><table aria-label="本单工资剔除明细"><thead><tr><th v-for="column in exclusionColumns" :key="column.key">{{ column.label }}</th></tr></thead>
+          <tbody><tr v-for="(row,index) in exclusionRows" :key="index"><td v-for="column in exclusionColumns" :key="column.key" :class="{ 'path-cell': column.key === 'path' }">{{ row[column.key] ?? '' }}</td></tr></tbody></table></div>
+      </template>
+      <details v-if="paths.length"><summary>展开 CMS 路径分项（{{ paths.length }} 项）</summary><ol><li v-for="(path,index) in paths" :key="index"><p>{{ path.path }}</p><p><template v-if="path.pathBasis != null">路径分摊值 {{ path.pathBasis || '未记录' }}；</template><template v-else>{{ path.originalCent || '未记录' }} 分 → {{ path.amountYuan || '未记录' }} 元；</template>{{ path.treatment }}</p></li></ol></details>
     </template>
   </section>
 </template>
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { fetchCostAmountComposition } from '../api/costRunDetail'
-import { compositionPaths, downloadComposition, visibleCompositionColumns } from '../utils/costAmountComposition'
+import { compositionDetailRows, compositionExclusionRows, compositionPaths, downloadComposition, visibleCompositionColumns } from '../utils/costAmountComposition'
 const props = defineProps({ costRunNo: { type: String, required: true }, costItemId: { type: [Number,String], default: null }, partItemId: { type: [Number,String], default: null } })
 const view = ref(null), loading = ref(false), error = ref('')
 let requestId = 0
@@ -55,8 +59,9 @@ async function load() {
 }
 watch(() => [props.costRunNo, props.costItemId, props.partItemId], load, { immediate: true })
 onBeforeUnmount(() => { requestId++ })
-const isPackaging = computed(() => ['OTHER_EXP_PACKAGE','BOM_BUCKET_PACKAGE'].includes(view.value?.costCode))
-const displayRows = computed(() => isPackaging.value ? view.value.composition.rows.filter(row => row.kind === 'PACKAGE_COMPONENT') : view.value?.composition.rows || [])
+const displayRows = computed(() => compositionDetailRows(view.value))
+const exclusionRows = computed(() => compositionExclusionRows(view.value))
+const exclusionColumns = computed(() => view.value ? visibleCompositionColumns({ ...view.value, composition: { ...view.value.composition, rows: exclusionRows.value } }) : [])
 const packageTotals = computed(() => view.value?.composition.rows.filter(row => row.kind === 'PACKAGE_TOTAL') || [])
 const columns = computed(() => view.value ? visibleCompositionColumns({ ...view.value, composition: { ...view.value.composition, rows: displayRows.value } }) : [])
 const paths = computed(() => view.value ? compositionPaths(view.value) : [])

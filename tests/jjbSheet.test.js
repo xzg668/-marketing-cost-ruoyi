@@ -2,6 +2,16 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { savedMoney, rowBasis, ratePercent, sheetGroups, sheetTotals, jjbColumns, sheetHeaderRows, sheetRowCells, manufacturingGrossWeightSource, grossWeightWithSource } from '../src/utils/jjbSheet.js'
 
+test('包装费用在原金额行显示包装料号与保存规格，业务费用标识保持', () => {
+  const row = { kind: 'CONTRIBUTION', code: 'OTHER_EXP_PACKAGE', name: '包装费用', displayCode: '001\n002', drawingNo: '箱规格\n托规格', amount: '0.324345' }
+  const cells = sheetRowCells(row, { code: 'MATERIAL_DETAIL' }, 0)
+  assert.equal(cells[0].value, '001\n002')
+  assert.equal(cells[1].value, '包装费用')
+  assert.equal(cells[2].value, '箱规格\n托规格')
+  assert.equal(cells[6].value, '0.324345')
+  assert.equal(row.code, 'OTHER_EXP_PACKAGE')
+})
+
 test('报价员使用保存成本的核算人，不借用需求申请人', () => {
   const rows = sheetHeaderRows({ header: { quotation: { quoterName: '罗思雅', applicantName: '需求申请人' } } })
   assert.equal(rows[0].cells.find(cell => cell.column === 4).value, '罗思雅')

@@ -7,6 +7,7 @@
           <div class="filter-tip">支持原始多表文件或独立的“报价系统展示”单表，导入会覆盖同年度同裸品料号的手工修正。</div>
         </div>
         <div class="filter-actions">
+          <WorkbookActions kind="quality" :fetch-page="fetchQualityLossRates" :query="buildParams()" import-permission="base:quality-loss:import" />
           <el-upload
             ref="uploadRef"
             class="upload-btn"
@@ -101,6 +102,7 @@
 </template>
 
 <script setup>
+import WorkbookActions from '../components/WorkbookActions.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import BasePagination from '../components/BasePagination.vue'

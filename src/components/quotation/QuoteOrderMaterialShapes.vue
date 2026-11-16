@@ -1,25 +1,24 @@
 <template>
   <section v-loading="loading" class="order-material-shapes">
-    <p>在本单选择物料形态和价格源，所有涉及产品按各自 BOM 用量核算。本单选择不修改公共价格表的分类；供应商沿原供货规则确定。</p>
+    <p>本单只选择物料采用形态，所有涉及产品按各自 BOM 用量核算。价格来源的形态属性由财务在“物料多形态属性价格表”维护；沿用 BOM 默认形态的物料按原规则取价。</p>
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
     <el-alert v-if="view.problems.length" type="warning" :closable="false" :title="`${view.problems.length} 个产品的 BOM 尚未齐全，暂未计入汇总；补齐后沿用本单选择并校验`">
       <div v-for="problem in view.problems" :key="problem.itemId">{{ problem.productCode || problem.itemId }}：{{ problem.message }}</div>
     </el-alert>
     <div class="shape-actions">
       <el-input v-model="search" placeholder="筛选料号或名称" clearable style="width:230px" />
-      <el-button :disabled="saving" @click="load">刷新物料来源</el-button>
+      <el-button :disabled="saving || refreshing" @click="load">刷新物料来源</el-button>
+      <span v-if="refreshing" role="status" class="refresh-note">正在更新物料来源…</span>
+      <el-button v-if="refreshRequired && !refreshing" :disabled="saving" @click="clearDrafts(); load()">重新加载并清除未保存选择</el-button>
       <template v-if="canEdit">
-        <span>已勾选 {{ selected.length }} 个物料</span>
+        <span class="selection-summary">已勾选 {{ selected.length }} 个物料</span>
         <el-select v-model="batchShape" placeholder="批量选择形态" style="width:170px" :disabled="saving">
           <el-option v-for="(label, shape) in labels" :key="shape" :label="label" :value="shape"
             :disabled="shape !== 'DEFAULT' && selected.some(row => !row.allowedShapes.includes(shape))" />
         </el-select>
-        <el-select v-if="view.sourceSelectionSupported" v-model="batchSource" placeholder="批量选用价格源" clearable style="width:180px" :disabled="saving || !commonSources.length">
-          <el-option v-for="source in commonSources" :key="source.sourceType" :label="source.sourceLabel" :value="source.sourceType" />
-        </el-select>
         <el-button :disabled="saving || !selected.length || !batchShape" @click="applyBatch">应用到勾选物料</el-button>
-        <el-button :loading="saving" :disabled="!changes.length || incomplete || busy" @click="save(false)">保存选择</el-button>
-        <el-button type="primary" :loading="saving" :disabled="!changes.length || incomplete || busy" @click="save(true)">保存并整单核算</el-button>
+        <el-button :loading="saving" :disabled="!changes.length || busy || refreshing || refreshRequired" @click="save(false)">保存选择</el-button>
+        <el-button type="primary" :loading="saving" :disabled="!changes.length || busy || refreshing || refreshRequired" @click="save(true)">保存并整单核算</el-button>
       </template>
     </div>
     <el-table :data="filteredRows" :row-key="rowKey" border max-height="620" @selection-change="selected = $event">
@@ -31,6 +30,7 @@
       <el-table-column prop="materialSpec" label="规格" min-width="135" show-overflow-tooltip />
       <el-table-column label="价格来源" min-width="240"><template #default="{ row }">
         <div v-for="source in row.sources" :key="source.sourceType">
+          <el-tag size="small" :type="source.materialAttribute === currentShape(row) ? 'success' : 'info'">{{ labels[source.materialAttribute] || '财务未分类' }}</el-tag>
           <el-tooltip :content="source.prices.map(price => [price.supplierName || price.supplierCode, priceText(price), price.condition].filter(Boolean).join(' · ')).join('；') || '价格按实际核算条件取得'">
             <span>{{ sourceSummary(source) }}</span>
           </el-tooltip>
@@ -53,17 +53,7 @@
         <span v-else>{{ labels[row.selectedShape || 'DEFAULT'] }}</span>
         <div v-if="row.legacySelection" class="legacy-note">存在原单品选择，请在此统一维护</div>
       </template></el-table-column>
-      <el-table-column label="本单选用价格源" min-width="220" fixed="right"><template #default="{ row }">
-        <el-select v-if="canEdit && view.sourceSelectionSupported && row.allowedShapes.length"
-          :model-value="currentSource(row)" :aria-label="`${row.materialCode} 本单选用价格源`"
-          :disabled="saving || busy || currentShape(row) === 'DEFAULT' || currentShape(row) === 'MANUFACTURE'"
-          :placeholder="currentShape(row) === 'DEFAULT' ? '先选择本单采用形态' : '请选择价格源'" @change="value => setSource(row, value)">
-          <el-option v-for="source in sourceOptions(row, currentShape(row))" :key="source.sourceType"
-            :label="sourceSummary(source)" :value="source.sourceType" />
-        </el-select>
-        <span v-else>{{ row.sources.find(source => source.sourceType === row.selectedSourceType)?.sourceLabel || '按原取价规则' }}</span>
-      </template></el-table-column>
-      <template #empty><el-empty :description="error ? '读取失败，请重试' : '本单没有符合条件的多源物料'" /></template>
+      <template #empty><p class="table-empty-message" role="status">{{ refreshing ? '正在查找多源物料…' : error ? '读取失败，请重试' : '本单没有符合条件的多源物料' }}</p></template>
     </el-table>
   </section>
 </template>
@@ -72,39 +62,28 @@
 import { computed, onScopeDispose, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '../../store/modules/user'
-import { prepareQuoteOrderMaterialShapes, saveQuoteOrderMaterialShapes } from '../../api/quoteRequests'
+import { fetchQuoteOrderMaterialShapes, prepareQuoteOrderMaterialShapes, saveQuoteOrderMaterialShapes } from '../../api/quoteRequests'
 const props = defineProps({ oaNo: { type: String, required: true }, active: Boolean, readonly: Boolean, busy: Boolean, materialCode: String })
 const emit = defineEmits(['saved', 'cost'])
 const user = useUserStore()
 const permitted = permission => user.permissions.includes('*:*:*') || user.permissions.includes(permission)
-const canEdit = computed(() => !props.readonly && user.roles.some(role => ['admin', 'bu_director', 'finance_reviewer'].includes(role)) &&
-  (permitted('price:material-sources:edit') || permitted('quote:costing:bom:alternative-select')))
+const canEdit = computed(() => !props.readonly && (user.roles.some(role => ['admin', 'bu_director', 'bu_staff'].includes(role)) ||
+  permitted('quote:costing:bom:alternative-select') ||
+  (user.roles.includes('finance_reviewer') && permitted('price:material-sources:edit'))))
 const labels = { MANUFACTURE: '自制件', PURCHASE: '采购件', OUTSOURCE: '委外加工件', DEFAULT: '沿用各产品BOM默认形态' }
 const view = ref({ rows: [], problems: [], fingerprint: null })
-const loading = ref(false), saving = ref(false), error = ref(''), selected = ref([]), batchShape = ref(''), batchSource = ref('')
-const search = ref(props.materialCode || ''), drafts = reactive({}), sourceDrafts = reactive({})
+const loading = ref(false), saving = ref(false), error = ref(''), selected = ref([]), batchShape = ref('')
+const refreshing = ref(false), refreshRequired = ref(false), hasView = ref(false)
+const search = ref(props.materialCode || ''), drafts = reactive({})
 const rowKey = row => `${row.periodMonth}:${row.organization}:${row.materialCode}`
 const filteredRows = computed(() => view.value.rows.filter(row => `${row.materialCode} ${row.materialName || ''}`.includes(search.value.trim())))
-const changes = computed(() => view.value.rows.filter(row => drafts[rowKey(row)] !== undefined || sourceDrafts[rowKey(row)] !== undefined).map(row => ({
+const changes = computed(() => view.value.rows.filter(row => drafts[rowKey(row)] !== undefined).map(row => ({
   periodMonth: row.periodMonth, organization: row.organization, materialCode: row.materialCode,
-  selectedShape: (drafts[rowKey(row)] ?? row.selectedShape ?? 'DEFAULT') === 'DEFAULT' ? null : (drafts[rowKey(row)] ?? row.selectedShape), expectedVersion: row.version,
-  selectedSourceType: (drafts[rowKey(row)] ?? row.selectedShape ?? 'DEFAULT') === 'DEFAULT' ? null
-    : (sourceDrafts[rowKey(row)] !== undefined ? sourceDrafts[rowKey(row)] : row.selectedSourceType) || null,
+  selectedShape: drafts[rowKey(row)] === 'DEFAULT' ? null : drafts[rowKey(row)], expectedVersion: row.version,
 })))
-const incomplete = computed(() => view.value.sourceSelectionSupported && changes.value.some(row => row.selectedShape && !row.selectedSourceType))
-const commonSources = computed(() => {
-  if (!selected.value.length) return []
-  return sourceOptions(selected.value[0], batchShape.value || currentShape(selected.value[0])).filter(source =>
-    selected.value.every(row => sourceOptions(row, batchShape.value || currentShape(row)).some(option => option.sourceType === source.sourceType)))
-})
 let generation = 0
-function clearDrafts() { Object.keys(drafts).forEach(key => delete drafts[key]); Object.keys(sourceDrafts).forEach(key => delete sourceDrafts[key]); selected.value = []; batchSource.value = '' }
+function clearDrafts() { Object.keys(drafts).forEach(key => delete drafts[key]); selected.value = [] }
 function currentShape(row) { return drafts[rowKey(row)] ?? row.selectedShape ?? 'DEFAULT' }
-function currentSource(row) { return sourceDrafts[rowKey(row)] !== undefined ? sourceDrafts[rowKey(row)] : row.selectedSourceType || null }
-function sourceOptions(row, shape) {
-  if (!shape || shape === 'DEFAULT') return []
-  return (row.sources || []).filter(source => shape === 'MANUFACTURE' ? source.sourceType === 'MAKE' : source.sourceType !== 'MAKE')
-}
 function priceText(price) {
   if (price.value == null) return '待算价'
   return `${price.value} ${price.currency || 'CNY'}/${price.unit || '单位未注明'}${price.taxBasis === 'INCLUDED' ? ' 含税' : price.taxBasis === 'EXCLUDED' ? ' 不含税' : ''}`
@@ -114,40 +93,46 @@ function sourceSummary(source) {
   return `${source.sourceLabel} · ${prices.length ? prices.slice(0, 2).join(' / ') + (prices.length > 2 ? ' 等报价' : '') : source.sourceType === 'MAKE' ? '自制计算' : '待算价'}`
 }
 async function load() {
-  if (!props.oaNo || saving.value) return
+  if (!props.oaNo || saving.value || refreshing.value) return
   const current = ++generation, oaNo = props.oaNo
-  loading.value = true; error.value = ''
+  const isCurrent = () => current === generation && oaNo === props.oaNo
+  loading.value = !hasView.value; refreshing.value = true; error.value = ''
   try {
+    // Show saved sources promptly, but always discover missing sources/BOMs as well.
+    try {
+      const existing = await fetchQuoteOrderMaterialShapes(oaNo)
+      if (!isCurrent()) return
+      installView(existing); hasView.value = true; loading.value = false
+    } catch { /* The discovery request can still supply the complete view. */ }
+    if (!isCurrent()) return
     const result = await prepareQuoteOrderMaterialShapes(oaNo)
-    if (current !== generation || oaNo !== props.oaNo) return
-    view.value = result; clearDrafts()
-  } catch (failure) { if (current === generation) { error.value = failure?.message || '多源物料读取失败'; view.value = { rows: [], problems: [], fingerprint: null }; clearDrafts() } }
-  finally { if (current === generation) loading.value = false }
+    if (!isCurrent()) return
+    installView(result); hasView.value = true
+  } catch (failure) {
+    if (isCurrent()) {
+      refreshRequired.value = true
+      error.value = hasView.value ? '更新物料来源失败，已保留清单和未保存选择，请刷新后再保存' : failure?.message || '多源物料读取失败'
+    }
+  } finally { if (isCurrent()) { loading.value = false; refreshing.value = false } }
+}
+function installView(result) {
+  if (Object.keys(drafts).length && view.value.fingerprint !== result.fingerprint) {
+    refreshRequired.value = true
+    error.value = '物料或财务属性已更新，未保存选择已保留；请重新加载后再选择'
+    return
+  }
+  view.value = result; refreshRequired.value = false; error.value = ''
 }
 function setShape(row, shape) {
   if (!canEdit.value || saving.value || props.busy || (shape !== 'DEFAULT' && !row.allowedShapes.includes(shape))) return
   if (!row.legacySelection && (row.selectedShape || 'DEFAULT') === shape) delete drafts[rowKey(row)]
   else drafts[rowKey(row)] = shape
-  if (view.value.sourceSelectionSupported) {
-    const options = sourceOptions(row, shape), candidates = [currentSource(row), row.selectedSourceType]
-    const chosen = candidates.find(value => options.some(source => source.sourceType === value)) || (options.length === 1 ? options[0].sourceType : null)
-    stageSource(row, chosen)
-  }
-}
-function stageSource(row, source) {
-  if ((row.selectedSourceType || null) === source) delete sourceDrafts[rowKey(row)]
-  else sourceDrafts[rowKey(row)] = source
-}
-function setSource(row, source) {
-  if (!canEdit.value || saving.value || props.busy || !sourceOptions(row, currentShape(row)).some(option => option.sourceType === source)) return
-  stageSource(row, source)
 }
 function applyBatch() {
-  selected.value.forEach(row => { setShape(row, batchShape.value); if (batchSource.value) setSource(row, batchSource.value) })
+  selected.value.forEach(row => setShape(row, batchShape.value))
 }
 async function save(cost) {
-  if (!canEdit.value || saving.value || props.busy || !changes.value.length) return
-  if (incomplete.value) { error.value = '请为调整的物料选择本单价格源'; return }
+  if (!canEdit.value || saving.value || refreshing.value || refreshRequired.value || props.busy || !changes.value.length) return
   const current = generation, oaNo = props.oaNo
   saving.value = true; error.value = ''
   try {
@@ -159,12 +144,27 @@ async function save(cost) {
   } catch (failure) { if (current === generation) error.value = failure?.message || '保存失败，请刷新后重试' }
   finally { if (current === generation) { saving.value = false; if (!error.value) await load() } }
 }
-watch(() => [props.oaNo, props.active], () => { generation++; saving.value = false; loading.value = false; clearDrafts(); if (props.active) load() }, { immediate: true })
+watch(() => [props.oaNo, props.active], ([number], previous) => {
+  generation++; saving.value = false; loading.value = false; refreshing.value = false
+  if (number !== previous?.[0]) {
+    view.value = { rows: [], problems: [], fingerprint: null }
+    hasView.value = false; refreshRequired.value = false; error.value = ''; clearDrafts()
+  }
+  if (props.active) load()
+}, { immediate: true, flush: 'sync' })
 watch(() => props.materialCode, value => { search.value = value || '' })
 onScopeDispose(() => { generation++ })
 </script>
 <style scoped>
-.order-material-shapes > p { color: #606266; margin: 0 0 16px; }
-.shape-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin: 16px 0; }
+.order-material-shapes { color: #344054; font-size: 14px; line-height: 1.5; }
+.order-material-shapes > p { color: #697386; font-size: 13px; line-height: 1.6; margin: 0 0 12px; }
+.shape-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.shape-actions :deep(.el-button) { margin-left: 0; }
+.selection-summary { color: #697386; font-size: 13px; font-variant-numeric: tabular-nums; }
+.order-material-shapes :deep(th.el-table__cell) { color: #475467; font-weight: 600; background: #f8fafc; }
+.order-material-shapes :deep(td.el-table__cell) { padding: 9px 0; }
+.order-material-shapes :deep(.el-table__empty-text) { width: 100%; }
+.table-empty-message { margin: 0; padding: 24px 16px; color: #697386; font-size: 14px; line-height: 1.6; }
 .legacy-note { color: #b88230; font-size: 12px; margin-top: 6px; }
+.refresh-note { color: #606266; font-size: 13px; }
 </style>

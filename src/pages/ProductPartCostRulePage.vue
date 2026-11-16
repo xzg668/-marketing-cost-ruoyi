@@ -4,6 +4,7 @@
     <template v-else>
       <div class="heading"><div><h1>成品零件成本配置</h1><p>同一成品内，先按零件料号匹配，未匹配到再按型号匹配。</p></div>
         <div class="actions">
+          <WorkbookActions kind="partCosts" :show-template="false" :fetch-page="listProductPartCostRules" :query="{ ...filters }" />
           <el-button :loading="downloading" @click="downloadTemplate">下载模板</el-button>
           <el-button :loading="importing" :disabled="saving" @click="fileInput.click()">导入配置</el-button>
           <el-button type="primary" :disabled="importing" @click="edit()">新增配置</el-button>
@@ -47,6 +48,7 @@
 </template>
 
 <script setup>
+import WorkbookActions from '../components/WorkbookActions.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '../store/modules/user'

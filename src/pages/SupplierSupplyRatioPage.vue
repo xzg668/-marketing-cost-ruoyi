@@ -6,7 +6,8 @@
         <p>基础数据 / 供应关系</p>
       </div>
       <div class="toolbar-actions">
-        <el-button v-hasPermi="['base:supplier-supply-ratio:import']" :icon="Upload" @click="openImportDialog">导入 Excel</el-button>
+        <WorkbookActions kind="supplier" :fetch-page="fetchSupplierSupplyRatios" :query="{ ...filters }" import-permission="base:supplier-supply-ratio:import" />
+          <el-button v-hasPermi="['base:supplier-supply-ratio:import']" :icon="Upload" @click="openImportDialog">导入 Excel</el-button>
         <el-button @click="openChanges()">变更记录</el-button>
         <el-button type="primary" :icon="RefreshRight" @click="fetchRows">刷新</el-button>
       </div>
@@ -142,6 +143,7 @@
 </template>
 
 <script setup>
+import WorkbookActions from '../components/WorkbookActions.vue'
 import { onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRoute } from 'vue-router'

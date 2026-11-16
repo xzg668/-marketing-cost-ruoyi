@@ -1,8 +1,8 @@
 <template>
   <section class="jjb-sheet" :data-version-id="sheet.identity.versionId">
     <div v-for="warning in sheet.warnings" :key="warning" class="jjb-warning" role="note">{{ warning }}</div>
-    <div class="jjb-scroll">
-      <table class="jjb-table" aria-label="产品成本计算一览表">
+    <div ref="viewport" class="jjb-scroll">
+      <table ref="table" class="jjb-table" aria-label="产品成本计算一览表">
         <colgroup><col v-for="(column, index) in jjbColumns" :key="column[0]" :style="{ width: `${jjbColumnWidths[index] / totalWidth * 100}%` }" /></colgroup>
         <thead>
           <tr class="jjb-title"><th :colspan="jjbColumns.length"><h2>产品成本计算一览表</h2></th></tr>
@@ -25,19 +25,22 @@
         <tbody class="jjb-totals">
           <tr v-for="total in totals" :key="total.key" :data-total="total.key">
             <th colspan="3" scope="row">{{ total.name }}</th><td></td><td></td><td></td>
-            <td class="numeric" data-column="amount">{{ savedMoney(total.amount) }}</td>
+            <td class="numeric" data-column="amount"><button class="jjb-trace-link total-link" type="button" :aria-label="`查看${total.name}的计算明细`" @click="$emit('trace', total)">{{ savedMoney(total.amount) || '历史未记录' }}</button></td>
             <td v-for="column in 9" :key="column">{{ column === 8 && total.amount == null ? '历史未记录' : '' }}</td>
           </tr>
           <tr class="jjb-note"><td :colspan="jjbColumns.length">成本版本：{{ sheet.identity.versionNo || sheet.identity.costRunNo }}；核算月份：{{ sheet.identity.pricingMonth }}。金额为元/件；产品属性系数已包含在保存金额中。{{ sheet.header.descriptionBasis }}</td></tr>
         </tbody>
       </table>
     </div>
+    <FixedTableScrollbar :viewport="viewport" :content="table" />
   </section>
 </template>
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import FixedTableScrollbar from './FixedTableScrollbar.vue'
 import { jjbColumns, jjbColumnWidths, sheetHeaderRows, sheetGroups, sheetRowCells, savedMoney, rowBasis, sheetTotals } from '../utils/jjbSheet'
 const props = defineProps({ sheet: { type: Object, required: true }, canEditShape: Boolean })
+const viewport = ref(null), table = ref(null)
 defineEmits(['trace', 'edit-shape'])
 const headers = computed(() => sheetHeaderRows(props.sheet))
 const groups = computed(() => sheetGroups(props.sheet))
@@ -48,7 +51,7 @@ const numericColumns = new Set(['unitPrice', 'quantity', 'amount', 'grossWeight'
 <style scoped>
 .jjb-sheet { background:#fff; color:#000; padding:8px; }
 .jjb-scroll { overflow:auto; }
-.jjb-table { border-collapse:collapse; table-layout:fixed; width:100%; min-width:1560px; border:2px solid #000; font:12px SimSun,"Songti SC",serif; }
+.jjb-table { border-collapse:collapse; table-layout:fixed; width:100%; min-width:1630px; border:2px solid #000; font:12px SimSun,"Songti SC",serif; }
 .jjb-table th,.jjb-table td { border:1px solid #000; padding:2px 3px; height:24px; box-sizing:border-box; text-align:center; vertical-align:middle; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .jjb-title th { height:57px; border:0; }
 .jjb-title h2 { margin:0; font-size:24px; font-weight:700; letter-spacing:2px; }
@@ -58,16 +61,18 @@ const numericColumns = new Set(['unitPrice', 'quantity', 'amount', 'grossWeight'
 .jjb-columns .metal-column { background:#f00; }
 .jjb-table .numeric { font-variant-numeric:tabular-nums; }
 .jjb-table td[data-column="grossWeight"] { white-space:normal; overflow-wrap:anywhere; }
+.jjb-table td[data-column="drawingNo"] { white-space:pre-wrap; overflow-wrap:anywhere; text-overflow:clip; line-height:18px; }
 .jjb-table .side-label { font-weight:700; white-space:normal; }
 .kind-subtotal td,.kind-property td,.summary-row td { font-weight:700; }
 .kind-subtotal td,.kind-property td,.summary-row td { background:#ef939e; }
 .kind-property td:first-child { background:#fff; }
 tr[data-row-code="MATERIAL"] td[data-column="amount"] { font-weight:700; }
 .kind-explanation td { height:40px; }
-.kind-explanation td[data-column="code"] { white-space:pre-line; line-height:16px; }
+.jjb-table td[data-column="code"],.jjb-table td[data-column="name"] { white-space:pre-line; line-height:16px; }
 .jjb-totals th,.jjb-totals .numeric { font-weight:700; }
 .jjb-totals tr[data-total="TOTAL_2"] { border-bottom:2px solid #000; font-size:13px; }
 .jjb-trace-link { border:0; padding:0; background:none; color:inherit; font:inherit; cursor:pointer; }
+.total-link { color:#1262a3; text-decoration:underline; }
 .jjb-trace-link:hover { text-decoration:underline; }
 .multi-price-material td { background: #fff4d6; }
 .jjb-table .jjb-note td { white-space:normal; text-align:left; height:38px; font-size:11px; }

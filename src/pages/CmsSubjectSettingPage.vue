@@ -3,6 +3,7 @@
     title="CMS 科目设置"
     description="CMS 科目归类和编码字典，用于识别辅料和辅助员工工资取数科目。"
   >
+    <template #actions><WorkbookActions kind="cmsSetting" :fetch-page="fetchCmsSubjectSettings" :query="buildParams()" page-key="current" size-key="size" import-permission="cms:cost:import" /></template>
     <section class="cms-query-panel">
       <el-form class="cms-query-form" :inline="true" :model="filters" label-width="88px">
         <el-form-item label="一级科目">
@@ -44,6 +45,7 @@
 </template>
 
 <script setup>
+import WorkbookActions from '../components/WorkbookActions.vue'
 import { onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'

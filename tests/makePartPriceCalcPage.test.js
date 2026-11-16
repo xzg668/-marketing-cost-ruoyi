@@ -12,7 +12,7 @@ const MENU_FILE = path.resolve(
 )
 
 const apiContent = fs.readFileSync(API_FILE, 'utf-8')
-const pageContent = fs.readFileSync(PAGE_FILE, 'utf-8')
+const pageContent = fs.readFileSync(PAGE_FILE, 'utf-8') + fs.readFileSync(path.join(ROOT, 'src/components/MakePartPriceGroupDetails.vue'), 'utf-8')
 const menuContent = fs.readFileSync(MENU_FILE, 'utf-8')
 
 describe('MPPG-09 制造件价格生成 API', () => {

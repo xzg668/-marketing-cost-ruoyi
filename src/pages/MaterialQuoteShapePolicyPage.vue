@@ -327,9 +327,9 @@
           <template v-else>
             <div class="supplier-rule-summary">
               <strong>仅对当前选中的特殊物料生效</strong>
-              <span>系统取该物料当月供货比例最高的关系：内部主供按制造件并保留下级；外部主供按委外加工件，并排除下方配置的直接子件后再报价。</span>
+              <span>默认按当月主供应商确定形态：内部主供按制造件，外部主供按委外加工件。本单手动选择形态后，也按实际采用的形态执行下方子件规则。</span>
             </div>
-            <el-form-item label="外部主供时排除的直接子件">
+            <el-form-item label="委外时排除的直接子件">
               <el-select
                 v-model="form.excludedDirectChildMaterialCodes"
                 multiple
@@ -338,7 +338,7 @@
                 default-first-option
                 placeholder="输入子件料号后回车，例如金粉料号 311034930"
               />
-              <div class="form-help">只排除当前特殊物料下匹配的直接子件及其子树；内部主供时不排除。</div>
+              <div class="form-help">制造时保留全部下级；委外时只排除本规则物料下指定的直接子件及其子树，其余下级保持。适用于主供判定和本单手动形态选择。</div>
             </el-form-item>
           </template>
 

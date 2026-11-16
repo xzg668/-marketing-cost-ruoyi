@@ -6,7 +6,8 @@
         <p>基础数据 / U9基础数据</p>
       </div>
       <div class="toolbar-actions">
-        <el-button v-hasPermi="['base:u9-bom-byproduct:list']" :icon="RefreshRight" @click="fetchRows">刷新</el-button>
+        <WorkbookActions kind="u9byproduct" import-permission="base:u9-bom-byproduct:import" export-permission="base:u9-bom-byproduct:export" :fetch-page="fetchU9BomByproductRows" :query="queryParams()" />
+          <el-button v-hasPermi="['base:u9-bom-byproduct:list']" :icon="RefreshRight" @click="fetchRows">刷新</el-button>
         <el-button
           v-hasPermi="['base:u9-bom-byproduct:export']"
           :icon="Grid"
@@ -174,6 +175,7 @@
 </template>
 
 <script setup>
+import WorkbookActions from '../components/WorkbookActions.vue'
 import { onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import {

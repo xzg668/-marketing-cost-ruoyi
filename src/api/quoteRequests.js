@@ -221,7 +221,16 @@ export const fetchSavedPricingBom = (oaNo, itemId, versionId) =>
     params: { versionId }, suppressErrorToast: true,
   })
 
+export const fetchQuoteOrderMaterialShapes = oaNo =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/material-shapes`, { suppressErrorToast: true })
 export const prepareQuoteOrderMaterialShapes = oaNo =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}/material-shapes/prepare`, { method: 'POST', timeout: 600000, suppressErrorToast: true })
 export const saveQuoteOrderMaterialShapes = (oaNo, body) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}/material-shapes`, { method: 'PATCH', body, timeout: 600000, suppressErrorToast: true })
+
+export const fetchQuoteOrderBomAlternatives = oaNo =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/bom-alternatives`, { timeout: 600000, suppressErrorToast: true })
+export const prepareQuoteOrderBomAlternatives = oaNo =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/bom-alternatives/prepare`, { method: 'POST', timeout: 600000, suppressErrorToast: true })
+export const saveQuoteOrderBomAlternatives = (oaNo, body) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/bom-alternatives`, { method: 'PATCH', body, timeout: 600000, suppressErrorToast: true })

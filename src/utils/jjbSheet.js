@@ -1,12 +1,12 @@
 // Values are already rounded by the saved-version reader. Never calculate a formal amount here.
 export const jjbColumns = Object.freeze([
-  ['code', '子件编码'], ['name', '部品名'], ['drawingNo', '部品图号'], ['unitPrice', '部品单价'],
+  ['code', '子件编码'], ['name', '部品名'], ['drawingNo', '部品图号／规格'], ['unitPrice', '部品单价'],
   ['quantity', '部品用量'], ['unit', '计量单位'], ['amount', '部品价格'], ['grossWeight', '毛重'], ['netWeight', '净重'],
   ['rawUnitPrice', '原材料\n单价'], ['scrapUnitPrice', '废料\n单价'], ['material', '材质'],
   ['shape', '形态属性'], ['priceSource', '价格来源'], ['remark', '备注\n（手填）'], ['basis', '备注-CMS\n来源信息'],
 ])
 // Reference widths with a measurement-unit column beside the saved quantity, A:P.
-export const jjbColumnWidths = Object.freeze([15.9166666667, 19, 20.4166666667, 14.5, 17.5, 10, 15.75, 17.8333333333, 13.5833333333, 13.25, 18.4166666667, 19.0833333333, 14.8333333333, 21.25, 13.4166666667, 13.5833333333])
+export const jjbColumnWidths = Object.freeze([15.9166666667, 19, 32, 14.5, 17.5, 10, 15.75, 17.8333333333, 13.5833333333, 13.25, 18.4166666667, 19.0833333333, 14.8333333333, 21.25, 13.4166666667, 13.5833333333])
 
 export function sheetHeaderRows(sheet) {
   const h = sheet.header || {}, q = h.quotation || {}, id = sheet.identity || {}
@@ -20,11 +20,14 @@ export function sheetHeaderRows(sheet) {
 }
 
 export function sheetRowCells(row, group, index) {
-  const part = ['PART', 'HOUSEHOLD', 'EXPLANATION'].includes(row.kind)
+  const part = ['PART', 'HOUSEHOLD', 'EXPLANATION'].includes(row.kind) ||
+    (['OTHER_EXP_PACKAGE', 'BOM_BUCKET_PACKAGE'].includes(row.code) && row.displayCode != null)
   const grouped = ['THREE_EXPENSES', 'PRODUCT_FEES'].includes(group.code)
   const cells = jjbColumns.map(([key], column) => ({ column, key, value: '', colspan: 1, rowspan: 1 }))
   if (part) {
     for (const c of cells) c.value = row[c.key] ?? ''
+    cells[0].value = row.displayCode ?? cells[0].value
+    cells[1].value = row.displayName ?? cells[1].value
   } else {
     cells[grouped || row.kind === 'SUBTOTAL' ? 2 : 1].value = row.name || ''
     cells[grouped || row.kind === 'SUBTOTAL' ? 2 : 1].key = 'name'

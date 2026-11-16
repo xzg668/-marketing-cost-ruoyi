@@ -61,6 +61,37 @@ export function quoteItemCostAmount(cost) {
   return cost?.status === 'READY' ? cost.totalCost ?? null : null
 }
 
+/** Current product results, independent of any earlier whole-order execution. */
+export function quoteCurrentCostSummary(items = []) {
+  const counts = { total: items.length, success: 0, running: 0, waiting: 0, failed: 0, stale: 0, pending: 0 }
+  for (const item of items) {
+    const workspace = item.costingWorkspace || {}
+    const state = item.workflow || quoteItemWorkflow(item)
+    if (['QUEUED', 'RUNNING'].includes(workspace.workspaceStatus)) counts.running++
+    else if (workspace.workspaceStatus === 'SYSTEM_FAILED') counts.failed++
+    else if (hasQuoteItemCostingGap(item)) counts.waiting++
+    else if (workspace.inputChanged || workspace.workspaceStatus === 'STALE') counts.stale++
+    else if (workspace.workspaceStatus === 'SUCCESS' && workspace.currentCostVersionId
+        && !workspace.gapCount && state.currentStatus === 'COMPLETED') counts.success++
+    else counts.pending++
+  }
+  const allSuccess = counts.total > 0 && counts.success === counts.total
+  const allFailed = counts.total > 0 && counts.failed === counts.total
+  const label = allSuccess ? '全部已核算' : counts.running ? '核算中' : counts.success ? '部分已核算'
+    : allFailed ? '有产品核算失败' : counts.failed ? '有产品待处理'
+    : counts.waiting ? '有产品待补资料' : counts.stale ? '有产品待重新核算' : '待核算'
+  const type = allSuccess ? 'success' : counts.running ? 'info' : allFailed ? 'error'
+    : counts.success || counts.failed || counts.waiting || counts.stale ? 'warning' : 'info'
+  const metrics = [['success', '已核算'], ['running', '核算中'], ['waiting', '待补资料'],
+    ['failed', '失败'], ['stale', '待重新核算'], ['pending', '待核算']]
+    .filter(([key]) => counts[key] > 0).map(([key, label]) => ({ key, label, count: counts[key] }))
+  const description = [`共 ${counts.total} 个产品`, ...metrics.map(metric => `${metric.label} ${metric.count}`)].join(' · ')
+  return { ...counts, type, metrics,
+    title: `当前核算结果：${label}`,
+    description: description + (counts.waiting || (counts.failed && !allFailed)
+      ? '。各产品独立处理，待补资料或失败不影响其他产品核算。' : '') }
+}
+
 export function quoteItemWorkflow(item, drawingWorkspace) {
   const workspace = item?.costingWorkspace || null
   const workspaceStatus = String(workspace?.workspaceStatus || '').toUpperCase()

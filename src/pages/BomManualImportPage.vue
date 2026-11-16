@@ -4,6 +4,7 @@
       <div class="filter-header">
         <div class="filter-title">BOM明细录入</div>
         <div class="header-actions">
+          <WorkbookActions kind="bom" import-permission="base:bom-manual:import" :fetch-page="fetchBomManualItems" :query="buildParams()" />
           <el-upload
             class="upload-btn"
             :show-file-list="false"
@@ -171,10 +172,12 @@
 </template>
 
 <script setup>
+import WorkbookActions from '../components/WorkbookActions.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import BasePagination from '../components/BasePagination.vue'
 import {
+  fetchBomManualItems,
   fetchBomManualItemDetails,
   fetchBomManualSummaryItems,
   importBomManualItems,

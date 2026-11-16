@@ -4,6 +4,7 @@
       <div class="heading">
         <h2>型号—板片材质对照表</h2>
         <div>
+          <WorkbookActions kind="plate" :fetch-page="fetchPlateMaterialMappings" :query="{ ...filters }" size-key="size" import-permission="base:plate-material:import" />
           <el-button v-hasPermi="['base:plate-material:add']" :disabled="!options.length" @click="edit(null)">新增</el-button>
           <el-button v-hasPermi="['base:plate-material:import']" type="primary" @click="importVisible = true">导入 Excel</el-button>
         </div>
@@ -41,6 +42,7 @@
 </template>
 
 <script setup>
+import WorkbookActions from '../components/WorkbookActions.vue'
 import { onMounted, onBeforeUnmount, reactive, ref } from 'vue'
 import { fetchPlateMaterialMappings, fetchPlateMaterialOptions } from '../api/plateMaterialMappings'
 import BasePagination from '../components/BasePagination.vue'

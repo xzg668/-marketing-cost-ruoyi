@@ -4,6 +4,7 @@
       <div class="filter-header">
         <div class="filter-title">其他费用率对照表</div>
         <div class="filter-actions">
+          <WorkbookActions kind="other" :fetch-page="fetchOtherExpenseRates" :query="buildParams()" import-permission="base:other-expense:import" />
           <el-upload
             class="upload-btn"
             :show-file-list="false"
@@ -89,6 +90,7 @@
 </template>
 
 <script setup>
+import WorkbookActions from '../components/WorkbookActions.vue'
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {

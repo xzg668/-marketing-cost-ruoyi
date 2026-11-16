@@ -18,7 +18,7 @@
               <el-button v-if="canEdit || previewData" :disabled="!!previewData || busy" @click="download('template')">下载模板</el-button>
               <el-button v-if="canEdit || previewData" :loading="uploading" :disabled="!canEdit || busy" @click="fileInput.click()">{{ form.upload ? '重新上传' : '选择 Excel' }}</el-button>
               <input ref="fileInputs" type="file" accept=".xlsx" hidden @change="upload" />
-              <el-button v-if="savedFile && savedFile.fileSha256 === form.upload?.fileSha256" :disabled="!!previewData || busy" @click="download('file')">下载原文件</el-button>
+              <el-button v-if="savedFile && savedFile.fileSha256 === form.upload?.fileSha256" :disabled="!!previewData || busy" @click="download('file')">导出已保存数据（原表）</el-button>
             </div>
             <p v-if="form.upload" class="file-meta">{{ form.upload.fileName }} · {{ form.upload.items.length }} 条有效明细</p>
             <p class="hint">工时表单件工资按分计算，合计除以 100 后计入直接人工工资（元／只）。</p>

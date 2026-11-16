@@ -1,7 +1,10 @@
 <template>
   <section class="quote-page" v-loading="loading">
     <div class="page-head">
-      <div><h1>报价单详情</h1><p>{{ oaNo }} · {{ detail.items?.length || 0 }} 个产品</p></div>
+      <div class="quote-heading">
+        <div class="quote-title-line"><h1>报价单详情</h1><span class="product-count">{{ detail.items?.length || 0 }} 个产品</span></div>
+        <p class="quote-identity"><span class="quote-number">{{ oaNo }}</span><span v-if="detail.customer" class="quote-customer">{{ detail.customer }}</span></p>
+      </div>
       <div class="page-actions">
         <el-button :icon="ArrowLeft" @click="goBack">返回</el-button>
         <el-button :loading="checking" @click="refreshQuoteState">刷新状态</el-button>
@@ -17,9 +20,23 @@
       </div>
     </div>
 
-    <div v-if="batchRun && batchRun.status !== 'NOT_STARTED'" class="batch-progress">
+    <section v-if="!batchRun?.active && currentCostSummary.total" class="current-cost-summary"
+      :class="`current-cost-summary--${currentCostSummary.type}`" role="status" :aria-label="currentCostSummary.description">
+      <strong class="current-cost-summary__title">{{ currentCostSummary.title }}</strong>
+      <div class="current-cost-summary__metrics">
+        <span v-for="metric in currentCostSummary.metrics" :key="metric.key" class="current-cost-metric" :class="`current-cost-metric--${metric.key}`">
+          {{ metric.label }} <b>{{ metric.count }}</b>
+        </span>
+      </div>
+      <span v-if="currentCostSummary.waiting || currentCostSummary.failed" class="current-cost-summary__note"
+        title="各产品独立处理，待补资料或失败不影响其他产品核算">各产品独立核算</span>
+    </section>
+    <details v-if="batchRun && batchRun.status !== 'NOT_STARTED'" :key="`${batchRun.batchNo}:${batchRun.executionNo}:${batchRun.active}`"
+      class="batch-record" :open="batchRun.active">
+      <summary>{{ batchRun.active ? '整单核算进度' : '查看最近一次整单执行记录（历史）' }}</summary>
+    <div class="batch-progress">
       <div class="batch-progress__head">
-        <strong>最近一次整单核算结果</strong>
+        <strong>{{ batchRun.active ? '本次整单核算' : '历史整单执行结果' }}</strong>
         <span>{{ batchStatusLabel(batchRun.status) }} · {{ batchRun.progress || 0 }}%</span>
       </div>
       <el-progress :percentage="batchRun.progress || 0" :show-text="false" :stroke-width="8" />
@@ -39,6 +56,7 @@
         :title="batchRun.message"
       />
     </div>
+    </details>
 
     <el-alert v-if="detail.oaWorkflow" :closable="false" show-icon
       :type="detail.oaWorkflow.syncError ? 'warning' : 'info'"
@@ -49,7 +67,16 @@
     <el-alert v-if="drawingReviewCount" :title="`${drawingReviewCount} 个产品的电子图库有差异，请在产品明细中点击“去修正”。`" type="warning" :closable="false" show-icon />
 
 
-    <el-descriptions class="quote-summary" :column="3" border>
+    <details :key="oaNo" class="quote-base-info">
+      <summary>
+        <span class="base-info-title">单据资料</span>
+        <span class="base-info-preview">
+          <span v-if="detail.applicantName">申请人：{{ detail.applicantName }}</span>
+          <span v-if="detail.applyDate">申请日期：{{ detail.applyDate }}</span>
+        </span>
+        <span class="base-info-toggle" aria-hidden="true"><span class="when-closed">展开</span><span class="when-open">收起</span></span>
+      </summary>
+      <el-descriptions class="quote-summary" :column="3" border>
       <el-descriptions-item label="报价单号">{{ detail.oaNo || '-' }}</el-descriptions-item>
       <el-descriptions-item label="来源">{{ statusLabel('sourceType', detail.sourceType) }}</el-descriptions-item>
       <el-descriptions-item label="外部单号">{{ detail.externalFormNo || '-' }}</el-descriptions-item>
@@ -68,24 +95,34 @@
         </el-tag>
       </el-descriptions-item>
       <el-descriptions-item label="备注" :span="2">{{ detail.remark || '-' }}</el-descriptions-item>
-    </el-descriptions>
+      </el-descriptions>
+    </details>
 
     <el-tabs v-model="activeTab" class="detail-tabs">
       <el-tab-pane label="产品明细" name="items">
+        <div class="product-toolbar">
+          <el-input v-model="productSearch" class="product-search" clearable :prefix-icon="Search"
+            placeholder="输入产品料号或型号，支持模糊搜索" aria-label="搜索产品料号或型号" />
+          <span class="product-search-count" role="status">显示 {{ filteredProductRows.length }} / {{ productRows.length }} 个产品</span>
+          <el-button v-if="productSearch" link type="primary" @click="productSearch = ''">清除搜索</el-button>
+        </div>
+        <TableTopScrollbar :table="itemsTableRef" :active="activeTab === 'items'" label="产品明细" />
         <el-table
           ref="itemsTableRef"
-          :data="productRows"
+          :data="filteredProductRows"
           border
           row-key="id"
           class="items-table"
           :row-class-name="rowClassName"
+          max-height="max(440px, calc(100vh - 280px))"
+          scrollbar-always-on
         >
-          <el-table-column label="序号" width="64" align="center" fixed="left">
+          <el-table-column label="序号" width="56" align="center" fixed="left">
             <template #default="{ row }">
               <span class="product-seq">{{ row.seq || '-' }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="产品料号" prop="materialNo" min-width="170" fixed="left">
+          <el-table-column label="产品料号" prop="materialNo" min-width="165" fixed="left">
             <template #default="{ row }">{{ row.materialNo || '新品暂无料号' }}</template>
           </el-table-column>
           <el-table-column label="产品名称" prop="productName" min-width="170">
@@ -145,7 +182,7 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="核算成本（元/只）" width="170" align="right" fixed="right">
+          <el-table-column label="核算成本（元/只）" width="150" align="right" fixed="right">
             <template #header>
               <span>核算成本（元/只）</span>
               <div class="state-message">不含税、不含运费</div>
@@ -154,7 +191,7 @@
               <span>{{ quoteItemCostAmount(finalCosts.get(String(row.id))) ?? '—' }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="电子图库" width="170" fixed="right">
+          <el-table-column label="电子图库" width="140">
             <template #default="{ row }">
               <DrawingVerificationPanel v-if="row.electronicDrawingAccountingMonth" inline
                 :oa-no="oaNo" :item-id="row.id" :accounting-month="row.electronicDrawingAccountingMonth"
@@ -162,7 +199,7 @@
               <span v-else>—</span>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="200" fixed="right">
+          <el-table-column label="操作" width="180" fixed="right">
             <template #default="{ row }">
               <div class="row-actions">
                 <el-button v-if="needsCostRecalculation(row) || canRegenerateCost(row)" link type="primary"
@@ -196,7 +233,7 @@
               </div>
             </template>
           </el-table-column>
-          <template #empty><el-empty description="暂无产品明细" /></template>
+          <template #empty><p class="table-empty-message" role="status">{{ productSearch.trim() ? '没有匹配的产品，请更换料号或型号，或清除搜索' : '暂无产品明细' }}</p></template>
         </el-table>
       </el-tab-pane>
 
@@ -204,6 +241,13 @@
         <QuoteOrderMaterialShapes :oa-no="oaNo" :active="activeTab === 'material-shapes'"
           :readonly="detail.oaWorkflow?.canCost === false" :busy="batchRun?.active || batchSubmitting"
           :material-code="String(route.query.materialCode || '')" @saved="refreshQuoteState(false)" @cost="submitWholeQuoteCosting" />
+        <QuoteOrderCostResults :oa-no="oaNo" :items="productRows" :active="activeTab === 'material-shapes'" />
+      </el-tab-pane>
+      <el-tab-pane label="标准／替代料" name="bom-alternatives" lazy>
+        <QuoteOrderBomAlternatives :oa-no="oaNo" :active="activeTab === 'bom-alternatives'"
+          :readonly="detail.oaWorkflow?.canCost === false" :busy="batchRun?.active || batchSubmitting"
+          @saved="refreshQuoteState(false)" @cost="submitWholeQuoteCosting" />
+        <QuoteOrderCostResults :oa-no="oaNo" :items="productRows" :active="activeTab === 'bom-alternatives'" />
       </el-tab-pane>
       <el-tab-pane label="操作日志" name="logs">
         <el-descriptions :column="2" border>
@@ -364,9 +408,11 @@ import { fetchAuxiliaryClassifications } from '../api/auxiliaryClassification'
 import { computed, nextTick, onMounted, onScopeDispose, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft } from '@element-plus/icons-vue'
+import { ArrowLeft, Search } from '@element-plus/icons-vue'
 import QuoteFinalSubmissionPanel from '../components/quotation/QuoteFinalSubmissionPanel.vue'
 import QuoteOrderMaterialShapes from '../components/quotation/QuoteOrderMaterialShapes.vue'
+import QuoteOrderBomAlternatives from '../components/quotation/QuoteOrderBomAlternatives.vue'
+import TableTopScrollbar from '../components/TableTopScrollbar.vue'
 import { quoteOaWorkflowLabel } from '../utils/quoteOaWorkflowLabel.js'
 import DrawingVerificationPanel from '../components/quotation/DrawingVerificationPanel.vue'
 import {
@@ -381,15 +427,17 @@ import {
   exportQuoteCostingGaps,
 } from '../api/quoteRequests'
 import QuoteCostingPreparationPanel from '../components/quotation/QuoteCostingPreparationPanel.vue'
+import QuoteOrderCostResults from '../components/quotation/QuoteOrderCostResults.vue'
 import { useQuoteFinalSubmission } from '../composables/useQuoteFinalSubmission'
 import { useQuoteCostingPreparation } from '../composables/useQuoteCostingPreparation'
 import { useQuoteBatchCosting } from '../composables/useQuoteBatchCosting'
-import { withQuoteItemWorkflow, hasQuoteItemCostingGap, quoteItemCostStatus, quoteItemCostAmount } from '../utils/quoteItemWorkflow'
+import { withQuoteItemWorkflow, hasQuoteItemCostingGap, quoteItemCostStatus, quoteItemCostAmount, quoteCurrentCostSummary } from '../utils/quoteItemWorkflow'
 import { workflowStatusTagType } from '../utils/workflowStatus'
 import {
   QUOTE_SCENARIO_OPTIONS,
   canConfirmClassification,
   formatDateTime,
+  filterQuoteProducts,
   statusLabel,
   statusTagType,
 } from '../utils/quoteRequestWorkbench'
@@ -419,11 +467,18 @@ async function exportCostingGaps(category) {
   catch (failure) { if (isCurrent()) ElMessage.error(failure?.message || '缺口导出失败，请重试') }
   finally { if (isCurrent()) gapExporting.value = '' }
 }
-const activeTab = ref(route.query.tab === 'material-shapes' ? 'material-shapes' : 'items')
-watch(() => route.query.tab, value => { if (value === 'material-shapes') activeTab.value = value })
+const detailTabs = ['items', 'material-shapes', 'bom-alternatives', 'logs']
+const activeTab = ref(detailTabs.includes(route.query.tab) ? route.query.tab : 'items')
+watch(() => route.query.tab, value => { activeTab.value = detailTabs.includes(value) ? value : 'items' })
+watch(activeTab, value => {
+  if (value !== (route.query.tab || 'items')) router.replace({ query: { ...route.query, tab: value === 'items' ? undefined : value } })
+})
 const detail = ref({})
 const drawingStates = reactive({})
 const productRows = computed(() => withQuoteItemWorkflow(detail.value, drawingStates, materialState.value).items)
+const productSearch = ref('')
+const filteredProductRows = computed(() => filterQuoteProducts(productRows.value, productSearch.value))
+const currentCostSummary = computed(() => quoteCurrentCostSummary(productRows.value))
 const drawingReviewCount = computed(() => productRows.value.filter(isDrawingReview).length)
 function isDrawingReview(row) { return row.workflow?.currentStatus === 'E_DRAWING_WAIT_REVIEW' }
 const drawingContinuation = useDrawingCostingContinuation(oaNo, {
@@ -448,6 +503,10 @@ async function onDrawingState(workspace) {
   }
 }
 const itemsTableRef = ref()
+watch(productSearch, async () => {
+  await nextTick()
+  itemsTableRef.value?.setScrollTop(0)
+})
 const finalSubmission = useQuoteFinalSubmission(oaNo, { fetch: fetchQuoteFinalSubmission, submit: confirmQuoteFinalSubmission })
 const { state: finalState, loading: finalLoading, sending: finalSending, error: finalError, canSubmit: canSubmitFinal, costsByItem: finalCosts } = finalSubmission
 function needsCostRecalculation(row) { return finalCosts.value.get(String(row.id))?.status === 'STALE' }
@@ -820,6 +879,7 @@ async function locateReturnRow() {
 }
 
 watch(oaNo, () => {
+  productSearch.value = ''
   Object.keys(drawingStates).forEach(key => delete drawingStates[key])
   electronicDrawingContinuationHandled = false
   checking.value = false
@@ -831,6 +891,21 @@ onMounted(loadDetail)
 </script>
 
 <style scoped>
+.current-cost-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 24px; padding: 12px 16px; border: 1px solid #e4e9f1; border-radius: 6px; background: #fff; font-size: 13px; }
+.current-cost-summary__title { font-size: 14px; font-weight: 600; color: #344054; }
+.current-cost-summary--error .current-cost-summary__title { color: #b42318; }
+.current-cost-summary__metrics { display: flex; flex-wrap: wrap; gap: 8px 20px; }
+.current-cost-metric { color: #667085; white-space: nowrap; }
+.current-cost-metric b { margin-left: 4px; font-size: 14px; color: #344054; font-variant-numeric: tabular-nums; }
+.current-cost-metric--success b { color: #28734d; }
+.current-cost-metric--waiting b, .current-cost-metric--stale b { color: #9b651b; }
+.current-cost-metric--failed b { color: #b42318; }
+.current-cost-summary__note { margin-left: auto; color: #7b8495; font-size: 12px; }
+.product-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; margin: 4px 0 12px; }
+.product-search { width: 360px; max-width: 100%; }
+.product-search-count { color: #697386; font-size: 13px; font-variant-numeric: tabular-nums; }
+.batch-record { margin-bottom: 0; }
+.batch-record > summary { cursor: pointer; padding: 3px 0; color: #697386; font-size: 13px; }
 .items-table :deep(.drawing-review-row td.el-table__cell) { background: #fff9ef; }
 .quote-page {
   display: flex;
@@ -839,14 +914,16 @@ onMounted(loadDetail)
   color: #2f343d;
 }
 
+.quote-page > :deep(.costing-preparation) { margin: 0; }
+
 .page-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 18px 20px;
+  padding: 16px 18px;
   border: 1px solid #e4e9f1;
-  border-radius: 10px;
+  border-radius: 8px;
   background: #ffffff;
 }
 
@@ -856,6 +933,13 @@ onMounted(loadDetail)
   font-size: 21px;
   font-weight: 700;
 }
+
+.quote-heading { min-width: 0; }
+.quote-title-line { display: flex; align-items: baseline; flex-wrap: wrap; gap: 12px; }
+.product-count { color: #697386; font-size: 13px; font-variant-numeric: tabular-nums; }
+.quote-identity { display: flex; flex-wrap: wrap; gap: 4px 16px; line-height: 1.6; }
+.quote-number { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.quote-customer { color: #344054; overflow-wrap: anywhere; }
 
 .page-head p {
   margin: 6px 0 0;
@@ -869,7 +953,10 @@ onMounted(loadDetail)
   justify-content: flex-end;
   gap: 8px;
   flex-wrap: wrap;
+  flex-shrink: 0;
 }
+
+.page-actions :deep(.el-button) { margin-left: 0; }
 
 .batch-progress {
   padding: 16px 18px;
@@ -896,12 +983,33 @@ onMounted(loadDetail)
   margin-top: 12px;
 }
 
-.quote-summary {
-  overflow: hidden;
+.quote-base-info {
   border: 1px solid #e4e9f1;
-  border-radius: 10px;
+  border-radius: 8px;
   background: #ffffff;
 }
+
+.quote-base-info > summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 16px;
+  cursor: pointer;
+  list-style: none;
+  border-radius: 8px;
+}
+.quote-base-info > summary::-webkit-details-marker { display: none; }
+.quote-base-info > summary:hover { background: #f8fafc; }
+.quote-base-info > summary:focus-visible { outline: 2px solid #409eff; outline-offset: 2px; }
+.base-info-title { flex-shrink: 0; font-size: 14px; font-weight: 600; }
+.base-info-preview { display: flex; flex-wrap: wrap; gap: 4px 18px; color: #697386; font-size: 13px; }
+.base-info-toggle { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; color: #697386; font-size: 13px; white-space: nowrap; }
+.base-info-toggle::after { content: ''; width: 5px; height: 5px; border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; transform: rotate(45deg) translateY(-2px); }
+.quote-base-info .when-open,
+.quote-base-info[open] .when-closed { display: none; }
+.quote-base-info[open] .when-open { display: inline; }
+.quote-base-info[open] .base-info-toggle::after { transform: rotate(225deg) translate(-1px, -1px); }
+.quote-summary { margin: 0 16px 16px; overflow-x: auto; }
 
 .quote-summary :deep(.el-descriptions__label) {
   color: #667085;
@@ -911,40 +1019,42 @@ onMounted(loadDetail)
 
 .quote-summary :deep(.el-descriptions__content) {
   color: #344054;
+  overflow-wrap: anywhere;
 }
 
 .detail-tabs {
+  font-size: 14px;
+  line-height: 1.5;
   padding: 0 18px 18px;
   border: 1px solid #e4e9f1;
-  border-radius: 10px;
+  border-radius: 8px;
   background: #ffffff;
 }
 
-.detail-tabs :deep(.el-tabs__header) {
-  margin: 0 -18px 16px;
+.detail-tabs > :deep(.el-tabs__header) {
+  margin: 0 -18px 8px;
   padding: 0 18px;
   border-bottom: 1px solid #e4e9f1;
-  background: #fbfcfe;
+  background: #ffffff;
 }
 
-.detail-tabs :deep(.el-tabs__nav-wrap::after) {
+.detail-tabs > :deep(.el-tabs__header .el-tabs__nav-wrap::after) {
   display: none;
 }
 
-.detail-tabs :deep(.el-tabs__item) {
-  height: 50px;
+.detail-tabs > :deep(.el-tabs__header .el-tabs__item) {
+  height: 44px;
   padding: 0 20px;
   color: #667085;
   font-weight: 600;
 }
 
-.detail-tabs :deep(.el-tabs__item.is-active) {
+.detail-tabs > :deep(.el-tabs__header .el-tabs__item.is-active) {
   color: #1f66b1;
 }
 
-.detail-tabs :deep(.el-tabs__active-bar) {
-  height: 3px;
-  border-radius: 3px 3px 0 0;
+.detail-tabs > :deep(.el-tabs__header .el-tabs__active-bar) {
+  height: 2px;
   background: #2f7dcc;
 }
 
@@ -957,19 +1067,22 @@ onMounted(loadDetail)
 .items-table {
   width: 100%;
   overflow: hidden;
-  border-radius: 8px;
+  border-radius: 4px;
 }
 
 .items-table :deep(th.el-table__cell) {
   height: 46px;
   color: #475467;
-  font-weight: 650;
+  font-weight: 600;
   background: #f8fafc;
 }
 
 .items-table :deep(td.el-table__cell) {
-  padding: 11px 0;
+  padding: 9px 0;
 }
+
+.items-table :deep(.el-table__empty-text) { width: 100%; }
+.table-empty-message { margin: 0; padding: 24px 16px; color: #697386; font-size: 14px; line-height: 1.6; }
 
 .product-seq {
   color: #667085;
@@ -992,7 +1105,10 @@ onMounted(loadDetail)
   display: flex;
   align-items: center;
   gap: 4px;
+  flex-wrap: wrap;
 }
+
+.row-actions :deep(.el-button) { margin-left: 0; }
 
 .cost-result-guide,
 .cost-result-list,
@@ -1042,5 +1158,7 @@ onMounted(loadDetail)
     align-items: flex-start;
     flex-direction: column;
   }
+  .page-actions { justify-content: flex-start; }
+  .base-info-preview { gap: 4px 12px; }
 }
 </style>

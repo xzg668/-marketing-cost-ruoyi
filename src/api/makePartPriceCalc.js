@@ -43,6 +43,17 @@ export function normalizeMakePartGenerateResult(response) {
 export const fetchMakePartPriceCalcPage = (params) =>
   request(`${BASE_URL}/page`, { params })
 
+export const fetchMakePartPriceGroupPage = (params) => request(`${BASE_URL}/group-page`, { params })
+export const fetchMakePartPriceGroupDetails = (id, params) => request(`${BASE_URL}/groups/${id}`, { params })
+
+export function normalizeMakePartPriceGroups(response) {
+  const page = normalizeMakePartCalcPage(response)
+  return { ...page, statusSummary: response?.statusSummary || {}, list: page.list.map(group => ({
+    ...group.row, id: group.id, organization: group.organization, latestGeneratedAt: group.latestGeneratedAt,
+    detailCount: group.detailCount, calculationCount: group.calculationCount, quoteCount: group.quoteCount, status: group.status,
+  })) }
+}
+
 export const fetchMakePartPriceGapPage = (params) =>
   request(`${BASE_URL}/gap-page`, { params })
 
@@ -62,7 +73,9 @@ export const fetchMakePartPriceCalcDetail = (id) =>
 export const fetchMakePartPriceCalcStatusSummary = (params) =>
   request(`${BASE_URL}/status-summary`, { params })
 
-export async function exportMakePartPriceCalc(params = {}) {
+export const exportMakePartPriceCalc = (params = {}) => exportFile('export', params)
+export const exportMakePartPriceGroups = (params = {}) => exportFile('group-export', params)
+async function exportFile(endpoint, params) {
   const query = new URLSearchParams()
   Object.entries(params || {}).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== '') {
@@ -75,7 +88,7 @@ export async function exportMakePartPriceCalc(params = {}) {
     headers.Authorization = `Bearer ${token}`
   }
   const suffix = query.toString() ? `?${query}` : ''
-  const response = await fetch(`${API_BASE_URL}${BASE_URL}/export${suffix}`, { headers })
+  const response = await fetch(`${API_BASE_URL}${BASE_URL}/${endpoint}${suffix}`, { headers })
   if (!response.ok) {
     throw new Error(await response.text() || '导出制造件价格生成失败')
   }

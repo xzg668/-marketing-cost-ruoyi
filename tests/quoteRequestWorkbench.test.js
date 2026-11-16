@@ -1,4 +1,4 @@
-import { currentCostingBlockLabel, boardPricingRows } from '../src/utils/quoteRequestWorkbench.js'
+import { currentCostingBlockLabel, boardPricingRows, filterQuoteProducts } from '../src/utils/quoteRequestWorkbench.js'
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import fs from 'node:fs'
@@ -54,6 +54,28 @@ const quoteRequestApiContent = fs.readFileSync(QUOTE_REQUEST_API_FILE, 'utf-8')
 const pricePrepareApiContent = fs.readFileSync(PRICE_PREPARE_API_FILE, 'utf-8')
 const costRunDetailApiContent = fs.readFileSync(COST_RUN_DETAIL_API_FILE, 'utf-8')
 const routerContent = fs.readFileSync(ROUTER_FILE, 'utf-8')
+
+describe('product detail search', () => {
+  const products = [
+    { id: 1, materialNo: '001234', sunlModel: 'FDF-A02-602028', spec: '车加工' },
+    { id: 2, materialNo: '009876', sunlModel: null, spec: 'SBV-10' },
+    { id: 3, materialNo: null, sunlModel: 'FDF-A02-602029', spec: null },
+  ]
+  it('matches partial material numbers, models and the displayed specification fallback', () => {
+    assert.deepEqual(filterQuoteProducts(products, '  0012  '), [products[0]])
+    assert.deepEqual(filterQuoteProducts(products, 'fdf-a02'), [products[0], products[2]])
+    assert.deepEqual(filterQuoteProducts(products, 'sbv-10'), [products[1]])
+    assert.deepEqual(filterQuoteProducts(products, 'unmatched'), [])
+    assert.equal(filterQuoteProducts(products, '  '), products)
+    assert.equal(products.length, 3)
+  })
+  it('filters only the product table while statistics, gap details and order actions keep the entire order', () => {
+    assert.match(detailPageContent, /:data="filteredProductRows"/)
+    assert.match(detailPageContent, /quoteCurrentCostSummary\(productRows\.value\)/)
+    assert.match(detailPageContent, /:products="productRows"/)
+    assert.match(detailPageContent, /:items="productRows"/)
+  })
+})
 
 describe('T11 报价单接入工作台工具', () => {
   const rows = [
@@ -637,9 +659,9 @@ describe('T11 报价单接入页面契约', () => {
     assert.match(costingWorkbenchPageContent, /bomRows/)
     assert.match(costingWorkbenchPageContent, /displayBomRows/)
     assert.match(costingWorkbenchPageContent, /expandQuoteBomDisplayRows/)
-    assert.match(costingWorkbenchPageContent, /上卷父件已按命中子件生成展示名称/)
+    assert.match(costingWorkbenchPageContent, /【】内为对应子件，不另增结算行/)
     assert.match(costingWorkbenchPageContent, /scrollbar-always-on/)
-    assert.match(costingWorkbenchPageContent, /max-height="calc\(100vh - 420px\)"/)
+    assert.match(costingWorkbenchPageContent, /max-height="max\(360px, calc\(100vh - 320px\)\)"/)
     assert.doesNotMatch(costingWorkbenchPageContent, /prop="parentCode" label="父件料号"/)
     assert.doesNotMatch(costingWorkbenchPageContent, /prop="level" label="层级"/)
     assert.doesNotMatch(costingWorkbenchPageContent, /prop="settlementRowType" label="结算行类型"/)
@@ -700,7 +722,8 @@ describe('T11 报价单接入页面契约', () => {
     assert.doesNotMatch(costingWorkbenchPageContent, /priceTypeConfirmNo:/)
     assert.doesNotMatch(costingWorkbenchPageContent, /generatePricePrepare\(successText, false\)/)
     assert.match(costingWorkbenchPageContent, /oaPricePrepareReady\.value && financePricePrepareReady\.value/)
-    assert.match(costingWorkbenchPageContent, /前置条件检查/)
+    assert.match(costingWorkbenchPageContent, /historyViewMode \? historyResultLabel : '成本核算'/)
+    assert.match(costingWorkbenchPageContent, /: costRunBlockingText/)
     assert.match(costingWorkbenchPageContent, /核算本产品/)
     assert.doesNotMatch(costingWorkbenchPageContent, /确认核算/)
     assert.match(costingWorkbenchPageContent, /查看一览表/)

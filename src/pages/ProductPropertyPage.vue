@@ -6,7 +6,8 @@
           <div class="filter-title">产品属性对照表</div>
           <div class="filter-tip">数据以财务业务清单为准，唯一键为年度 + 料号</div>
         </div>
-        <el-button :loading="importing" @click="openImportDialog">导入</el-button>
+        <div class="header-actions"><WorkbookActions kind="property" import-permission="base:product-property:import" :fetch-page="fetchProductProperties" :query="buildParams()" />
+          <el-button :loading="importing" @click="openImportDialog">导入</el-button></div>
       </div>
       <el-form :inline="true" label-width="88px" class="filter-form">
         <el-form-item label="年度" required>
@@ -167,6 +168,7 @@
 </template>
 
 <script setup>
+import WorkbookActions from '../components/WorkbookActions.vue'
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {

@@ -4,6 +4,7 @@
       <div class="filter-header">
         <div class="filter-title">制造费用率配置表</div>
         <div class="filter-actions">
+          <WorkbookActions kind="manufacture" :fetch-page="fetchManufactureRates" :query="buildParams()" import-permission="base:manufacture-rate:import" />
           <el-upload
             class="upload-btn"
             :show-file-list="false"
@@ -92,6 +93,7 @@
 </template>
 
 <script setup>
+import WorkbookActions from '../components/WorkbookActions.vue'
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {

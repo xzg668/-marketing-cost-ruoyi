@@ -6,20 +6,55 @@ import { test } from 'node:test'
 const page = fs.readFileSync(new URL('../src/pages/MaterialPriceSourcesPage.vue', import.meta.url), 'utf8')
 const script = page.match(/<script setup>([\s\S]*?)<\/script>/)[1].replace(/^import .*$/gm, '')
 const row = () => ({ materialCode: '00123', organization: '210', materialAttribute: null, automatic: false, version: 0, sourceType: 'FIXED', prices: [] })
-function harness(fetch, update = async () => {}, refresh = async () => ({ months: 2, sourceRows: 4 }), bulk = async () => {}) {
+function harness(fetch, update = async () => {}, refresh = async () => ({ months: 2, sourceRows: 4 }), bulk = async () => {},
+  account = { roles: ['finance_reviewer'], permissions: ['price:material-sources:edit', 'price:material-sources:refresh'] }) {
   const calls = []
   const context = vm.createContext({
     URLSearchParams, downloadAuthenticatedBlob: async (...args) => calls.push(args),
     computed: getter => ({ get value() { return getter() } }),
     reactive: value => value, ref: value => ({ value }), watch() {}, onMounted() {},
-    useUserStore: () => ({ businessUnitType: 'COMMERCIAL', roles: ['finance_reviewer'], permissions: ['price:material-sources:edit', 'price:material-sources:refresh'] }),
+    useUserStore: () => ({ businessUnitType: 'COMMERCIAL', ...account }),
     refreshMaterialPriceSources: refresh,
     fetchMaterialPriceSources: fetch, updateMaterialPriceAttribute: update, updateMaterialPriceAttributes: bulk,
     ElMessage: { success: value => calls.push(value), error: value => calls.push(value) },
   })
-  vm.runInContext(script + '\nglobalThis.state = { filter, rows, total, error, loading, load, save, saving, refreshSources, refreshState, refreshing, rowKey, attributeOptions, attributeFilterOptions, selectedRows, batchAttribute, batchSaving, saveBatch, exporting, exportSources };', context)
+  vm.runInContext(script + '\nglobalThis.state = { filter, rows, total, error, loading, load, save, saving, saveStates, canEdit, canRefresh, refreshSources, refreshState, refreshing, rowKey, attributeOptions, attributeFilterOptions, selectedRows, batchAttribute, batchSaving, saveBatch, exporting, exportSources };', context)
   return { ...context.state, calls }
 }
+
+for (const account of [
+  { roles: ['bu_staff'], permissions: ['price:material-sources:list'] },
+  { roles: ['bu_director'], permissions: ['price:material-sources:list'] },
+  { roles: ['admin'], permissions: ['*:*:*'] },
+  { roles: ['custom_quoter'], permissions: ['price:material-sources:list', 'quote:costing:bom:alternative-select'] },
+  { roles: ['finance_reviewer'], permissions: ['price:material-sources:edit'] },
+]) test(`${account.roles[0]} can save single and batch attributes`, async () => {
+  const single = [], batches = [], original = row()
+  const state = harness(async () => ({ month: '2026-11', rows: [original], total: 1 }),
+    async change => { single.push(change); return { ...original, materialAttribute: change.materialAttribute, version: 1 } },
+    undefined, async changes => { batches.push(changes) }, account)
+  await state.load()
+  assert.equal(state.canEdit.value, true)
+  await state.save(original, 'OUTSOURCE')
+  assert.equal(single.length, 1)
+  assert.equal(state.saveStates[state.rowKey(original)].status, 'success')
+  state.selectedRows.value = [original]; state.batchAttribute.value = 'PURCHASE'
+  await state.saveBatch()
+  assert.equal(batches.length, 1)
+  assert.equal(batches[0][0].materialAttribute, 'PURCHASE')
+  if (['bu_staff', 'custom_quoter'].includes(account.roles[0])) assert.equal(state.canRefresh.value, false)
+})
+
+test('list-only users cannot save a single row or a batch', async () => {
+  const writes = [], original = row()
+  const state = harness(async () => ({ month: '2026-11', rows: [original], total: 1 }),
+    async change => writes.push(change), undefined, async changes => writes.push(changes),
+    { roles: ['viewer'], permissions: ['price:material-sources:list'] })
+  await state.load(); assert.equal(state.canEdit.value, false)
+  await state.save(original, 'OUTSOURCE')
+  state.selectedRows.value = [original]; state.batchAttribute.value = 'PURCHASE'
+  await state.saveBatch(); assert.deepEqual(writes, [])
+})
 
 test('切换查询后迟到的响应不会覆盖新料号结果', async () => {
   const requests = []
@@ -143,4 +178,27 @@ test('Excel export uses all filtered results without page limits and keeps a sep
   assert.doesNotMatch(path, /page|size/)
   assert.match(filename, /2026-11.*xlsx/)
   assert.equal(state.exporting.value, false)
+})
+
+test('automatic save displays pending and success, and a requery keeps the persisted choice', async () => {
+  const original = row(); let saved = original, finish
+  const state = harness(async () => ({ month: '2026-11', rows: [{ ...saved }], total: 1 }),
+    body => new Promise(resolve => { finish = () => { saved = { ...original, materialAttribute: body.materialAttribute, version: 1 }; resolve(saved) } }))
+  await state.load(); const shown = state.rows.value[0], key = state.rowKey(shown)
+  const pending = state.save(shown, 'OUTSOURCE')
+  assert.equal(state.saveStates[key].status, 'pending'); assert.equal(shown.materialAttribute, null)
+  finish(); await pending
+  assert.equal(state.saveStates[key].status, 'success'); assert.equal(shown.materialAttribute, 'OUTSOURCE')
+  await state.load(); assert.equal(state.rows.value[0].materialAttribute, 'OUTSOURCE')
+})
+test('failed save status is explicit and a late failure cannot reload another month', async () => {
+  let reject, reads = 0
+  const state = harness(async params => { reads++; return { month: params.month, rows: [row()], total: 1 } },
+    () => new Promise((_, fail) => { reject = fail }))
+  state.filter.month = '2026-11'; await state.load()
+  const shown = state.rows.value[0], key = state.rowKey(shown), pending = state.save(shown, 'OUTSOURCE')
+  state.filter.month = '2026-12'; await state.load(); reject(Error('网络失败')); await pending
+  assert.equal(reads, 2); assert.equal(state.filter.month, '2026-12')
+  assert.equal(state.saveStates[key].status, 'error'); assert.notEqual(state.rowKey(state.rows.value[0]), key)
+  assert.equal(state.rows.value[0].materialAttribute, null)
 })

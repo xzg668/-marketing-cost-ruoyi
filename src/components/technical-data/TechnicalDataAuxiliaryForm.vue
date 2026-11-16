@@ -28,7 +28,7 @@
           <el-button :disabled="!!previewData || busy" @click="download('template')">下载辅料模板</el-button>
           <el-button v-if="canEdit || previewData" :disabled="!canEdit || busy" :loading="uploading" @click="fileInput.click()">选择辅料表</el-button>
           <input ref="fileInput" type="file" accept=".xlsx" hidden @change="upload" />
-          <el-button v-if="savedFile" :disabled="!!previewData || busy" @click="download('file')">下载已保存原表</el-button>
+          <el-button v-if="savedFile" :disabled="!!previewData || busy" @click="download('file')">导出已保存数据（原表）</el-button>
         </div>
         <p class="hint">按模板填写后上传，支持公式。原归类保留；二级科目名称可留空，由财务后续归类。</p>
         <p v-if="form.upload" class="source-note">文件：{{ form.upload.fileName }} · 工作表：{{ form.upload.sheetName }}</p>

@@ -2,6 +2,7 @@
   <el-dialog :model-value="modelValue" title="导入区间原稿" width="1100px" destroy-on-close
     :close-on-click-modal="false" :close-on-press-escape="!busy" :show-close="!busy"
     @update:model-value="$emit('update:modelValue', $event)">
+    <WorkbookActions kind="range" />
     <el-form :inline="true" label-width="80px">
       <el-form-item label="导入范围"><span>{{ businessUnitLabel(user.businessUnitType) }} · {{ month }}</span></el-form-item>
       <el-form-item label="原稿文件">
@@ -79,6 +80,7 @@
 </template>
 
 <script setup>
+import WorkbookActions from './WorkbookActions.vue'
 import { computed, ref, watch } from 'vue'
 import { ElMessage, genFileId } from 'element-plus'
 import { useUserStore } from '../store/modules/user'

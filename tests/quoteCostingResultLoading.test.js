@@ -169,3 +169,42 @@ test('reloading an active gap tab checks details after the summary load ends', a
   await h.load({ loadChildren: true })
   assert.equal(checked, 1)
 })
+
+test('opening input tabs reveals the ready BOM while price details are still loading', async () => {
+  const prices = pending()
+  const h = harness({ inputTabsNeedRefresh: ref(true), refreshAllTabData: () => prices.promise })
+  let finished = false
+  const task = h.load({ resetTab: false, loadChildren: true, revealInputsEarly: true }).then(() => { finished = true })
+  await flush()
+  assert.equal(finished, false, 'the remaining reads are still in flight')
+  assert.equal(h.deps.loading.value, false, 'unopened price detail must not mask the ready BOM')
+  assert.equal(h.deps.inputTabsNeedRefresh.value, true, 'incomplete prices must not turn saved success into a false gap')
+  prices.resolve(); await task
+  assert.equal(h.deps.inputTabsNeedRefresh.value, false)
+})
+
+test('switching while other inputs load does not start a second full refresh', async () => {
+  const node = declarations.find(node => node.type === 'ExpressionStatement' && node.expression?.callee?.name === 'watch' && node.expression.arguments[0]?.name === 'activeTab')
+  const callback = node.expression.arguments[1]
+  let refreshes=0, priceReads=0, checks=0
+  const deps={initializingWorkbench:false,loading:ref(false),historyViewMode:ref(false),inputTabsNeedRefresh:ref(true),
+    refreshingTabs:ref(true),pricingBomReadyForNextStep:ref(true),priceTypeLoading:ref(false),isCostRunTab:()=>false,isPriceTypeTab:()=>true,
+    loadWorkbench:async()=>{refreshes++},loadPriceType:async()=>{priceReads++},ensurePriceSourceChecked:async()=>{checks++}}
+  const change=new Function(...Object.keys(deps),`return ${source.slice(callback.start,callback.end)}`)(...Object.values(deps))
+  await change('PRICE_TYPE_CONFIRMATION')
+  assert.equal(refreshes,0);assert.equal(priceReads,0)
+  deps.refreshingTabs.value=false;deps.inputTabsNeedRefresh.value=false
+  await change('PRICE_TYPE_CONFIRMATION');assert.equal(priceReads,1,'reopening sources still gets a fresh projection')
+})
+
+test('price-source check waits for input refresh but is not skipped once that refresh finishes', async () => {
+  const node=declarations.find(node=>node.type==='FunctionDeclaration' && node.id.name==='ensurePriceSourceChecked')
+  let reads=0
+  const deps={activeTab:ref('PRICE_SOURCE_SUPPLEMENT'),loading:ref(false),refreshingTabs:ref(true),pricePrepareLoading:ref(true),
+    route:{query:{}},returnPriceSourceRefreshing:ref(false),costRunActionLoading:ref(false),currentPriceSourceTab:()=>({}),isBlockedTab:()=>false,
+    priceSourceAutoCheckKey:()=> 'OA|1|2026-11',autoPriceSourceCheckedKey:ref(''),runPriceSourceCheck:async()=>{reads++;return {ready:true}}}
+  const check=new Function(...Object.keys(deps),`${source.slice(node.start,node.end)};return ensurePriceSourceChecked`)(...Object.values(deps))
+  await check();assert.equal(reads,0)
+  deps.refreshingTabs.value=false;deps.pricePrepareLoading.value=false
+  await check();assert.equal(reads,1);assert.equal(deps.autoPriceSourceCheckedKey.value,'OA|1|2026-11')
+})

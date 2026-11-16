@@ -2,9 +2,10 @@
   <section class="jjb-evidence" :data-version-id="sheet.identity.versionId">
     <p class="version-identity">保存版本：{{ sheet.identity.versionNo }} · {{ sheet.identity.productCode }} · {{ sheet.identity.pricingMonth }}</p>
     <div class="evidence-totals"><div v-for="total in sheetTotals(sheet)" :key="total.key"><span>{{ total.name }}</span><strong>{{ savedMoney(total.amount) || '历史未记录' }}</strong></div></div>
-    <label>核算项目 <select v-model="selectedKey"><option v-for="row in sheet.rows" :key="row.key" :value="row.key">{{ row.name || row.code }}{{ row.kind === 'PART' || row.kind === 'HOUSEHOLD' ? ` · ${row.code}` : '' }}</option></select></label>
-    <div v-if="selected" class="saved-evidence" :data-evidence-row="selected.key">
-      <h3>{{ selected.name || selected.code }}</h3>
+    <label>核算项目 <select v-model="selectedKey"><option v-for="total in sheetTotals(sheet)" :key="total.key" :value="total.key">{{ total.name }} · 计算明细</option><option v-for="row in sheet.rows" :key="row.key" :value="row.key">{{ row.name || row.code }}{{ row.kind === 'PART' || row.kind === 'HOUSEHOLD' ? ` · ${row.code}` : '' }}</option></select></label>
+    <JjbTotalExplanation v-if="selectedTotal" :sheet="sheet" :selected-total="selectedKey" />
+    <div v-else-if="selected" class="saved-evidence" :data-evidence-row="selected.key">
+      <h3>{{ selected.displayName || selected.name || selected.displayCode || selected.code }}</h3>
       <dl>
         <dt>本次金额</dt><dd>{{ savedMoney(selected.amount) || '未记录金额' }}</dd>
         <template v-if="selected.unitPrice != null"><dt>{{ selected.kind === 'HOUSEHOLD' ? '询价单价 P' : '单价' }}</dt><dd>{{ selected.unitPrice }}</dd></template>
@@ -61,6 +62,7 @@ import { computed, ref, watch } from 'vue'
 import { savedMoney, rowBasis, sheetTotals, grossWeightWithSource } from '../utils/jjbSheet'
 import { selectEvidenceRow, selectAmountComposition } from '../utils/jjbEvidence'
 import CostAmountComposition from './CostAmountComposition.vue'
+import JjbTotalExplanation from './JjbTotalExplanation.vue'
 const props = defineProps({ sheet: { type: Object, required: true }, initialTrace: { type: Object, default: null } })
 const sourceFields = [
   ['financialScenarioPrice','基准口径单价 P0'], ['customerScenarioPrice','客户口径单价 P1'],
@@ -84,8 +86,9 @@ const selectedKey = ref('')
 watch(() => [props.sheet, props.initialTrace], () => {
   const initial = props.initialTrace
   const found = selectEvidenceRow(props.sheet.rows, initial)
-  selectedKey.value = found?.key || ''
+  selectedKey.value = sheetTotals(props.sheet).some(total => total.key === initial?.rowKey) ? initial.rowKey : found?.key || ''
 }, { immediate: true })
+const selectedTotal = computed(() => sheetTotals(props.sheet).some(total => total.key === selectedKey.value))
 const selected = computed(() => props.sheet.rows.find(row => row.key === selectedKey.value))
 const compositionSelector = computed(() => selectAmountComposition(selected.value, props.sheet.identity.costRunNo))
 const selectedPrices = computed(() => props.sheet.monthlyPrices.filter(price => selected.value?.monthlyPriceIds?.includes(price.id)))

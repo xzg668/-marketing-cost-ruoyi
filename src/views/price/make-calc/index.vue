@@ -44,7 +44,7 @@
         <strong :title="filters.calcBatchId">{{ filters.calcBatchId || '全部生成结果' }}</strong>
       </div>
       <div class="summary-item">
-        <span>总行数</span>
+        <span>价格种数</span>
         <strong>{{ total }}</strong>
       </div>
       <div
@@ -159,44 +159,19 @@
             <el-table-column prop="pricingMonth" label="价格月份" width="105" fixed show-overflow-tooltip>
               <template #default="{ row }">{{ displayPricingMonth(row) }}</template>
             </el-table-column>
-            <el-table-column prop="createdAt" label="生成时间" width="170" show-overflow-tooltip>
-              <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
+            <el-table-column prop="latestGeneratedAt" label="最近生成时间" width="170" show-overflow-tooltip>
+              <template #default="{ row }">{{ formatDateTime(row.latestGeneratedAt) }}</template>
             </el-table-column>
-            <el-table-column prop="oaNo" label="OA单号" width="145" show-overflow-tooltip />
+            <el-table-column prop="organization" label="组织" width="90" />
             <el-table-column prop="parentMaterialNo" label="料号" width="150" show-overflow-tooltip />
             <el-table-column prop="parentMaterialName" label="名称" min-width="170" show-overflow-tooltip />
             <el-table-column prop="drawingNo" label="图号" min-width="140" show-overflow-tooltip />
             <el-table-column prop="itemProcessType" label="料件类型" width="110" />
-            <el-table-column prop="grossWeightG" label="毛重(g)" min-width="220" align="right">
-              <template #default="{ row }">{{ grossWeightWithSource(formatNumber(row.grossWeightG), manufacturingGrossWeightSource(row)) }}</template>
-            </el-table-column>
-            <el-table-column prop="netWeightG" label="净重(g)" width="105" align="right">
-              <template #default="{ row }">{{ formatNumber(row.netWeightG) }}</template>
-            </el-table-column>
-            <el-table-column prop="parentTotalCostPrice" label="零件价格" width="120" align="right">
+            <el-table-column prop="parentTotalCostPrice" label="零件价格" width="140" align="right">
               <template #default="{ row }">{{ formatMoney(row.parentTotalCostPrice) }}</template>
             </el-table-column>
-            <el-table-column prop="childMaterialNo" label="原材料代码" width="150" show-overflow-tooltip />
-            <el-table-column label="原材料/毛坯" min-width="170" show-overflow-tooltip>
-              <template #default="{ row }">{{ displayChildMaterial(row) }}</template>
-            </el-table-column>
-            <el-table-column label="原材料价格(元/kg 或 元/件)" width="170" align="right">
-              <template #default="{ row }">{{ formatMoney(row.rawUnitPrice) }}</template>
-            </el-table-column>
-            <el-table-column prop="scrapCode" label="回收代码" width="135" show-overflow-tooltip />
-            <el-table-column prop="scrapName" label="回收名称" min-width="150" show-overflow-tooltip />
-            <el-table-column prop="scrapUnitPrice" label="回收单价(元/kg)" width="145" align="right">
-              <template #default="{ row }">{{ formatMoney(row.scrapUnitPrice) }}</template>
-            </el-table-column>
-            <el-table-column prop="outsourceFee" label="委外加工费" width="120" align="right">
-              <template #default="{ row }">{{ formatMoney(row.outsourceFee) }}</template>
-            </el-table-column>
-            <el-table-column label="是否完整取价" width="125">
-              <template #default="{ row }">
-                <el-tag size="small" :type="row.priceComplete ? 'success' : 'danger'">
-                  {{ row.priceComplete ? '已取全价' : '待核对' }}
-                </el-tag>
-              </template>
+            <el-table-column label="原料／废料明细" width="150">
+              <template #default="{ row }"><el-button type="primary" link @click="openGroup(row, 'materials')">{{ row.detailCount }} 条明细</el-button></template>
             </el-table-column>
             <el-table-column label="状态" width="125">
               <template #default="{ row }">
@@ -206,6 +181,9 @@
               </template>
             </el-table-column>
             <el-table-column prop="displayReason" label="处理说明" min-width="260" show-overflow-tooltip />
+            <el-table-column label="关联报价单" width="150">
+              <template #default="{ row }"><el-button type="primary" link @click="openGroup(row, 'quotes')">共 {{ row.quoteCount }} 张</el-button></template>
+            </el-table-column>
             <el-table-column label="操作" width="118" fixed="right">
               <template #default="{ row }">
                 <el-button type="primary" link @click="openTrace(row)">查看计算追溯</el-button>
@@ -298,6 +276,10 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="groupVisible" title="制造件价格明细" width="88%" destroy-on-close>
+      <MakePartPriceGroupDetails v-if="groupVisible && selectedGroup" :key="selectedGroup.id" :group-id="selectedGroup.id" :initial-tab="groupTab" @trace="openTrace" />
+    </el-dialog>
+
     <el-drawer v-model="traceDrawerVisible" title="计算追溯" size="640px">
       <section v-if="traceRow" class="trace-panel">
         <div class="trace-head">
@@ -321,7 +303,7 @@
 
 <script setup>
 import { grossWeightWithSource, manufacturingGrossWeightSource } from '../../../utils/jjbSheet'
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   ArrowDown,
@@ -333,13 +315,15 @@ import {
   Search,
 } from '@element-plus/icons-vue'
 import BasePagination from '../../../components/BasePagination.vue'
+import MakePartPriceGroupDetails from '../../../components/MakePartPriceGroupDetails.vue'
 import {
   MAKE_PART_PROCESS_TYPE_OPTIONS,
   MAKE_PART_STATUS_OPTIONS,
   exportMakePartPriceCalc,
   fetchMakePartPriceCalcDetail,
-  fetchMakePartPriceCalcPage,
-  fetchMakePartPriceCalcStatusSummary,
+  fetchMakePartPriceGroupPage,
+  normalizeMakePartPriceGroups,
+  exportMakePartPriceGroups,
   fetchMakePartPriceGapPage,
   generateMakePartPriceCalc,
   normalizeMakePartCalcPage,
@@ -385,6 +369,8 @@ const generateForm = reactive({
   period: '',
 })
 
+const groupVisible = ref(false), selectedGroup = ref(null), groupTab = ref('materials')
+const openGroup = (row, tab) => { selectedGroup.value = row; groupTab.value = tab; groupVisible.value = true }
 const traceDrawerVisible = ref(false)
 const traceRow = ref(null)
 
@@ -448,26 +434,20 @@ const buildGapParams = () => ({
   pageSize: gapPageSize.value,
 })
 
-const buildSummaryParams = () => {
-  const params = { ...filters }
-  delete params.status
-  delete params.onlyError
-  delete params.missingPriceRole
-  delete params.missingMaterialNo
-  return params
-}
-
+let rowsRequestId = 0
 const fetchRows = async () => {
+  const requestId = ++rowsRequestId
   loading.value = true
   try {
-    const page = normalizeMakePartCalcPage(await fetchMakePartPriceCalcPage(buildParams()))
+    const page = normalizeMakePartPriceGroups(await fetchMakePartPriceGroupPage(buildParams()))
+    if (requestId !== rowsRequestId) return
     tableRows.value = page.list
     total.value = page.total
-    statusSummary.value = await fetchMakePartPriceCalcStatusSummary(buildSummaryParams())
+    statusSummary.value = page.statusSummary
   } catch (error) {
-    ElMessage.error(error?.message || '查询制造件价格生成结果失败')
+    if (requestId === rowsRequestId) ElMessage.error(error?.message || '查询制造件价格生成结果失败')
   } finally {
-    loading.value = false
+    if (requestId === rowsRequestId) loading.value = false
   }
 }
 
@@ -612,7 +592,7 @@ const downloadBlob = (blob, fileName) => {
 const exportRows = async () => {
   exporting.value = true
   try {
-    const result = await exportMakePartPriceCalc({ ...filters })
+    const result = await (activeTab.value === 'gap' ? exportMakePartPriceCalc : exportMakePartPriceGroups)({ ...filters })
     downloadBlob(result.blob, result.fileName)
     ElMessage.success('制造件价格生成已导出')
   } catch (error) {
@@ -622,13 +602,16 @@ const exportRows = async () => {
   }
 }
 
+let traceRequestId = 0
 const openTrace = async (row) => {
+  const requestId = ++traceRequestId
   traceDrawerVisible.value = true
   traceRow.value = row
   try {
-    traceRow.value = await fetchMakePartPriceCalcDetail(row.id)
+    const detail = await fetchMakePartPriceCalcDetail(row.id)
+    if (requestId === traceRequestId) traceRow.value = detail
   } catch (error) {
-    ElMessage.error(error?.message || '读取计算追溯失败')
+    if (requestId === traceRequestId) ElMessage.error(error?.message || '读取计算追溯失败')
   }
 }
 
@@ -675,6 +658,7 @@ watch([currentPage, pageSize], fetchRows)
 watch([gapCurrentPage, gapPageSize], fetchGapRows)
 
 onMounted(refreshLatest)
+onBeforeUnmount(() => { rowsRequestId++; traceRequestId++ })
 </script>
 
 <style scoped>

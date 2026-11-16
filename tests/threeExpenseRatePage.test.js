@@ -23,7 +23,7 @@ describe('ThreeExpenseRatePage', () => {
       const calls = []
       const messages = []
       const bindings = {
-        Vue,
+        Vue, WorkbookActions: {},
         ElMessage: { success() {}, error: text => messages.push(text), warning: text => messages.push(text) },
         ElMessageBox: {},
         fetchThreeExpenseRates: async () => ({ list: [] }),

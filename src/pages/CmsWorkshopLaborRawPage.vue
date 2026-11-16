@@ -4,6 +4,7 @@
     description="直接人工工资来源，工作成本原始单位为分，导入后同步保留元金额。"
     trace-nav
   >
+    <template #actions><WorkbookActions kind="cmsWorkshop" :fetch-page="fetchCmsWorkshopLaborRows" :query="buildParams()" page-key="current" size-key="size" import-permission="cms:cost:import" /></template>
     <section class="cms-query-panel">
       <el-form class="cms-query-form" :inline="true" :model="filters" label-width="72px">
         <el-form-item label="成品料号">
@@ -59,6 +60,7 @@
 </template>
 
 <script setup>
+import WorkbookActions from '../components/WorkbookActions.vue'
 import { onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'

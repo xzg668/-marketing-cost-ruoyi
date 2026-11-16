@@ -1,3 +1,10 @@
+export function filterQuoteProducts(items = [], keyword = '') {
+  const query = String(keyword ?? '').trim().toLowerCase()
+  if (!query) return items
+  return items.filter(item => [item.materialNo, item.sunlModel, item.spec]
+    .some(value => String(value ?? '').toLowerCase().includes(query)))
+}
+
 export const QUOTE_SCENARIO_OPTIONS = [
   { value: 'DIRECT_SALE', label: '板换直销' },
   { value: 'STANDARD_BATCH', label: '标准品/批量品' },

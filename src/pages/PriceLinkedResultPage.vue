@@ -19,6 +19,7 @@
           <el-button v-if="pendingTotal > 0 || onlyBindingIssues" link type="warning" @click="openPendingList">{{ onlyBindingIssues ? '显示全部' : `本页异常 ${pendingTotal}` }}</el-button>
         </div>
         <div class="filter-actions">
+          <WorkbookActions kind="linked" :fetch-page="exportPricePage" :query="{ ...buildParams(), onlyBindingIssues }" :transform-rows="exportVisiblePriceRows" import-permission="price:linked-item:import" />
           <el-button v-if="returnToWorkbenchVisible" @click="returnToWorkbench">
             返回核算工作台
           </el-button>
@@ -557,6 +558,8 @@
 </template>
 
 <script setup>
+import { priceExportPage } from '../utils/priceWorkbookExport'
+import WorkbookActions from '../components/WorkbookActions.vue'
 import OriginalLinkedImportDialog from '../components/OriginalLinkedImportDialog.vue'
 import OriginalPriceDetailDialog from '../components/OriginalPriceDetailDialog.vue'
 import { businessUnitLabel, priceText } from '../components/originalPriceDisplay'
@@ -1536,6 +1539,9 @@ watch(currentPage, () => {
 onMounted(fetchList)
 onMounted(fetchVariables)
 onMounted(loadPending)
+
+function exportPricePage(query) { return priceExportPage(query, { kind: 'linked', fetchPage: fetchLinkedItemsPage, fetchEffective: fetchLinkedEffectivePrices, fetchLegacyTrace: fetchTrace }) }
+function exportVisiblePriceRows(rows) { return onlyBindingIssues.value ? rows.filter(row => pendingItemIds.value.has(row.id) || row.exportMessage) : rows }
 </script>
 
 <style scoped>

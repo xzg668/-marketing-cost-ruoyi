@@ -4,6 +4,7 @@
       <div class="filter-header">
         <div class="filter-title">物料表</div>
         <div class="filter-actions">
+          <WorkbookActions kind="materials" :fetch-page="fetchMaterialMasters" :query="buildParams()" import-permission="base:material:import" />
           <el-upload
             class="upload-btn"
             :show-file-list="false"
@@ -145,6 +146,7 @@
 </template>
 
 <script setup>
+import WorkbookActions from '../components/WorkbookActions.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import BasePagination from '../components/BasePagination.vue'

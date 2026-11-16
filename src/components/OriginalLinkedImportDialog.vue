@@ -2,6 +2,7 @@
   <el-dialog :model-value="modelValue" title="导入联动原稿" width="1100px" destroy-on-close
     :close-on-click-modal="false" :close-on-press-escape="!busy" :show-close="!busy"
     @update:model-value="$emit('update:modelValue', $event)">
+    <WorkbookActions kind="linked" />
     <div class="import-context">
       <span>{{ pricingMonth }} · {{ businessUnitLabel(businessUnitType) }}</span>
       <el-select v-model="priceOrgCode" aria-label="原稿未列组织时的适用组织" :disabled="busy" style="width: 230px" @change="previewFile">
@@ -74,6 +75,7 @@
 </template>
 
 <script setup>
+import WorkbookActions from './WorkbookActions.vue'
 import { computed, ref, watch } from 'vue'
 import { ElMessage, genFileId } from 'element-plus'
 import LinkedImportedFiles from './LinkedImportedFiles.vue'

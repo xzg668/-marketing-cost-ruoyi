@@ -3,6 +3,7 @@
     <el-card shadow="never">
       <div class="page-heading">
         <h2>废料价格</h2>
+        <WorkbookActions kind="scrap" :fetch-page="fetchScrapPrices" :query="{ ...filters }" size-key="size" import-permission="price:scrap:import" />
         <el-button v-hasPermi="['price:scrap:import']" type="primary" @click="importVisible = true">导入 Excel</el-button>
       </div>
       <el-form :inline="true" @submit.prevent="search">
@@ -56,6 +57,7 @@
 </template>
 
 <script setup>
+import WorkbookActions from '../components/WorkbookActions.vue'
 import { onMounted, onBeforeUnmount, reactive, ref } from 'vue'
 import { fetchScrapPrices, fetchScrapPrice } from '../api/scrapPrices'
 import BasePagination from '../components/BasePagination.vue'

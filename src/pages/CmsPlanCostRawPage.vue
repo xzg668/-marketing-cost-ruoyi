@@ -4,6 +4,7 @@
     description="用于判断成品料号是否存在未审批工时项，原始数据只读。"
     trace-nav
   >
+    <template #actions><WorkbookActions kind="cmsPlan" :fetch-page="fetchCmsPlanCostRows" :query="buildParams()" page-key="current" size-key="size" import-permission="cms:cost:import" /></template>
     <section class="cms-query-panel">
       <el-form class="cms-query-form" :inline="true" :model="filters" label-width="72px">
         <el-form-item label="成品料号">
@@ -60,6 +61,7 @@
 </template>
 
 <script setup>
+import WorkbookActions from '../components/WorkbookActions.vue'
 import { onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'

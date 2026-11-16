@@ -11,10 +11,12 @@
     </div>
     <div v-if="visibleCategories.length" class="gap-categories">
       <article v-for="category in visibleCategories" :key="category.value" class="gap-category">
-        <div><strong>{{ category.title }}</strong><p>{{ category.hint }}</p></div>
+        <el-tooltip :content="category.hint" placement="top">
+          <span class="category-label" tabindex="0"><strong>{{ category.title }}</strong><span class="category-count">{{ availability.counts.value[category.value] }} 种</span></span>
+        </el-tooltip>
         <div class="category-actions">
           <el-button link type="primary" :aria-label="`查看${category.exportTitle}物料`" @click="viewDetails(category)">查看明细</el-button>
-          <el-button :loading="exporting === category.value" :disabled="Boolean(exporting)" @click="$emit('export-gap', category.value)">{{ `导出${category.exportTitle}物料` }}</el-button>
+          <el-button link type="primary" :aria-label="`导出${category.exportTitle}物料`" :loading="exporting === category.value" :disabled="Boolean(exporting)" @click="$emit('export-gap', category.value)">导出</el-button>
         </div>
       </article>
     </div>
@@ -100,18 +102,22 @@ function viewProduct(row) {
 function viewSupplement() { router.push({ path: '/collaboration/tasks', query: { oaNo: props.oaNo } }) }
 </script>
 <style scoped>
-.costing-preparation { margin: 16px 0; padding: 18px 20px; border: 1px solid #dfe6ee; border-radius: 8px; background: #fff; font-size: 14px; }
+.costing-preparation { margin: 12px 0; padding: 12px 16px; border: 1px solid #dfe6ee; border-radius: 8px; background: #fff; font-size: 14px; }
 .preparation-head, .preparation-title, .preparation-actions, .category-actions { display: flex; align-items: center; gap: 12px; }
 .preparation-head { justify-content: space-between; flex-wrap: wrap; }
 .preparation-title { flex-wrap: wrap; color: #606c80; }
 .preparation-title strong { color: #303133; font-size: 15px; }
 .is-error { color: #c45656; }
-.gap-categories { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-top: 16px; }
-.gap-category { padding: 16px; background: #f8fafc; border: 1px solid #e5eaf0; border-radius: 6px; }
-.gap-category strong { color: #303133; }
-.gap-category p { margin: 8px 0 16px; font-size: 13px; color: #7b8798; line-height: 1.5; }
-.category-actions { justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.gap-categories { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-top: 10px; padding-top: 10px; border-top: 1px solid #edf0f4; }
+.gap-category { display: flex; flex: 1 1 300px; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px 12px; padding: 2px 24px 2px 0; border-right: 1px solid #edf0f4; }
+.gap-category:last-child { padding-right: 0; border-right: 0; }
+.gap-category strong { color: #344054; font-size: 13px; font-weight: 500; }
+.category-label { display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: 8px; cursor: help; }
+.category-label:focus-visible { outline: 2px solid #409eff; outline-offset: 3px; }
+.category-count { font-size: 13px; color: #697386; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.category-actions { gap: 12px; flex-shrink: 0; }
 .category-actions .el-button { margin: 0; }
 .detail-summary { margin-top: 0; color: #606c80; }
-@media (max-width: 1000px) { .gap-categories { grid-template-columns: 1fr; } .gap-category { display: flex; justify-content: space-between; align-items: center; gap: 12px; } .gap-category p { margin: 6px 0 0; } }
+@media (max-width: 1100px) { .gap-category { border-right: 0; padding-right: 0; } }
+@media (max-width: 680px) { .gap-category { flex-basis: 100%; } .preparation-title { gap: 6px; } }
 </style>

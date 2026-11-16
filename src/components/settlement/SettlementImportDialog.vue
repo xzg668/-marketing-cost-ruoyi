@@ -1,6 +1,7 @@
 <template>
   <el-dialog v-model="visible" title="导入结算价格原稿" destroy-on-close width="900px" :close-on-click-modal="false" :before-close="close">
     <el-alert title="结算联动价引用商用财务已发布的铜锌基价，原表基价仅供对照。按月追加原稿，未提供的料号继续沿用已有规则。" type="info" :closable="false" />
+    <WorkbookActions kind="settlement" />
     <el-form label-width="100px" :disabled="busy" class="import-form">
       <el-form-item label="导入月份"><el-date-picker v-model="month" type="month" value-format="YYYY-MM" :clearable="false" @change="preview = null" /></el-form-item>
       <el-form-item label="原稿文件"><input aria-label="结算原稿文件" type="file" accept=".xls,.xlsx" :disabled="busy" @change="selectFile" /></el-form-item>
@@ -25,6 +26,7 @@
   </el-dialog>
 </template>
 <script setup>
+import WorkbookActions from '../WorkbookActions.vue'
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { previewSettlement, importSettlement } from '../../api/settlementPrices'

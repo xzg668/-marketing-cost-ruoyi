@@ -3,6 +3,7 @@
     <el-card>
       <template #header>
         <div class="heading"><div><h2>发票价格</h2><p>按料件取最新导入批次，同批次适用发票取最高未税单价。新导入用于后续核算，历史核算结果保留。</p></div>
+          <WorkbookActions kind="invoice" :fetch-page="mode === 'current' && allowed('list') ? fetchInvoicePrices : undefined" :query="{ orgCode, materialCode: materialCode || undefined, view: mode }" size-key="size" import-permission="price:invoice:import" />
           <el-button v-if="allowed('import')" type="primary" @click="openImport">导入发票价格</el-button></div>
       </template>
       <el-form inline @submit.prevent="search">
@@ -61,6 +62,7 @@
   </div>
 </template>
 <script setup>
+import WorkbookActions from '../components/WorkbookActions.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '../store/modules/user'

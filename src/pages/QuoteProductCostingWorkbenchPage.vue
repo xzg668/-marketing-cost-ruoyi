@@ -7,7 +7,7 @@
         <div class="costing-status" role="status">
           <span :class="{ 'costing-status--blocked': costingIssueVisible }">{{ costingStatusSummary }}</span>
           <el-button v-if="costingIssueVisible" link type="primary" @click="viewCostingIssue">
-            {{ hasPriceGaps ? '查看缺口' : '查看原因' }}
+            {{ previousPriceIssueResolved ? '查看说明' : hasPriceGaps ? '查看缺口' : '查看原因' }}
           </el-button>
           <el-button v-if="!historyViewMode && materialState?.hasSupplement" link type="primary" @click="openProductSupplement">
             技术补录
@@ -126,8 +126,12 @@
       </section>
     </el-drawer>
 
-    <el-dialog v-model="costingIssueDetailsVisible" title="核算未完成" width="min(720px, 90vw)">
+    <el-dialog v-model="costingIssueDetailsVisible" :title="previousPriceIssueResolved ? '核算状态说明' : '核算未完成'" width="min(720px, 90vw)">
       <p class="costing-issue-detail">{{ costingIssueDetail }}</p>
+      <details v-if="costingPreviousIssueDetail" class="previous-costing-issue">
+        <summary>上次核算记录</summary>
+        <p>{{ costingPreviousIssueDetail }}</p>
+      </details>
       <template #footer>
         <el-button @click="costingIssueDetailsVisible = false">关闭</el-button>
       </template>
@@ -153,7 +157,7 @@
       </div>
 
       <el-tabs v-model="activeTab" class="costing-tabs" :before-leave="beforeWorkbenchTabLeave">
-        <el-tab-pane v-for="(tab, index) in tabs" :key="tab.code" :name="tab.code">
+        <el-tab-pane v-for="(tab, index) in tabs" :key="tab.code" :name="tab.code" lazy>
           <template #label>
             <span class="tab-label">
               <span class="tab-index">{{ index + 1 }}</span>
@@ -337,26 +341,32 @@
           </div>
 
           <div v-else-if="isQuoteBomTab(tab.code)" class="quote-bom-tab">
-            <div class="status-strip">
-              <div class="metric">
-                <span>当前状态</span>
-                <strong>{{ quoteBomWorkspaceStatusText }}</strong>
+            <div class="quote-bom-toolbar">
+              <div class="quote-bom-heading">
+                <h2>报价物料明细</h2>
+                <el-tag :type="tabBadgeType(tab)" effect="plain" size="small">{{ quoteBomWorkspaceStatusText }}</el-tag>
+                <span class="quote-bom-count">{{ bomRows.length }} 条</span>
+                <span v-if="alternativeFeatureEnabled && alternativeSummary.groupCount" class="quote-bom-count">
+                  可替代组 {{ alternativeSummary.groupCount }} · 已选替代 {{ alternativeSummary.manualAlternativeCount ?? 0 }}
+                </span>
               </div>
-              <div class="metric">
-                <span>构建编号</span>
-                <strong>{{ workbench.buildBatchId || '-' }}</strong>
-              </div>
-              <div class="metric">
-                <span>结算行数</span>
-                <strong>{{ bomRows.length }}</strong>
-              </div>
-              <div v-if="alternativeFeatureEnabled" class="metric">
-                <span>可替代组</span>
-                <strong>{{ alternativeSummary.groupCount ?? 0 }}</strong>
-              </div>
-              <div v-if="alternativeFeatureEnabled" class="metric">
-                <span>已选替代</span>
-                <strong>{{ alternativeSummary.manualAlternativeCount ?? 0 }}</strong>
+              <div class="toolbar-actions">
+                <el-popover v-if="workbench.buildBatchId" placement="bottom-end" trigger="click" :width="340">
+                  <template #reference><el-button link type="info" size="small">生成信息</el-button></template>
+                  <div class="quote-bom-build-info">
+                    <span>构建编号</span>
+                    <code>{{ workbench.buildBatchId }}</code>
+                  </div>
+                </el-popover>
+                <el-button
+                  type="primary"
+                  plain
+                  :loading="effectiveBomPreparing"
+                  :disabled="effectiveBomBlocked || alternativeNeedsReview"
+                  @click="regenerateCurrentBom"
+                >
+                  按当前规则重新生成
+                </el-button>
               </div>
             </div>
 
@@ -369,35 +379,20 @@
               :title="alternativeReviewMessage"
             />
 
-            <div class="tab-toolbar">
-              <div>
-                <strong>报价物料明细</strong>
-                <span>
-                  {{ tab.blockedReason || '已按当前规则生成 BOM 结算行' }}
-                  <template v-if="rollupDisplayRowCount > 0">
-                    ；上卷父件已按命中子件生成展示名称，不增加结算行
-                  </template>
-                  <template v-if="alternativeFeatureEnabled">；标准/替代方案保存后，需重新生成才会更新当前明细</template>
-                </span>
-              </div>
-              <div class="toolbar-actions">
-                <el-button
-                  type="primary"
-                  :loading="effectiveBomPreparing"
-                  :disabled="effectiveBomBlocked || alternativeNeedsReview"
-                  @click="regenerateCurrentBom"
-                >
-                  按当前规则重新生成
-                </el-button>
-              </div>
-            </div>
+            <p v-if="tab.blockedReason" class="quote-bom-note">{{ tab.blockedReason }}</p>
+            <p v-else-if="rollupDisplayRowCount > 0 || alternativeFeatureEnabled" class="quote-bom-note">
+              <template v-if="rollupDisplayRowCount > 0">【】内为对应子件，不另增结算行。</template>
+              <template v-if="alternativeFeatureEnabled">切换标准／替代料后，请重新生成明细。</template>
+            </p>
 
+            <TableTopScrollbar :table="workbenchTables.bom" :active="activeTab === tab.code" label="报价物料明细" />
             <el-table
+              :ref="workbenchTableRefs.bom"
               :data="displayBomRows"
               border
               stripe
               scrollbar-always-on
-              max-height="calc(100vh - 420px)"
+              max-height="max(360px, calc(100vh - 320px))"
               row-key="displayKey"
               class="bom-table"
             >
@@ -486,7 +481,8 @@
               </div>
             </div>
 
-            <el-table
+            <TableTopScrollbar :table="workbenchTables.priceType" :active="activeTab === tab.code" label="取价来源" />
+            <el-table :ref="workbenchTableRefs.priceType"
               :data="filteredPriceTypeRows"
               border
               stripe
@@ -494,7 +490,7 @@
               scrollbar-always-on
               default-expand-all
               :tree-props="{ children: 'children' }"
-              max-height="calc(100vh - 430px)"
+              max-height="max(360px, calc(100vh - 320px))"
               class="price-type-table"
             >
               <el-table-column prop="materialCode" label="料号 / 图号" min-width="280" fixed="left" show-overflow-tooltip>
@@ -566,7 +562,8 @@
             <el-collapse v-if="pricePrepareItems.length" class="price-check-details">
               <el-collapse-item :title="`查看本次取价明细（${pricePrepareItems.length} 项）`" name="items">
                 <p>展示本次检查取得的单价、数量和价格来源；未取到价格的物料保留为空，具体原因见说明。</p>
-                <el-table :data="pricePrepareItems" border stripe max-height="360" class="price-check-table">
+                <TableTopScrollbar :table="workbenchTables.priceCheck" :active="activeTab === tab.code" label="本次取价明细" />
+                <el-table :ref="workbenchTableRefs.priceCheck" :data="pricePrepareItems" border stripe max-height="max(360px, calc(100vh - 360px))" class="price-check-table">
                   <el-table-column prop="materialCode" label="料号" min-width="160" fixed="left" />
                   <el-table-column prop="materialName" label="物料名称" min-width="170" />
                   <el-table-column prop="quantity" label="数量" width="100" align="right" />
@@ -608,47 +605,47 @@
                 <span>待处理缺口</span>
                 <strong>{{ priceSourceGapSummary.all }}</strong>
               </div>
-              <div class="source-gap-card">
+              <div v-if="priceSourceGapSummary.fixed" class="source-gap-card">
                 <span>固定采购价缺口</span>
                 <strong>{{ priceSourceGapSummary.fixed }}</strong>
               </div>
-              <div class="source-gap-card">
+              <div v-if="priceSourceGapSummary.settleFixed" class="source-gap-card">
                 <span>结算固定价缺口</span>
                 <strong>{{ priceSourceGapSummary.settleFixed }}</strong>
               </div>
-              <div class="source-gap-card">
+              <div v-if="priceSourceGapSummary.settleLinked" class="source-gap-card">
                 <span>结算联动价缺口</span>
                 <strong>{{ priceSourceGapSummary.settleLinked }}</strong>
               </div>
-              <div class="source-gap-card">
+              <div v-if="priceSourceGapSummary.linked" class="source-gap-card">
                 <span>联动价缺口</span>
                 <strong>{{ priceSourceGapSummary.linked }}</strong>
               </div>
-              <div class="source-gap-card">
+              <div v-if="priceSourceGapSummary.range" class="source-gap-card">
                 <span>区间价缺口</span>
                 <strong>{{ priceSourceGapSummary.range }}</strong>
               </div>
-              <div class="source-gap-card">
+              <div v-if="priceSourceGapSummary.ratioReview" class="source-gap-card">
                 <span>供货比率待确认</span>
                 <strong>{{ priceSourceGapSummary.ratioReview }}</strong>
               </div>
-              <div class="source-gap-card">
+              <div v-if="priceSourceGapSummary.raw" class="source-gap-card">
                 <span>原材料价格待处理</span>
                 <strong>{{ priceSourceGapSummary.raw }}</strong>
               </div>
-              <div class="source-gap-card">
+              <div v-if="priceSourceGapSummary.scrap" class="source-gap-card">
                 <span>废料价格待处理</span>
                 <strong>{{ priceSourceGapSummary.scrap }}</strong>
               </div>
-              <div class="source-gap-card">
+              <div v-if="priceSourceGapSummary.make" class="source-gap-card">
                 <span>制造件内部缺口</span>
                 <strong>{{ priceSourceGapSummary.make }}</strong>
               </div>
-              <div class="source-gap-card">
+              <div v-if="priceSourceGapSummary.scrapMapping" class="source-gap-card">
                 <span>废料映射缺口</span>
                 <strong>{{ priceSourceGapSummary.scrapMapping }}</strong>
               </div>
-              <div class="source-gap-card">
+              <div v-if="priceSourceGapSummary.unresolved" class="source-gap-card">
                 <span>其他未判定来源</span>
                 <strong>{{ priceSourceGapSummary.unresolved }}</strong>
               </div>
@@ -679,7 +676,8 @@
               class="inline-alert"
             />
 
-            <el-table
+            <TableTopScrollbar v-if="sourceMaintenanceGaps.length" :table="workbenchTables.sourceGaps" :active="activeTab === tab.code" label="价格源缺口" />
+            <el-table :ref="workbenchTableRefs.sourceGaps"
               :data="sourceMaintenanceGapTree"
               row-key="gapTreeKey"
               default-expand-all
@@ -687,7 +685,7 @@
               border
               stripe
               scrollbar-always-on
-              max-height="calc(100vh - 430px)"
+              max-height="max(360px, calc(100vh - 320px))"
               class="source-gap-table"
             >
               <el-table-column prop="gapMaterialCode" label="料号" min-width="170" fixed="left" show-overflow-tooltip>
@@ -810,7 +808,8 @@
             <section v-if="boardPriceRows.length" class="section-block board-price-inputs">
               <h3>本次板换不锈钢基价</h3>
               <p>以下输入同时用于财务成本和客户铜价场景；原公式中的加工费、舍入与税价计算保持一致。</p>
-              <el-table :data="boardPriceRows" border max-height="260">
+              <TableTopScrollbar :table="workbenchTables.boardPrices" :active="activeTab === tab.code" label="板换不锈钢基价" />
+              <el-table :ref="workbenchTableRefs.boardPrices" :data="boardPriceRows" border max-height="260">
                 <el-table-column prop="materialCode" label="料号" min-width="150" />
                 <el-table-column prop="grade" label="材质" width="110" />
                 <el-table-column prop="value" label="含税基价" width="130" />
@@ -825,9 +824,13 @@
               <el-tab-pane label="财务基准" name="FINANCE">
                 <div class="scenario-meta">
                   <span>Cu：{{ formatPrice(pricePrepare.financeCuPricePerKg) }} 元/公斤</span>
-                  <span>prepare_no：{{ financePrepareBatch.prepareNo || '-' }}</span>
+                  <el-popover v-if="financePrepareBatch.prepareNo" placement="bottom-end" trigger="click" :width="340">
+                    <template #reference><el-button link type="info" size="small">批次信息</el-button></template>
+                    <div class="quote-bom-build-info"><span>价格批次</span><code>{{ financePrepareBatch.prepareNo }}</code></div>
+                  </el-popover>
                 </div>
-                <el-table :data="financePricePrepareItems" border stripe scrollbar-always-on max-height="360" class="prepare-detail-table">
+                <TableTopScrollbar :table="workbenchTables.finance" :active="activeTab === tab.code && pricePrepareScenarioTab === 'FINANCE'" label="财务基准价格" />
+                <el-table :ref="workbenchTableRefs.finance" :data="financePricePrepareItems" border stripe scrollbar-always-on max-height="max(360px, calc(100vh - 360px))" class="prepare-detail-table">
                   <el-table-column prop="materialCode" label="料号 / 图号" min-width="170" fixed="left" show-overflow-tooltip>
                     <template #default="{ row }">{{ materialIdentityLabel(row) }}</template>
                   </el-table-column>
@@ -862,9 +865,13 @@
               <el-tab-pane label="OA 锁价" name="OA">
                 <div class="scenario-meta">
                   <span>Cu：{{ formatPrice(oaCuPricePerKg) }} 元/公斤</span>
-                  <span>prepare_no：{{ oaPrepareBatch.prepareNo || latestPrepare.prepareNo || '-' }}</span>
+                  <el-popover v-if="oaPrepareBatch.prepareNo || latestPrepare.prepareNo" placement="bottom-end" trigger="click" :width="340">
+                    <template #reference><el-button link type="info" size="small">批次信息</el-button></template>
+                    <div class="quote-bom-build-info"><span>价格批次</span><code>{{ oaPrepareBatch.prepareNo || latestPrepare.prepareNo }}</code></div>
+                  </el-popover>
                 </div>
-                <el-table :data="oaPricePrepareItems" border stripe scrollbar-always-on max-height="360" class="prepare-detail-table">
+                <TableTopScrollbar :table="workbenchTables.oa" :active="activeTab === tab.code && pricePrepareScenarioTab === 'OA'" label="OA锁价" />
+                <el-table :ref="workbenchTableRefs.oa" :data="oaPricePrepareItems" border stripe scrollbar-always-on max-height="max(360px, calc(100vh - 360px))" class="prepare-detail-table">
                   <el-table-column prop="materialCode" label="料号 / 图号" min-width="170" fixed="left" show-overflow-tooltip>
                     <template #default="{ row }">{{ materialIdentityLabel(row) }}</template>
                   </el-table-column>
@@ -899,9 +906,12 @@
               <el-tab-pane label="差异对比" name="DIFFERENCE">
                 <div class="scenario-meta difference-toolbar">
                   <span>同一料号按相同数量比较，差异口径为 OA - 财务</span>
-                  <el-checkbox v-model="onlyDifferentPricePrepare">只看有差异</el-checkbox>
+                  <span class="difference-legend" aria-label="差异颜色说明"><span class="difference-positive">＋ 增加</span><span class="difference-negative">− 减少</span><span class="difference-zero">0 无差异</span></span>
+                  <el-checkbox v-model="onlyDifferentPricePrepare" :disabled="differenceExporting">只看有差异</el-checkbox>
+                  <el-button :loading="differenceExporting" :disabled="pricePrepareLoading || autoPriceSourceChecking || !visiblePricePrepareDifferences.length" @click="exportMaterialDifferences">导出Excel</el-button>
                 </div>
-                <el-table :data="visiblePricePrepareDifferences" border stripe scrollbar-always-on max-height="360" class="prepare-detail-table">
+                <TableTopScrollbar :table="workbenchTables.differences" :active="activeTab === tab.code && pricePrepareScenarioTab === 'DIFFERENCE'" label="材料差异对比" />
+                <el-table :ref="workbenchTableRefs.differences" :data="visiblePricePrepareDifferences" border stripe scrollbar-always-on max-height="max(360px, calc(100vh - 360px))" class="prepare-detail-table">
                   <el-table-column prop="materialCode" label="料号 / 图号" min-width="160" fixed="left" show-overflow-tooltip>
                     <template #default="{ row }">{{ materialIdentityLabel(row) }}</template>
                   </el-table-column>
@@ -914,7 +924,7 @@
                     <template #default="{ row }">{{ formatMoney(row.oaUnitPrice) }}</template>
                   </el-table-column>
                   <el-table-column prop="unitPriceDifference" label="单价差异" width="120" align="right">
-                    <template #default="{ row }"><span :class="differenceAmountClass(row.unitPriceDifference)">{{ formatSignedMoney(row.unitPriceDifference) }}</span></template>
+                    <template #default="{ row }"><span class="difference-value" :class="differenceAmountClass(row.unitPriceDifference)">{{ formatSignedMoney(row.unitPriceDifference) }}</span></template>
                   </el-table-column>
                   <el-table-column prop="financeAmount" label="财务金额" width="120" align="right">
                     <template #default="{ row }">{{ formatMoney(row.financeAmount) }}</template>
@@ -923,10 +933,10 @@
                     <template #default="{ row }">{{ formatMoney(row.oaAmount) }}</template>
                   </el-table-column>
                   <el-table-column prop="amountDifference" label="金额差异" width="120" align="right">
-                    <template #default="{ row }"><span :class="differenceAmountClass(row.amountDifference)">{{ formatSignedMoney(row.amountDifference) }}</span></template>
+                    <template #default="{ row }"><span class="difference-value" :class="differenceAmountClass(row.amountDifference)">{{ formatSignedMoney(row.amountDifference) }}</span></template>
                   </el-table-column>
                   <el-table-column prop="differenceRate" label="差异率" width="100" align="right">
-                    <template #default="{ row }">{{ formatPercent(row.differenceRate) }}</template>
+                    <template #default="{ row }"><span class="difference-value" :class="differenceAmountClass(row.differenceRate)">{{ formatPercent(row.differenceRate) }}</span></template>
                   </el-table-column>
                   <template #empty>
                     <el-empty description="暂无价格差异" />
@@ -939,7 +949,8 @@
               <strong>价格生成缺口</strong>
               <span>{{ pricePrepareGaps.length }} 条待处理事项</span>
             </div>
-            <el-table v-if="pricePrepareGaps.length" :data="pricePrepareGaps" border stripe scrollbar-always-on max-height="280" class="gap-table">
+            <TableTopScrollbar v-if="pricePrepareGaps.length" :table="workbenchTables.priceGaps" :active="activeTab === tab.code" label="价格生成缺口" />
+            <el-table :ref="workbenchTableRefs.priceGaps" v-if="pricePrepareGaps.length" :data="pricePrepareGaps" border stripe scrollbar-always-on max-height="280" class="gap-table">
               <el-table-column prop="materialCode" label="来源料号" min-width="160" fixed="left" show-overflow-tooltip />
               <el-table-column prop="gapMaterialCode" label="缺口料号" min-width="160" show-overflow-tooltip />
               <el-table-column label="缺口类型" width="130"><template #default="{ row }">{{ row.displayGapType || row.gapType }}</template></el-table-column>
@@ -956,7 +967,7 @@
           <div v-else-if="isCostRunTab(tab.code)" class="cost-run-tab" v-loading="costRunLoading">
             <div class="action-panel">
               <div>
-                <h2>{{ historyViewMode ? historyResultLabel : '前置条件检查' }}</h2>
+                <h2>{{ historyViewMode ? historyResultLabel : '成本核算' }}</h2>
                 <p>{{ historyViewMode ? '按保存时的成本版本展示，不重新读取当前 BOM、价格或费率。' : costRunBlockingText }}</p>
               </div>
               <div class="toolbar-actions">
@@ -1058,28 +1069,31 @@
                 </template>
               </el-tree>
             </el-dialog>
-            <JjbSheet v-if="costRun.sheet" :sheet="costRun.sheet" :can-edit-shape="canSelectAlternative && !historyViewMode"
+            <TableTopScrollbar v-if="costRun.sheet" class="cost-sheet-top-scroll" :table="workbenchTables.sheet" :active="activeTab === tab.code" label="成本一览表" viewport-selector=".jjb-scroll" content-selector=".jjb-table" />
+            <JjbSheet :ref="workbenchTableRefs.sheet" v-if="costRun.sheet" :sheet="costRun.sheet" :can-edit-shape="canSelectAlternative && !historyViewMode"
               @trace="openSheetTrace" @edit-shape="editShapeFromSheet" />
 
-            <el-table
+            <div class="subsection-head"><strong>成本版本</strong><span>{{ costRunVersions.length }} 条</span></div>
+            <TableTopScrollbar :table="workbenchTables.versions" :active="activeTab === tab.code" label="成本版本" />
+            <el-table :ref="workbenchTableRefs.versions"
               :data="costRunVersions"
               border
               stripe
               scrollbar-always-on
               row-key="id"
               :row-class-name="costVersionRowClass"
+              max-height="max(280px, calc(100vh - 360px))"
               class="cost-version-table"
             >
               <el-table-column prop="displayVersionNo" label="成本版本" min-width="190" fixed="left" show-overflow-tooltip>
                 <template #default="{ row }">
                   <div class="version-cell">
                     <div class="version-title-line">
-                      <strong>{{ row.displayVersionNo || row.versionNo || row.costRunNo || '-' }}</strong>
+                      <strong :title="row.costRunNo || ''">{{ row.displayVersionNo || row.versionNo || row.costRunNo || '-' }}</strong>
                       <el-tag v-if="row.id === selectedCostRunVersionId" size="small" type="primary" effect="plain">
                         当前展示
                       </el-tag>
                     </div>
-                    <span>{{ row.costRunNo || '-' }}</span>
                   </div>
                 </template>
               </el-table-column>
@@ -1209,7 +1223,7 @@ import { currentSupplementWorkspace, productSupplement, currentPriceGaps, curren
 import AuxiliaryClassificationPanel from '../components/technical-data/AuxiliaryClassificationPanel.vue'
 import DrawingVerificationPanel from '../components/quotation/DrawingVerificationPanel.vue'
 import DrawingBomPreview from '../components/quotation/DrawingBomPreview.vue'
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowReactive, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Refresh } from '@element-plus/icons-vue'
@@ -1219,6 +1233,7 @@ import CostRunTraceDrawer from '../components/CostRunTraceDrawer.vue'
 import JjbSheet from '../components/JjbSheet.vue'
 import { savedMoney } from '../utils/jjbSheet'
 import QuoteBomAlternativeDrawer from '../components/QuoteBomAlternativeDrawer.vue'
+import TableTopScrollbar from '../components/TableTopScrollbar.vue'
 import { fetchMonthlyRepriceActiveLock } from '../api/monthlyReprice'
 import { useUserStore } from '../store/modules/user'
 import {
@@ -1276,6 +1291,8 @@ import {
   formatSnapshotDecimal,
 } from './quoteCuCostingUtils'
 
+import { materialDifferenceWorkbook, materialDifferenceFilename } from '../utils/materialDifferenceExport'
+import { saveWorkbook } from '../utils/workbookTransfer'
 import SupplierPriceReviewPanel from '../components/SupplierPriceReviewPanel.vue'
 import { isSupplierRatioGap, isMissingScrapMappingGap, priceSourceGapKind, summarizePriceSourceGaps, buildPriceSourceGapTree } from '../utils/priceSourceGaps'
 
@@ -1348,6 +1365,26 @@ const pricePrepareLoading = ref(false)
 const pricePrepareActionLoading = ref(false)
 const pricePrepareScenarioTab = ref('FINANCE')
 const onlyDifferentPricePrepare = ref(true)
+const differenceExporting = ref(false)
+let differenceExportDisposed = false
+onBeforeUnmount(() => { differenceExportDisposed = true })
+async function exportMaterialDifferences() {
+  if (differenceExporting.value || !visiblePricePrepareDifferences.value.length) return
+  const current = pricePrepare.value
+  const owner = `${oaNo.value}|${itemId.value}|${workbench.value.periodMonth}|${userStore.userId}|${userStore.businessUnitType}`
+  const onlyDifferent = onlyDifferentPricePrepare.value
+  differenceExporting.value = true
+  try {
+    const XLSX = await import('xlsx')
+    if (differenceExportDisposed || current !== pricePrepare.value || owner !== `${oaNo.value}|${itemId.value}|${workbench.value.periodMonth}|${userStore.userId}|${userStore.businessUnitType}`) return
+    const data = { ...current, oaNo: oaNo.value, topProductCode: costingProductCode.value, periodMonth: workbench.value.periodMonth }
+    saveWorkbook(XLSX, materialDifferenceWorkbook(XLSX, data, { onlyDifferent }), materialDifferenceFilename(data))
+    ElMessage.success(`已导出 ${visiblePricePrepareDifferences.value.length} 条材料对比明细`)
+  } catch (error) {
+    ElMessage.error(error?.message || '材料差异导出失败，请重试')
+  } finally { differenceExporting.value = false }
+}
+
 const autoPriceSourceChecking = ref(false)
 const priceSourceCheckError = ref('')
 const returnPriceSourceRefreshing = ref(false)
@@ -1381,6 +1418,11 @@ const workbench = ref({
 const header = computed(() => workbench.value.header || {})
 const item = computed(() => workbench.value.item || {})
 const bomRows = computed(() => Array.isArray(workbench.value.bomRows) ? workbench.value.bomRows : [])
+const workbenchTables = shallowReactive({})
+const workbenchTableRefs = Object.fromEntries(
+  ['bom', 'priceType', 'priceCheck', 'sourceGaps', 'boardPrices', 'finance', 'oa', 'differences', 'priceGaps', 'sheet', 'versions']
+    .map(key => [key, instance => { workbenchTables[key] = instance }]),
+)
 const displayBomRows = computed(() => expandQuoteBomDisplayRows(bomRows.value))
 const rollupDisplayRowCount = computed(
   () => displayBomRows.value.filter((row) => row.rollupDisplay).length,
@@ -1598,6 +1640,16 @@ const priceSourceChecked = computed(() => {
 })
 const priceSourceDetailsMissing = computed(() => Number(pricePrepare.value.readiness?.gapCount) > 0 && !pricePrepareGaps.value.length)
 const priceSourceReady = computed(() => priceSourceChecked.value && oaPricePrepareReady.value && priceSourceGapSummary.value.total === 0)
+// A fresh source check can resolve the saved price issue for display; it is not a new cost result.
+const previousPriceIssueResolved = computed(() => !historyViewMode.value
+  && costingWorkspace.value.workspaceStatus === 'WAIT_PRICE'
+  && priceSourceReady.value && pricingBomReadyForNextStep.value
+  && autoPriceSourceCheckedKey.value === priceSourceAutoCheckKey()
+  && !priceSourceCheckError.value && !workbenchLoadError.value && !materialError.value && !costRunError.value
+  && materialState.value?.canCost === true
+  && !loading.value && !refreshingTabs.value && !inputTabsNeedRefresh.value
+  && !pricePrepareLoading.value && !autoPriceSourceChecking.value && !pricePrepareActionLoading.value
+  && !costRunActionLoading.value && !hasRunningCostVersion.value)
 const costRunRepriceLocked = computed(() => isCostRunLockedByMonthlyReprice(
   activeRepriceLock.value,
   { permissions: userStore.permissions, roles: userStore.roles },
@@ -1631,7 +1683,9 @@ const productCostingActionLabel = computed(() => (
   currentSuccessVersion.value?.id ? '重新核算本产品' : '核算本产品'
 ))
 const hasStaleCostVersion = computed(() => costRunVersions.value.some((row) => row?.stale))
-const currentCostingBlockText = computed(() => currentCostingBlockLabel({
+const currentCostingBlockText = computed(() => previousPriceIssueResolved.value
+  ? `当前价格源已齐全，可${currentSuccessVersion.value?.id ? '重新' : '继续'}核算`
+  : currentCostingBlockLabel({
   historyView: historyViewMode.value,
   workspaceStatus: costingWorkspace.value.workspaceStatus,
   overallStatus: submittedGapResolved.value ? 'READY' : workbench.value.workflowStatus?.overallStatus,
@@ -1713,7 +1767,11 @@ const costingStatusSummary = computed(() => {
   if (costingWorkspace.value.workspaceStatus === 'WAIT_TECH_DATA') return '待补齐技术资料'
   return costRunWorkbenchStatusText.value
 })
-const costingIssueDetail = computed(() => materialError.value
+const costingPreviousIssueDetail = computed(() => previousPriceIssueResolved.value
+  ? costingWorkspace.value.lastErrorMessage || localWorkflowGuideText.value : '')
+const costingIssueDetail = computed(() => previousPriceIssueResolved.value
+  ? `${currentCostingBlockText.value}。${currentSuccessVersion.value?.id ? '已有历史成功结果，本次尚未更新成本。' : '本次尚未生成成功成本。'}`
+  : materialError.value
   || (materialState.value?.canCost === false ? materialState.value.message : '')
   || localWorkflowGuideText.value || costingWorkspace.value.lastErrorMessage
   || materialChecks.value.find(row => !['READY', 'SUCCESS'].includes(row.pipelineStatus))?.message
@@ -1749,7 +1807,7 @@ const inputGapGuideText = computed(() => {
 })
 
 async function loadWorkbench(options = {}) {
-  const { resetTab = false, loadChildren = true, costResultOnly = false } = options
+  const { resetTab = false, loadChildren = true, costResultOnly = false, revealInputsEarly = false } = options
   if (!oaNo.value || !itemId.value) return
   workbenchLoadError.value = ''
   if (workbench.value.item?.id && String(workbench.value.item.id) !== String(itemId.value)) {
@@ -1798,7 +1856,9 @@ async function loadWorkbench(options = {}) {
       return
     }
     if (loadChildren) {
-      await refreshAllTabData()
+      const inputReads = refreshAllTabData()
+      if (revealInputsEarly) loading.value = false
+      await inputReads
       inputTabsNeedRefresh.value = false
     }
     applyInputGapGuide()
@@ -2492,7 +2552,7 @@ function priceSourceAutoCheckKey() {
 }
 
 async function ensurePriceSourceChecked() {
-  if (activeTab.value !== 'PRICE_SOURCE_SUPPLEMENT') return
+  if (activeTab.value !== 'PRICE_SOURCE_SUPPLEMENT' || loading.value || refreshingTabs.value || pricePrepareLoading.value) return
   if (route.query.refreshPriceSource === '1' || returnPriceSourceRefreshing.value || costRunActionLoading.value) return
   const tab = currentPriceSourceTab()
   if (isBlockedTab(tab)) return
@@ -3079,6 +3139,7 @@ function tabBadgeLabel(tab) {
     if (isBlockedTab(tab)) return '待价格类型'
     if (gapCount > 0) return `缺 ${gapCount} 项`
     if (!priceSourceChecked.value) return '自动检查'
+    if (previousPriceIssueResolved.value) return '已齐全'
     if (tab?.status === 'DONE') return '已齐全'
     return '自动检查'
   }
@@ -3121,6 +3182,7 @@ function tabBadgeType(tab) {
     if (isBlockedTab(tab)) return 'info'
     if (currentPriceSourceGapCount() > 0) return 'danger'
     if (!priceSourceChecked.value) return 'warning'
+    if (previousPriceIssueResolved.value) return 'success'
     return tab?.status === 'DONE' ? 'success' : 'warning'
   }
   if (code === 'PRICE_PREPARE') {
@@ -3383,8 +3445,8 @@ watch([oaNo, itemId, historyVersionId], () => {
 
 watch(activeTab, async (tabCode) => {
   if (!initializingWorkbench && !loading.value && !historyViewMode.value
-      && !isCostRunTab(tabCode) && inputTabsNeedRefresh.value) {
-    await loadWorkbench({ resetTab: false, loadChildren: true })
+      && !isCostRunTab(tabCode) && inputTabsNeedRefresh.value && !refreshingTabs.value) {
+    await loadWorkbench({ resetTab: false, loadChildren: true, revealInputsEarly: true })
     ensurePriceSourceChecked()
     return
   }
@@ -3393,6 +3455,7 @@ watch(activeTab, async (tabCode) => {
     && isPriceTypeTab(tabCode)
     && pricingBomReadyForNextStep.value
     && !priceTypeLoading.value
+    && !refreshingTabs.value
   ) {
     // 第三步是当前 BOM 的实时只读投影。每次重新进入都取最新结果，
     // 避免页面仍展示 worker 重建 BOM 前留在内存中的旧批次或空品名。
@@ -3417,6 +3480,9 @@ onMounted(() => initializeWorkbench())
 .bom-shape-batch { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 0 0 12px; }
 .quality-details summary { cursor: pointer; }
 .quality-details p { margin: 8px 0 0; overflow-wrap: anywhere; }
+.previous-costing-issue { margin-top: 16px; padding-top: 12px; border-top: 1px solid #ebeef3; color: #697386; }
+.previous-costing-issue summary { cursor: pointer; font-size: 13px; }
+.previous-costing-issue p { margin: 10px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
 .costing-page {
   display: flex;
   flex-direction: column;
@@ -3743,10 +3809,9 @@ onMounted(() => initializeWorkbench())
   align-items: center;
   gap: 12px;
   margin-bottom: 14px;
-  padding: 13px 14px;
-  border: 1px solid #e4e9f1;
-  border-radius: 8px;
-  background: #fbfcfe;
+  padding: 0 0 12px;
+  border-bottom: 1px solid #e4e9f1;
+  background: #fff;
 }
 
 .tab-toolbar strong,
@@ -3754,7 +3819,7 @@ onMounted(() => initializeWorkbench())
   display: block;
   margin: 0;
   color: #2f343d;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 650;
 }
 
@@ -3768,25 +3833,81 @@ onMounted(() => initializeWorkbench())
 }
 
 .status-strip {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 12px;
-  margin-bottom: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e4e9f1;
 }
 
-.source-gap-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+.quote-bom-tab {
+  min-width: 0;
+}
+
+.quote-bom-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  padding: 0 0 12px;
+  border-bottom: 1px solid #e4e9f1;
+}
+
+.quote-bom-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
-  margin-bottom: 14px;
+  min-width: 0;
+}
+
+.quote-bom-heading h2 {
+  margin: 0 4px 0 0;
+  color: #2f343d;
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 28px;
+}
+
+.quote-bom-count,
+.quote-bom-note,
+.quote-bom-build-info {
+  color: #697386;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.quote-bom-note {
+  margin: 8px 0 10px;
+}
+
+.quote-bom-build-info code {
+  display: block;
+  margin-top: 6px;
+  color: #475467;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.quote-bom-tab > .bom-table { margin-top: 10px; }
+.quote-bom-tab .table-top-scroll + .bom-table { margin-top: 0; }
+
+.source-gap-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin: 12px 0;
 }
 
 .source-gap-card {
-  min-height: 68px;
-  padding: 10px 12px;
-  border: 1px solid #e4e9f1;
-  border-radius: 8px;
-  background: #fbfcfe;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding-right: 18px;
+  border-right: 1px solid #e4e9f1;
 }
 
 .source-gap-card span {
@@ -3795,21 +3916,24 @@ onMounted(() => initializeWorkbench())
 }
 
 .source-gap-card strong {
-  display: block;
-  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
   color: #2f343d;
-  font-size: 20px;
+  font-size: 14px;
   font-weight: 650;
   line-height: 1.2;
 }
 
 .metric {
-  min-height: 68px;
-  padding: 10px 12px;
-  border: 1px solid #e4e9f1;
-  border-radius: 8px;
-  background: #fbfcfe;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 20px 4px 0;
+  border-right: 1px solid #e4e9f1;
 }
+
+.metric:last-child,
+.source-gap-card:last-child { border-right: 0; padding-right: 0; }
 
 .metric span {
   color: #697386;
@@ -3817,18 +3941,20 @@ onMounted(() => initializeWorkbench())
 }
 
 .metric strong {
-  display: block;
-  margin-top: 4px;
   color: #2f343d;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 650;
   line-height: 1.2;
-  word-break: break-all;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
 }
 
 .price-compare-summary {
-  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
+
+.price-compare-summary .metric { flex-direction: column; align-items: flex-start; gap: 4px; }
 
 .price-validity-cell {
   display: flex;
@@ -3839,7 +3965,7 @@ onMounted(() => initializeWorkbench())
 }
 
 .price-compare-summary .metric strong.difference-positive {
-  color: #d9485f;
+  color: #c92a3b;
 }
 
 .price-compare-summary .metric strong.difference-negative {
@@ -3866,20 +3992,16 @@ onMounted(() => initializeWorkbench())
 }
 
 .price-scenario-tabs :deep(.el-tabs__nav) {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(160px, 1fr));
-  width: 100%;
+  display: flex;
+  gap: 24px;
+  width: auto;
   min-width: 0;
-  border: 1px solid #e4e9f1;
-  border-radius: 8px;
-  background: #f8fafc;
 }
 
 .price-scenario-tabs :deep(.el-tabs__item) {
   justify-content: center;
-  height: 46px;
-  padding: 0 18px;
-  border-right: 1px solid #e4e9f1;
+  height: 36px;
+  padding: 0 4px;
   color: #667085;
   font-weight: 600;
 }
@@ -3890,7 +4012,6 @@ onMounted(() => initializeWorkbench())
 
 .price-scenario-tabs :deep(.el-tabs__item.is-active) {
   color: #1f66b1;
-  background: #eef6ff;
 }
 
 .scenario-meta {
@@ -3898,6 +4019,7 @@ onMounted(() => initializeWorkbench())
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  flex-wrap: wrap;
   min-height: 34px;
   color: #697386;
   font-size: 12px;
@@ -3977,6 +4099,9 @@ onMounted(() => initializeWorkbench())
   color: #697386;
   font-size: 13px;
 }
+
+.pricing-bom-summary strong { font-size: 16px; font-weight: 650; }
+.cost-sheet-top-scroll { margin: 0 8px; }
 
 .pricing-bom-summary-status {
   justify-content: flex-end;
@@ -4240,9 +4365,11 @@ onMounted(() => initializeWorkbench())
   flex-wrap: wrap;
 }
 
-.difference-positive {
-  color: #d9485f;
-}
+.difference-legend { display: inline-flex; align-items: center; gap: 14px; font-size: 13px; }
+.difference-value { display: inline-block; padding: 2px 6px; border-radius: 4px; font-weight: 600; }
+.difference-value.difference-positive { background: #fff1f0; }
+.difference-value.difference-negative { background: #edf9f0; }
+.difference-positive { color: #c92a3b; }
 
 .difference-negative {
   color: #15803d;
@@ -4345,6 +4472,7 @@ onMounted(() => initializeWorkbench())
 }
 
 @media (max-width: 860px) {
+  .price-compare-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .page-head,
   .tab-toolbar,
   .action-panel,

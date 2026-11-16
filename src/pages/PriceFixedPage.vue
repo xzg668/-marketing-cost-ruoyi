@@ -7,6 +7,7 @@
           <el-button v-if="returnToWorkbenchVisible" @click="returnToWorkbench">
             返回核算工作台
           </el-button>
+          <WorkbookActions kind="fixed" import-permission="price:fixed:import" :fetch-page="fetchFixedItems" :query="buildParams()" />
           <el-upload
             class="upload-btn"
             :show-file-list="false"
@@ -190,6 +191,7 @@
 </template>
 
 <script setup>
+import WorkbookActions from '../components/WorkbookActions.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'

@@ -64,3 +64,38 @@ test('packaging export retains child price, usage, both denominators and the act
   assert.equal(XLSX.utils.sheet_to_json(book.Sheets['包装汇总及系数'])[0]['包装系数'], 1.07)
   assert.ok(visibleCompositionColumns(data).some(column => column.key === 'path' && column.label === '保存的包装BOM路径'))
 })
+
+test('saved labor download reconciles full and partial exclusions, retaining gold-plating source identity', () => {
+  const data = view(); data.costCode = 'DIRECT_LABOR'
+  const identity = { sourceTable: 'cms_workshop_labor_raw', sourceId: '104173834', period: '2026-01', parentCode: '1145900000611' }
+  const path = '1145900000611(×1)→201850113(×1)→520101-027(自身)(64)'
+  data.composition.rows = [
+    { ...identity, originalAmountYuan: '0.469222', excludedAmountYuan: '0.469222', path, note: '本单形态剔除' },
+    { ...identity, sourceId: '104133208', originalAmountYuan: '0.060165', excludedAmountYuan: '0.022562', path: 'P→721850092(×1)→W(自身)(3.4)' },
+    { ...identity, amountYuan: '0.469222', originalCent: '46.922222', workshopName: '商用电子装配一车间-梅渚烧结基座镀金', path },
+    { ...identity, sourceId: '104133208', amountYuan: '0.060165', path: 'P→721850092(×1)→W(自身)(3.4);P→KEEP(×1)→W(自身)(5)' },
+    { ...identity, sourceId: 'KEEP', amountYuan: '-0.000001' },
+    { ...identity, period: '2025-01', amountYuan: '0.010000' },
+  ]
+  const original = JSON.stringify(data)
+  const book = XLSX.read(XLSX.write(compositionWorkbook(data), { type: 'buffer', bookType: 'xlsx' }), { type: 'buffer' })
+  const rows = XLSX.utils.sheet_to_json(book.Sheets['来源明细'])
+  assert.equal(rows.length, 4)
+  assert.equal(rows[0]['来源原金额（元）'], 0.469222)
+  assert.equal(rows[0]['本单剔除金额（元）'], 0.469222)
+  assert.equal(rows[0]['实际计入金额（元）'], 0)
+  assert.equal(rows[1]['实际计入金额（元）'], 0.037603)
+  assert.equal(rows[2]['实际计入金额（元）'], -0.000001)
+  assert.equal(rows[3]['实际计入金额（元）'], 0.01)
+  const exclusions = XLSX.utils.sheet_to_json(book.Sheets['剔除明细'])
+  assert.equal(exclusions.length, 2)
+  assert.equal(exclusions[0]['车间名称'], '商用电子装配一车间-梅渚烧结基座镀金')
+  assert.equal(exclusions[0]['本单剔除金额（元）'], 0.469222)
+  const paths = compositionPaths(data)
+  assert.equal(paths.length, 3)
+  assert.match(paths[0].treatment, /已剔除.*形态/)
+  assert.equal(paths[0].amountYuan, '') // CMS wage path weight 64 is not 0.64 yuan.
+  assert.equal(paths[0].pathBasis, '64')
+  assert.doesNotMatch(paths[2].treatment, /已剔除/)
+  assert.equal(JSON.stringify(data), original)
+})

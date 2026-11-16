@@ -32,8 +32,8 @@ test('HTTP 文件夹入口在 randomUUID 不可用时仍创建批次并逐个上
     uploadPriceFolderFile: async (...args) => { uploads.push(args) },
     readPriceFolder: async id => ({ id, status: 'COMPLETE', files: [], groups: [], summary: {} }),
   }
-  const names = ['Vue', 'useUserStore', 'api', 'createUuid', ...Object.keys(folderUtils)]
-  const component = new Function(...names, script)(Vue, () => ({ businessUnitType: 'COMMERCIAL' }), api, createUuid, ...Object.values(folderUtils))
+  const names = ['WorkbookActions', 'Vue', 'useUserStore', 'api', 'createUuid', ...Object.keys(folderUtils)]
+  const component = new Function(...names, script)({}, Vue, () => ({ businessUnitType: 'COMMERCIAL' }), api, createUuid, ...Object.values(folderUtils))
   component.render = () => null
   const app = renderer.createApp(component, { modelValue: false, month: '2026-11' })
   try {

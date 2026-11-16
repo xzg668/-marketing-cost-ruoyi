@@ -5,11 +5,12 @@
         <div class="page-heading">
           <div>
             <h2>财务基价</h2>
-            <p>选择月份可查看并导出该月基价；修改文件后，切换到目标月份导入。商用与板换分别维护。</p>
+            <p>选择月份可查看并导出该月基价。商用与板换分别维护。<template v-if="canImport">修改文件后，切换到目标月份导入。</template></p>
           </div>
-          <div v-if="canImport" class="publication-actions">
-            <el-button :loading="exporting" :disabled="loading || !snapshot || !exportSourceMonth || publishing" @click="exportSelectedMonth">导出所选月份{{ scope.priceOrgCode === '220' ? '板换' : '商用' }}基价</el-button>
-            <el-button type="primary" :disabled="publishing" @click="importVisible = true">导入财务基价表</el-button>
+          <div v-if="canImport || canExport" class="publication-actions">
+            <WorkbookActions v-if="canImport" :kind="scope.priceOrgCode === '220' ? 'financePlate' : 'financeCommercial'" />
+            <el-button v-if="canExport" :loading="exporting" :disabled="loading || !snapshot || !exportSourceMonth || publishing" @click="exportSelectedMonth">导出所选月份{{ scope.priceOrgCode === '220' ? '板换' : '商用' }}基价</el-button>
+            <el-button v-if="canImport" type="primary" :disabled="publishing" @click="importVisible = true">导入财务基价表</el-button>
           </div>
         </div>
       </template>
@@ -36,7 +37,7 @@
         </el-form-item>
         <el-form-item><el-button :loading="loading" @click="loadSnapshot">查询</el-button></el-form-item>
       </el-form>
-      <p v-if="canImport && snapshot && exportSourceMonth" class="monthly-hint">导出月份：{{ exportSourceMonth }}，包含该月最后一次发布的全部方案和条件。导入月份：{{ scope.priceMonth }}；发布时同步生成适用原稿的财务有效价。</p>
+      <p v-if="canExport && snapshot && exportSourceMonth" class="monthly-hint">导出月份：{{ exportSourceMonth }}，包含该月最后一次发布的全部方案和条件。<template v-if="canImport">导入月份：{{ scope.priceMonth }}；发布时同步生成适用原稿的财务有效价。</template></p>
       <p v-if="canImport" class="monthly-hint">同月基价可更正后再次导入。发布后，依赖基价的价格同步更新，后续核算和手动重新核算使用新价；已保存的历史成本保留。</p>
       <el-alert v-if="loadError" :title="loadError" type="error" :closable="false" show-icon />
       <el-empty v-else-if="!loading && !snapshot" :description="`${scope.priceMonth} ${scope.priceOrgCode === '220' ? '板换' : '商用'}尚未发布财务基价${canImport ? '，请先导入财务基价表。' : '，请联系财务维护。'}`" />
@@ -127,6 +128,7 @@
 </template>
 
 <script setup>
+import WorkbookActions from '../components/WorkbookActions.vue'
 import { financePublicationMessage } from '../components/originalPriceDisplay'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
@@ -137,8 +139,10 @@ import { displayFactorPrice, factorPricePerTon, priceUnitLabel, publicationCanCo
 
 const user = useUserStore()
 const allowed = (permission) => user.permissions?.includes('*:*:*') || user.permissions?.includes(permission)
+const quotationReader = computed(() => user.roles?.some(role => ['bu_staff', 'bu_director', 'admin'].includes(String(role).toLowerCase())))
 const canImport = computed(() => allowed('price:finance-base:import'))
-const canReadFactors = computed(() => allowed('price:finance-base:list'))
+const canExport = computed(() => quotationReader.value || canImport.value)
+const canReadFactors = computed(() => quotationReader.value || allowed('price:finance-base:list'))
 const canEditCopper = computed(() => allowed('cost:finance-cu-base:edit'))
 const route = useRoute()
 const now = new Date()
@@ -153,9 +157,9 @@ const exportSourceMonth = computed(() => { try { return financeMonthExport(scope
 let alive = true
 const exportScope = () => JSON.stringify([scope.value.priceMonth, scope.value.priceOrgCode, user.userId, user.businessUnitType])
 async function exportSelectedMonth() {
-  if (!canImport.value || exporting.value || loading.value || !snapshot.value) return
+  if (!canExport.value || exporting.value || loading.value || !snapshot.value) return
   const selected = exportScope()
-  const isCurrent = () => alive && canImport.value && selected === exportScope()
+  const isCurrent = () => alive && canExport.value && selected === exportScope()
   exporting.value = true
   try { await exportFinanceFactors({ ...scope.value }, { isCurrent }) }
   catch (error) { if (isCurrent()) ElMessage.error(error.message || '所选月份财务基价导出失败') }

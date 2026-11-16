@@ -146,7 +146,7 @@ test('页面只从报价单产品行进入，不新增菜单或上传入口', ()
   assert.match(router, /electronic-drawing\/:taskId\/material-resolution/)
   assert.match(api, /electronic-drawing\/tasks\/\$\{encodePath\(taskId\)\}\/material-options/)
   assert.doesNotMatch(page, /上传|Excel 文件|系统推荐|二次审核/)
-  assert.match(detailPage, /最近一次整单核算结果/)
+  assert.match(detailPage, /查看最近一次整单执行记录（历史）/)
   assert.match(detailPage, /该次业务结果/)
 })
 

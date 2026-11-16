@@ -4,6 +4,7 @@
     description="辅助人员工资和辅料科目来源，材料计价原始单位为分。"
     trace-nav
   >
+    <template #actions><WorkbookActions kind="cmsSubject" :fetch-page="fetchCmsProductSubjectCostRows" :query="buildParams()" page-key="current" size-key="size" import-permission="cms:cost:import" /></template>
     <section class="cms-query-panel">
       <el-form class="cms-query-form" :inline="true" :model="filters" label-width="72px">
         <el-form-item label="成品料号">
@@ -65,6 +66,7 @@
 </template>
 
 <script setup>
+import WorkbookActions from '../components/WorkbookActions.vue'
 import { onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'

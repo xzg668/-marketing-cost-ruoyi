@@ -4,6 +4,7 @@
       <div class="filter-header">
         <div class="filter-title">部门经费率对照表</div>
         <div class="filter-actions">
+          <WorkbookActions kind="department" :fetch-page="fetchDepartmentFundRates" :query="buildParams()" import-permission="base:dept-fund:import" />
           <el-upload
             class="upload-btn"
             :show-file-list="false"
@@ -109,6 +110,7 @@
 </template>
 
 <script setup>
+import WorkbookActions from '../components/WorkbookActions.vue'
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {

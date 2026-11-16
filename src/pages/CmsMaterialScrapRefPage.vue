@@ -6,6 +6,7 @@
   >
     <template #actions>
       <div class="mapping-upload-actions">
+        <WorkbookActions kind="cmsScrap" :fetch-page="fetchCmsMaterialScrapRefsCurrent" :query="pagedParams()" page-key="current" size-key="size" import-permission="cms:cost:import" />
         <el-upload
           :auto-upload="false"
           :show-file-list="false"
@@ -90,6 +91,7 @@
 </template>
 
 <script setup>
+import WorkbookActions from '../components/WorkbookActions.vue'
 import { onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'

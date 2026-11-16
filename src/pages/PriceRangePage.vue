@@ -4,6 +4,8 @@
       <div class="filter-header">
         <div class="filter-title">区间价</div>
         <div class="filter-actions">
+          <WorkbookActions kind="range" :fetch-page="exportPricePage" :query="buildParams()" import-permission="price:range:import" />
+          <WorkbookActions kind="quantityRange" template-label="数量区间模板" import-permission="price:range:import" />
           <el-button v-hasPermi="['price:range:import']" type="primary" @click="originalImportVisible = true">导入区间原稿</el-button>
           <el-button v-if="returnToWorkbenchVisible" @click="returnToWorkbench">
             返回核算工作台
@@ -170,6 +172,8 @@
 </template>
 
 <script setup>
+import { priceExportPage } from '../utils/priceWorkbookExport'
+import WorkbookActions from '../components/WorkbookActions.vue'
 import { fetchRangeEffectivePrices } from '../api/originalPriceTrials'
 import { effectivePriceStatusLabel, priceText, rangeText } from '../components/originalPriceDisplay'
 import { computed, onMounted, ref, watch } from 'vue'
@@ -716,6 +720,8 @@ onMounted(() => {
   applyRouteContext()
   fetchList()
 })
+
+function exportPricePage(query) { return priceExportPage(query, { kind: 'range', fetchPage: fetchRangeItems, fetchEffective: fetchRangeEffectivePrices }) }
 </script>
 
 <style scoped>

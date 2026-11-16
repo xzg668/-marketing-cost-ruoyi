@@ -11,7 +11,7 @@ function actual(name, deps) {
 }
 function harness() {
   const calls = [], selection = { periodMonth: '2026-11', organization: '210', materialCode: 'A', selectedShape: 'PURCHASE', expectedVersion: 1 }
-  const deps = { generation: 1, props: { oaNo: 'OA', busy: false }, canEdit: ref(true), saving: ref(false), error: ref(''), changes: ref([selection]), incomplete: ref(false),
+  const deps = { generation: 1, props: { oaNo: 'OA', busy: false }, canEdit: ref(true), saving: ref(false), refreshing: ref(false), refreshRequired: ref(false), error: ref(''), changes: ref([selection]), incomplete: ref(false),
     view: ref({ fingerprint: 'current', problems: [] }), clearDrafts: () => calls.push(['clear']),
     saveQuoteOrderMaterialShapes: async (...args) => { calls.push(['save', ...args]); return { changedMaterials: 1, affectedItemIds: [1, 2, 3] } },
     ElMessage: { success: () => {} }, emit: (...args) => calls.push(['emit', ...args]), load: async () => calls.push(['reload']) }
@@ -24,6 +24,78 @@ test('one batch save uses OA identity and starts only one whole-order calculatio
   assert.equal(h.calls[0][2].selections.length, 2); assert.equal(h.calls[0][2].expectedFingerprint, 'current')
   assert.equal(h.calls.filter(c => c[0] === 'emit' && c[1] === 'cost').length, 1)
   assert.deepEqual(h.calls.at(-1), ['reload']); assert.equal(h.deps.saving.value, false)
+})
+
+const pending = () => {
+  let resolve, reject
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no })
+  return { promise, resolve, reject }
+}
+function loadingHarness() {
+  const read = pending(), discover = pending(), drafts = {}, calls = []
+  const deps = { generation: 0, props: { oaNo: 'OA' }, saving: ref(false), refreshing: ref(false),
+    loading: ref(false), refreshRequired: ref(false), hasView: ref(false), error: ref(''), drafts,
+    view: ref({ rows: [], problems: [], fingerprint: null }), clearDrafts: () => Object.keys(drafts).forEach(k => delete drafts[k]),
+    fetchQuoteOrderMaterialShapes: () => { calls.push('read'); return read.promise },
+    prepareQuoteOrderMaterialShapes: () => { calls.push('discover'); return discover.promise } }
+  const install = declarations.find(n => n.type === 'FunctionDeclaration' && n.id.name === 'installView')
+  if (install) deps.installView = actual('installView', deps)
+  return { ...deps, read, discover, calls, load: actual('load', deps) }
+}
+const shapeView = (fingerprint, codes = ['A']) => ({ fingerprint, rows: codes.map(materialCode => ({ materialCode })), problems: [] })
+const flush = () => new Promise(resolve => setImmediate(resolve))
+test('existing shapes become visible before source discovery finishes, and new sources still appear', async () => {
+  const h = loadingHarness(), loading = h.load()
+  h.read.resolve(shapeView('existing')); await flush()
+  assert.equal(h.loading.value, false)
+  assert.equal(h.view.value.rows[0]?.materialCode, 'A')
+  assert.equal(h.refreshing.value, true)
+  h.discover.resolve(shapeView('discovered', ['A', 'B'])); await loading
+  assert.equal(h.view.value.rows.length, 2)
+  assert.deepEqual(h.calls, ['read', 'discover'])
+  assert.equal(h.refreshing.value, false)
+})
+test('an empty saved list still discovers previously unlisted materials', async () => {
+  const h = loadingHarness(), loading = h.load()
+  h.read.resolve(shapeView('empty', [])); await flush()
+  h.discover.resolve(shapeView('new', ['B'])); await loading
+  assert.deepEqual(h.view.value.rows.map(r => r.materialCode), ['B'])
+})
+test('drafts survive background refresh; changed fingerprints require reload before save', async () => {
+  for (const changed of [false, true]) {
+    const h = loadingHarness(), loading = h.load()
+    h.read.resolve(shapeView('original')); await flush(); h.drafts.A = 'PURCHASE'
+    h.discover.resolve(shapeView(changed ? 'changed' : 'original')); await loading
+    assert.equal(h.drafts.A, 'PURCHASE')
+    assert.equal(h.view.value.fingerprint, 'original')
+    assert.equal(h.refreshRequired.value, changed)
+    assert.equal(Boolean(h.error.value), changed)
+  }
+})
+test('failed discovery preserves rows and drafts but blocks saving an unrefreshed view', async () => {
+  const h = loadingHarness(), loading = h.load()
+  h.read.resolve(shapeView('original')); await flush(); h.drafts.A = 'PURCHASE'
+  h.discover.reject(Error('offline')); await loading
+  assert.equal(h.view.value.rows.length, 1); assert.equal(h.drafts.A, 'PURCHASE')
+  assert.equal(h.refreshRequired.value, true); assert.equal(h.refreshing.value, false)
+})
+test('discovery recovers from an initial read failure', async () => {
+  const h = loadingHarness(), loading = h.load()
+  h.read.reject(Error('read failed')); await flush()
+  h.discover.resolve(shapeView('discovered')); await loading
+  assert.equal(h.view.value.fingerprint, 'discovered'); assert.equal(h.error.value, '')
+})
+test('concurrent refresh is deduplicated and a response for another order cannot replace the view', async () => {
+  const h = loadingHarness(), loading = h.load()
+  await h.load(); assert.deepEqual(h.calls, ['read'])
+  h.props.oaNo = 'OTHER'; h.read.resolve(shapeView('old')); await loading
+  assert.equal(h.view.value.rows.length, 0); assert.deepEqual(h.calls, ['read'])
+})
+test('save cannot race discovery or bypass a changed-source conflict', async () => {
+  for (const blocked of ['refreshing', 'refreshRequired']) {
+    const h = harness(); h.deps[blocked].value = true; await h.save()(true)
+    assert.deepEqual(h.calls, [])
+  }
 })
 test('save-only does not start costing, and stale conflicts preserve drafts and do not calculate', async () => {
   const h = harness(); await h.save()(false); assert.equal(h.calls.some(c => c[1] === 'cost'), false)
@@ -70,26 +142,25 @@ test('Vue tracks added and removed draft keys so batch choices enable the save b
   assert.deepEqual(actualChanges.value.map(row => row.selectedShape), ['PURCHASE', null])
   delete drafts.A; delete drafts.B; assert.equal(actualChanges.value.length, 0)
   rows[0].selectedShape = 'PURCHASE'; sourceDrafts.A = 'FIXED'
-  assert.equal(actualChanges.value[0].selectedShape, 'PURCHASE'); assert.equal(actualChanges.value[0].selectedSourceType, 'FIXED')
+  assert.equal(actualChanges.value.length, 0)
+  drafts.A = 'OUTSOURCE'
+  assert.equal(actualChanges.value[0].selectedShape, 'OUTSOURCE')
+  assert.equal(Object.hasOwn(actualChanges.value[0], 'selectedSourceType'), false)
 })
 
-function sourceHarness() {
-  const deps = { canEdit: ref(true), saving: ref(false), props: {}, drafts: {}, sourceDrafts: {}, view: ref({ sourceSelectionSupported: true }), rowKey: row => row.materialCode }
-  for (const name of ['currentShape', 'currentSource', 'sourceOptions', 'stageSource', 'setSource', 'setShape']) deps[name] = actual(name, deps)
-  return deps
-}
-test('changing shape chooses a sole price source and resets the source when restoring BOM defaults', () => {
-  const h = sourceHarness(), row = { materialCode: 'A', selectedShape: null, allowedShapes: ['PURCHASE', 'MANUFACTURE'], sources: [{ sourceType: 'MAKE' }, { sourceType: 'LINKED' }] }
-  h.setShape(row, 'PURCHASE'); assert.equal(h.sourceDrafts.A, 'LINKED')
-  h.setShape(row, 'MANUFACTURE'); assert.equal(h.sourceDrafts.A, 'MAKE')
-  h.setShape(row, 'DEFAULT'); assert.equal(h.currentSource(row), null)
+test('a shape save does not require or send a quotation price-source selection', async () => {
+  const h = harness(); h.deps.incomplete.value = true
+  await h.save()(false)
+  assert.equal(h.calls[0][0], 'save')
+  assert.equal(Object.hasOwn(h.calls[0][2].selections[0], 'selectedSourceType'), false)
 })
-test('multiple external sources require an explicit choice and a source-only edit is staged', () => {
-  const h = sourceHarness(), row = { materialCode: 'A', selectedShape: 'PURCHASE', selectedSourceType: 'FIXED', allowedShapes: ['PURCHASE'], sources: [{ sourceType: 'FIXED' }, { sourceType: 'LINKED' }] }
-  h.setSource(row, 'LINKED'); assert.equal(h.sourceDrafts.A, 'LINKED'); assert.deepEqual(h.drafts, {})
-  h.setSource(row, 'MAKE'); assert.equal(h.sourceDrafts.A, 'LINKED')
-})
-test('an incomplete price-source choice cannot save or enqueue costing', async () => {
-  const h = harness(); h.deps.incomplete.value = true; await h.save()(true)
-  assert.deepEqual(h.calls, []); assert.match(h.deps.error.value, /价格源/)
+test('quotation staff, directors and administrators can edit shapes; read-only and unrelated viewers cannot', () => {
+  const declaration = declarations.filter(n => n.type === 'VariableDeclaration').flatMap(n => n.declarations).find(n => n.id.name === 'canEdit')
+  for (const role of ['bu_staff', 'bu_director', 'admin', 'viewer']) {
+    for (const readonly of [false, true]) {
+      const result = new Function('computed', 'props', 'user', 'permitted', `return ${source.slice(declaration.init.start, declaration.init.end)}`)(
+        fn => ({ value: fn() }), { readonly }, { roles: [role] }, () => false)
+      assert.equal(result.value, !readonly && role !== 'viewer')
+    }
+  }
 })

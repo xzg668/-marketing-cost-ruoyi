@@ -19,6 +19,7 @@
             <el-tag v-else type="info" effect="plain">未选择</el-tag>
           </div>
 
+          <WorkbookActions :kind="item.workbook" import-permission="cms:cost:import" />
           <el-upload
             drag
             :auto-upload="false"
@@ -106,6 +107,7 @@
 </template>
 
 <script setup>
+import WorkbookActions from '../components/WorkbookActions.vue'
 import { computed, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
@@ -130,21 +132,25 @@ const router = useRouter()
 const uploadItems = [
   {
     key: 'planFile',
+    workbook: 'cmsPlan',
     label: '产品计划成本汇总',
     uploadTitle: '上传计划成本汇总',
   },
   {
     key: 'workshopFile',
+    workbook: 'cmsWorkshop',
     label: '产品车间料工费汇总',
     uploadTitle: '上传车间料工费汇总',
   },
   {
     key: 'subjectFile',
+    workbook: 'cmsSubject',
     label: '产品科目成本汇总',
     uploadTitle: '上传科目成本汇总',
   },
   {
     key: 'subjectSettingFile',
+    workbook: 'cmsSetting',
     label: '科目设置导出',
     uploadTitle: '上传科目设置导出',
   },

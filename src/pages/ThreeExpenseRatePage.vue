@@ -4,6 +4,7 @@
       <div class="filter-header">
         <div class="filter-title">三项费用费率对照表</div>
         <div class="filter-actions">
+          <WorkbookActions kind="three" :fetch-page="fetchThreeExpenseRates" :query="buildParams()" import-permission="base:three-expense:import" />
           <el-upload
             class="upload-btn"
             :show-file-list="false"
@@ -143,6 +144,7 @@
 </template>
 
 <script setup>
+import WorkbookActions from '../components/WorkbookActions.vue'
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
