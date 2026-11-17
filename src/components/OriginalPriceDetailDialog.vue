@@ -4,7 +4,7 @@
     <div v-loading="loading">
       <el-alert v-if="error" :title="error" type="error" :closable="false" />
       <template v-if="rule">
-        <p class="identity">{{ rule.identity.materialCode }} · {{ rule.identity.supplierName }}（{{ rule.identity.supplierCode || '代码未提供' }}） · {{ rule.identity.specification }} · {{ rule.identity.unit }}</p>
+        <p class="identity">{{ rule.identity.materialCode }} · {{ rule.materialName?.trim() || '名称未提供' }} · {{ rule.identity.supplierName }}（{{ rule.identity.supplierCode || '代码未提供' }}） · {{ rule.identity.specification }} · {{ rule.identity.unit }}</p>
         <p class="source">{{ result?.sourceFile || sourceDetail.sourceFile }} · 原稿月份 {{ result?.summary.ruleMonth || sourceDetail.pricingMonth }} · 财务来源 {{ result?.summary.financialSourceMonth || '未取得' }}</p>
         <div class="trial-form">
           <span>财务Cu {{ priceText(result?.summary.financeCopperPerTon) }} 元/吨</span>
@@ -101,7 +101,7 @@ watch(() => [props.ruleId, props.kind, props.pricingMonth], async () => {
 </script>
 
 <style scoped>
-.identity { font-weight: 600; }
+.identity { font-weight: 600; overflow-wrap: anywhere; }
 .source { color: #606266; line-height: 1.7; }
 .trial-form { display: flex; align-items: center; gap: 12px; margin: 20px 0; }
 .trial-form > span { margin-right: auto; }

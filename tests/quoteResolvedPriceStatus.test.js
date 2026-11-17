@@ -28,6 +28,7 @@ function harness() {
     showDrawingBomPreview: ref(false), hasPriceGaps: ref(false), currentPriceSourceGapCount: () => 0,
     historyResultLabel: ref('原报价结果'), localWorkflowGuideText: ref(''),
     materialChecks: ref([]), workflowGuideText: ref('发起核算未完成'),
+    drawingPreparation: ref({ applies: false, pendingImport: false, issues: [] }),
   }
   deps.previousPriceIssueResolved = pageComputed('previousPriceIssueResolved', deps, false)
   deps.currentCostingBlockText = pageComputed('currentCostingBlockText', deps)

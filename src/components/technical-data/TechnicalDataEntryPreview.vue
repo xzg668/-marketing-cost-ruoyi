@@ -1,6 +1,6 @@
 <template>
   <section class="entry-preview" :aria-label="`${moduleName(moduleType)}填写页预览`">
-    <el-alert :title="moduleType === 'MANUFACTURING' ? '当前账号只能查看。原材料、净长和毛重由负责技术员补录，提交后在此查看。' : '填写页只读预览，可切换填写方式查看字段；资料由负责技术员填写并提交。'" type="info" :closable="false" />
+    <el-alert :title="bomPreviewContext ? '可按技术员的方式查询参考BOM、试填用量或上传检查，使用相同校验；预览不会保存或提交资料。' : moduleType === 'MANUFACTURING' ? '当前账号只能查看。原材料、净长和毛重由负责技术员补录，提交后在此查看。' : '填写页只读预览，可切换填写方式查看字段；资料由负责技术员填写并提交。'" type="info" :closable="false" />
     <p v-if="reason" class="gap-reason">{{ reason }}</p>
     <div v-loading="loading" class="preview-content">
       <template v-if="error">
@@ -8,6 +8,7 @@
         <el-button @click="load">重试</el-button>
       </template>
       <TechnicalDataProfileForm v-else-if="moduleType === 'PROFILE'" :product="row.product" :editable="false" />
+      <TechnicalCompleteBomForm v-else-if="moduleType === 'DRAWING_BOM'" :state="bomPreviewState" :preview-context="bomPreviewContext" preview />
       <TechnicalDataManufacturingForm v-else-if="moduleType === 'MANUFACTURING'" :key="`${row.product.oaFormItemId}:${row.accountingMonth}`"
         :quote-item-id="row.product.oaFormItemId" :accounting-month="row.accountingMonth" :editable="false" />
       <component v-else-if="preview && formComponent" :is="formComponent" :key="moduleType" :preview-data="preview" :editable="false" />
@@ -20,7 +21,9 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { checkQuotePriceSources, fetchQuoteCostingWorkbench } from '../../api/quoteRequests'
 import { priceEntryPreview } from '../../utils/technicalDataPrice'
 import { findModule, moduleName } from '../../utils/technicalDataWorkbench'
+import { useTechnicalDataIdentity } from '../../composables/useTechnicalDataIdentity'
 import TechnicalDataProfileForm from './TechnicalDataProfileForm.vue'
+import TechnicalCompleteBomForm from './TechnicalCompleteBomForm.vue'
 import TechnicalDataManufacturingForm from './TechnicalDataManufacturingForm.vue'
 import TechnicalDataPackageForm from './TechnicalDataPackageForm.vue'
 import TechnicalDataAuxiliaryForm from './TechnicalDataAuxiliaryForm.vue'
@@ -30,10 +33,19 @@ import TechnicalDataNetLossForm from './TechnicalDataNetLossForm.vue'
 import TechnicalDataPriceForm from './TechnicalDataPriceForm.vue'
 
 const props = defineProps({ row: { type: Object, required: true }, moduleType: { type: String, required: true } })
+const user = useTechnicalDataIdentity()
+const bomPreviewContext = computed(() => props.moduleType === 'DRAWING_BOM'
+  && (user.roles?.includes('admin') || user.permissions?.some(permission => ['*:*:*', 'technical:data:admin:operate'].includes(permission)))
+  ? { itemId: props.row.product.oaFormItemId, accountingMonth: props.row.accountingMonth } : undefined)
 const forms = { PACKAGE: TechnicalDataPackageForm, AUXILIARY: TechnicalDataAuxiliaryForm,
   SOLDER: TechnicalDataSolderForm, SALARY: TechnicalDataSalaryForm, NET_LOSS: TechnicalDataNetLossForm, PRICE: TechnicalDataPriceForm }
 const formComponent = computed(() => forms[props.moduleType])
 const reason = computed(() => findModule(props.row.product, props.moduleType)?.requirementReason)
+const bomPreviewState = computed(() => ({
+  editable: false,
+  target: { code: props.row.product.materialNo, name: props.row.product.productName,
+    model: props.row.product.sourceModel, specification: props.row.product.sourceSpec },
+}))
 const preview = ref(null), error = ref(''), loading = ref(false)
 let generation = 0
 async function load() {

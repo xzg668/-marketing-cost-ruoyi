@@ -21,7 +21,8 @@
       </div>
       <div v-if="state.drawing?.nodes?.length" class="drawing-details">
         <p>图号 {{ state.drawing.evidence?.drawingNo || '—' }} · 核算月份 {{ state.accountingMonth }} · 取得时间 {{ state.drawing.evidence?.acquiredAt?.replace('T', ' ') || '—' }}</p>
-        <el-table :data="rows" row-key="itemKey" border size="small">
+        <el-table :data="rows" row-key="itemKey" :expand-row-keys="expandedKeys" border size="small" :class="{ 'integrated-bom': integrated }">
+          <el-table-column v-if="integrated" type="expand" width="1"><template #default="{ row }"><slot v-if="String(row.sourceNodeId) === String(expandedNodeId)" name="manufacturing" :row="row" /></template></el-table-column>
           <el-table-column label="序号" width="70"><template #default="{ $index }">{{ $index + 1 }}</template></el-table-column>
           <el-table-column prop="drawingNo" label="图号" min-width="150" />
           <el-table-column prop="name" label="名称" min-width="135" />
@@ -29,6 +30,7 @@
           <el-table-column prop="quantityPerParent" label="母件用量" width="95" />
           <el-table-column label="图库重量" width="110"><template #default="{ row }">{{ row.sourceWeight == null ? '未提供' : `${row.sourceWeight} ${row.sourceWeightUnit || '单位未注明'}` }}</template></el-table-column>
           <el-table-column label="U9 料号" min-width="160"><template #default="{ row }"><span v-if="row.currentMaterialNo">{{ row.currentMaterialNo }}</span><el-tag v-else :type="row.processingState === 'DRAWING_READY' || row.processingState === 'EXCLUDED' ? 'info' : 'warning'" size="small">{{ row.processingState === 'DRAWING_READY' ? '沿图库下级处理' : row.processingState === 'EXCLUDED' ? '无需匹配' : '待财务确认' }}</el-tag></template></el-table-column>
+          <el-table-column v-if="integrated" label="补录情况" min-width="155"><template #default="{ row }"><slot name="node-status" :row="row" /></template></el-table-column>
         </el-table>
         <p class="hint">图库重量保留来源单位；毛重填 kg，净长填毫米。可沿图库下级处理的节点无需匹配 U9；实际需要确认的料号由财务处理。</p>
         <el-button v-if="state.canResolveMaterials && !state.bomPublished && !state.sourceChanged" @click="resolveMaterials">{{ state.materialsMatched ? '查看 U9 料号与 BOM' : '财务确认 U9 料号' }}</el-button>
@@ -46,8 +48,8 @@ import { useRouter } from 'vue-router'
 import { fetchTechnicalDataDrawing, recheckTechnicalDataDrawing } from '../../api/technicalDataTasks'
 import { showErrorOnce } from '../../utils/errorHandler'
 
-const props = defineProps({ productId: { type: Number, required: true }, editable: Boolean, versionId: Number, oaNo: String })
-const emit = defineEmits(['dirty', 'busy', 'saved'])
+const props = defineProps({ productId: { type: Number, required: true }, editable: Boolean, versionId: Number, oaNo: String, integrated: Boolean, expandedNodeId: [String, Number] })
+const emit = defineEmits(['dirty', 'busy', 'saved', 'loaded'])
 const router = useRouter()
 const loading = ref(false)
 const busy = ref(false)
@@ -62,6 +64,7 @@ const rows = computed(() => {
   return (state.value?.drawing?.nodes || []).map(row => ({ ...row, currentMaterialNo: resolutions.get(row.sourceNodeId)?.materialNo || row.materialNo,
     processingState: resolutions.get(row.sourceNodeId)?.processingState }))
 })
+const expandedKeys = computed(() => rows.value.filter(row => props.expandedNodeId != null && String(row.sourceNodeId) === String(props.expandedNodeId)).map(row => row.itemKey))
 function changed() { emit('dirty', maintained.value || Boolean(drawingNo.value && drawingOptions.value.length > 1)) }
 async function load() {
   const request = ++generation
@@ -70,6 +73,7 @@ async function load() {
     const result = await fetchTechnicalDataDrawing(props.productId, props.versionId)
     if (request !== generation) return
     state.value = result
+    emit('loaded', result)
     const selected = result.drawing?.evidence?.drawingNo
     drawingNo.value = drawingOptions.value.some(option => option.drawingNo === selected) ? selected
       : drawingOptions.value.length === 1 ? drawingOptions.value[0].drawingNo : ''
@@ -96,12 +100,13 @@ function resolveMaterials() {
   router.push({ name: 'electronic-drawing-material-resolution', params: { oaNo: props.oaNo, itemId: state.value.workflowId, taskId: state.value.workflowId },
     query: { accountingMonth: state.value.accountingMonth } })
 }
-watch(() => props.productId, () => { state.value = null; maintained.value = false; drawingNo.value = ''; load() }, { immediate: true })
+watch(() => [props.productId, props.versionId], () => { state.value = null; maintained.value = false; drawingNo.value = ''; load() }, { immediate: true })
 onBeforeUnmount(() => { generation++ })
-defineExpose({ save: recheck, canSave: computed(() => canEdit.value && !loading.value && !busy.value && maintained.value && Boolean(drawingNo.value)) })
+defineExpose({ refresh: load, save: recheck, canSave: computed(() => canEdit.value && !loading.value && !busy.value && maintained.value && Boolean(drawingNo.value)) })
 </script>
 
 <style scoped>
+.integrated-bom :deep(.el-table__expand-icon) { visibility: hidden; pointer-events: none; }
 .drawing-status, .recheck-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
 .drawing-form .el-alert { margin-bottom: 12px; }
 .recheck-controls { padding: 12px 16px; border: 1px solid #dfe5ee; border-radius: 5px; margin: 16px 0; }

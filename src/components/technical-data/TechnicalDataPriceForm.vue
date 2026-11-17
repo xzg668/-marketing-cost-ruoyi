@@ -50,7 +50,7 @@
           </div>
           <label>联动公式</label>
           <el-input v-model="draft.formula" type="textarea" :rows="3" aria-label="联动公式" :disabled="!itemEditable || busy || draft.entryMode === 'REFERENCE'" />
-          <p v-if="draft.entryMode === 'MANUAL'" class="hint">自行公式通过技术审批后，仍需报价员修正、导入并通过取价检查。</p>
+          <p v-if="['MANUAL', 'REFERENCE'].includes(draft.entryMode)" class="hint">联动公式通过技术审批后，由报价员整理并导入联动表，再进行核算。</p>
           <div class="parameters">
             <div v-for="(label, key) in parameterLabels" :key="key"><label>{{ label }}</label><el-input v-model="draft.parameters[key]" :aria-label="label" :disabled="!itemEditable || busy" /></div>
             <div><label>重量单位</label><el-select v-model="draft.parameters.weightUnit" aria-label="重量单位" :disabled="!itemEditable || busy"><el-option v-for="unit in ['克','千克']" :key="unit" :value="unit" :label="unit" /></el-select></div>

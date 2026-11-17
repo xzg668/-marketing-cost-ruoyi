@@ -64,9 +64,16 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column v-for="module in TECHNICAL_DATA_MODULES" :key="module.code" :label="module.code === 'MANUFACTURING' ? '电子图库制造件明细' : module.label" :min-width="module.code === 'MANUFACTURING' ? 155 : 122">
+      <el-table-column v-for="module in TECHNICAL_WORKBENCH_COLUMNS" :key="module.code" :label="module.label" :min-width="module.code === 'BOM' ? 185 : 122">
         <template #default="{ row }">
-          <el-tooltip v-if="!canViewSupplementOverview && !row.assignedModules.includes(module.code) && !findModule(row.product, module.code)?.requirementReasonCode?.startsWith('SHARED_MODULE_')" :content="moduleReason(row, module.code)" placement="top">
+          <template v-if="module.code === 'BOM'">
+            <div v-for="item in bomModuleStates(row, canViewSupplementOverview)" :key="item.code" class="bom-module-state">
+              <el-tooltip :content="moduleReason(row, item.code)"><span>{{ item.label }}：<el-tag :type="item.state.type" size="small">{{ item.state.label }}</el-tag></span></el-tooltip>
+              <small v-if="item.module?.assigneeName">{{ item.module.assigneeName }}负责</small>
+            </div>
+            <el-button v-if="bomEntryModule(row, canViewSupplementOverview) && moduleAction(row, bomEntryModule(row, canViewSupplementOverview))" link type="primary" @click="openBom(row)">{{ (row.editableModules || []).some(isBomModule) ? '补录BOM' : '查看BOM' }}</el-button>
+          </template>
+          <el-tooltip v-else-if="!canViewSupplementOverview && !row.assignedModules.includes(module.code) && !findModule(row.product, module.code)?.requirementReasonCode?.startsWith('SHARED_MODULE_')" :content="moduleReason(row, module.code)" placement="top">
             <el-tag :type="unassignedModulePresentation(row.product, module.code).type" size="small">{{ unassignedModulePresentation(row.product, module.code).label }}</el-tag>
           </el-tooltip>
           <el-tooltip v-else :content="moduleReason(row, module.code)" placement="top" :show-after="250">
@@ -142,7 +149,9 @@ import TechnicalDataPersonSelect from '../../../components/technical-data/Techni
 import TechnicalDataPriceGapDialog from '../../../components/technical-data/TechnicalDataPriceGapDialog.vue'
 import TechnicalDataEntryPreviewDialog from '../../../components/technical-data/TechnicalDataEntryPreviewDialog.vue'
 import { showErrorOnce } from '../../../utils/errorHandler'
-import { TECHNICAL_DATA_MODULES, findModule, moduleName, unassignedModulePresentation, modulePresentation, technicalModuleSummary, isTechnicalModuleStatusOnly, taskStatusLabel, taskStatusType, workbenchRowKey, canDispatchWorkbenchRow, workbenchDispatchRow, needsBomPriceCheck } from '../../../utils/technicalDataWorkbench'
+import { findModule, moduleName, unassignedModulePresentation, modulePresentation, technicalModuleSummary, isTechnicalModuleStatusOnly, taskStatusLabel, taskStatusType, workbenchRowKey, canDispatchWorkbenchRow, workbenchDispatchRow, needsBomPriceCheck } from '../../../utils/technicalDataWorkbench'
+
+import { TECHNICAL_WORKBENCH_COLUMNS, bomEntryModule, bomModuleStates, isBomModule } from '../../../utils/technicalBomWorkbench.js'
 
 const router = useRouter(), route = useRoute(), user = useTechnicalDataIdentity()
 const resolvedOaNo = ref('')
@@ -299,6 +308,13 @@ async function startAdmin(row) {
   } catch (cause) { showErrorOnce(cause, '直接补录暂不可用，请刷新产品状态') }
   finally { adminStarting.value = false }
 }
+async function openBom(row) {
+  const module = bomEntryModule(row, canViewSupplementOverview.value)
+  if (!module) return
+  if (moduleAction(row, module) === '查看原资料') return open(row, module)
+  if (!isUnassigned(row)) { persistState(); return openPanel(row.taskId, module) }
+  return open(row, module)
+}
 async function open(row, module) {
   if (submissionBusy.value) return
   if (module && !moduleAction(row, module)) return
@@ -310,7 +326,7 @@ async function open(row, module) {
     return router.push({ path: `/ingest/quote-requests/${encodeURIComponent(row.oaNo)}/items/${row.product.oaFormItemId}/costing`, query: { tab: 'PRODUCT_DETAIL', drawingBom: '1' } })
   }
   if (isUnassigned(row)) {
-    if (canViewSupplementOverview.value && findModule(row.product, module)?.required && ['PROFILE', 'MANUFACTURING', 'PACKAGE', 'AUXILIARY', 'SOLDER', 'SALARY', 'NET_LOSS', 'PRICE'].includes(module)) {
+    if (canViewSupplementOverview.value && findModule(row.product, module)?.required && ['PROFILE', 'DRAWING_BOM', 'MANUFACTURING', 'PACKAGE', 'AUXILIARY', 'SOLDER', 'SALARY', 'NET_LOSS', 'PRICE'].includes(module)) {
       entryPreview.value = { row, module }; return
     }
     inspectModule.value = module || ''; inspectRow.value = row
@@ -363,6 +379,8 @@ onBeforeUnmount(() => { generation++; persistState() })
 </script>
 
 <style scoped>
+.bom-module-state { margin: 6px 0; line-height: 1.8; }
+.bom-module-state small { display: block; color: #748196; }
 .workbench-list { padding: 4px; }
 .heading, .actions, .filters, .footer, .batch-assignment-bar { display: flex; align-items: center; gap: 12px; }
 .heading { justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }

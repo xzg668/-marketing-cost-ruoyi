@@ -70,6 +70,25 @@ function formHarness(props, response) {
   return { ...methods, calls, state, draft }
 }
 
+test('saving one expanded node preserves the saved quantities and materials of its siblings', async () => {
+  const response = { editable: true, expectedVersion: 7, historical: false,
+    source: { sourceVersionId: 15, fingerprint: 'unchanged-source', nodes: [
+      { sourceNodeId: 10, state: 'MISSING_RAW' }, { sourceNodeId: 11, state: 'MISSING_RAW' },
+    ] }, saved: { items: [
+      { parentSourceNodeId: '10', rawMaterialNo: '001', netLengthMm: 20, grossWeightKg: 0.1 },
+      { parentSourceNodeId: '11', rawMaterialNo: '002', netLengthMm: 30, grossWeightKg: 0.2 },
+    ] } }
+  const h = formHarness({ productId: 1, editable: true, sourceNodeId: '10' }, response)
+  await h.load()
+  h.draft[10].grossWeightKg = 0.15
+  await h.save(false)
+  const body = h.calls.find(call => call[0] === 'save')[2]
+  assert.equal(body.expectedVersion, 7)
+  assert.equal(body.sourceFingerprint, 'unchanged-source')
+  assert.equal(body.items[0].grossWeightKg, 0.15)
+  assert.deepEqual(body.items[1], { parentSourceNodeId: 11, rawMaterialNo: '002', netLengthMm: 30, grossWeightKg: 0.2, reuseReference: undefined })
+})
+
 test('quote manufacturing details use the quote item and month, with no write even if edit is requested', async () => {
   const h = formHarness({ quoteItemId: 991397, accountingMonth: '2026-10', editable: true }, {
     editable: true, historical: false, source: { sourceVersionId: 911011, nodes: [

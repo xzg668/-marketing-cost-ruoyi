@@ -11,15 +11,15 @@
       <el-alert v-else-if="adminDirect" title="保存后仍可修改；点击“确认保存”后资料直接生效，可用于报价核算，无需 OA 审批。" type="info" :closable="false" />
         <main class="product-editor" v-loading="loading">
           <template v-if="product">
-            <div class="product-heading"><h3>当前产品：{{ product.materialNo || product.sourceModel }}</h3><el-button v-if="!readOnly && editableScope.some(code => ['MANUFACTURING','PACKAGE','SOLDER','PRICE'].includes(code))" link type="primary" :disabled="busy || dirty" :loading="loading" @click="checkPrices">检查价格</el-button><el-button link type="primary" :disabled="busy" @click="refresh">刷新资料</el-button></div>
+            <div class="product-heading"><h3>当前产品：{{ product.materialNo || product.sourceModel }}</h3><el-button v-if="!readOnly && editableScope.some(code => ['DRAWING_BOM','MANUFACTURING','PACKAGE','SOLDER','PRICE'].includes(code))" link type="primary" :disabled="busy || dirty" :loading="loading" @click="checkPrices">检查价格</el-button><el-button link type="primary" :disabled="busy" @click="refresh">刷新资料</el-button></div>
             <el-alert v-for="person in workflow?.participants?.filter(person => person.returnReason && ['OPEN', 'RETURN_PENDING'].includes(person.status)) || []"
               :key="person.recipientId" :title="`${person.status === 'RETURN_PENDING' ? '退回待确认' : '修改要求'}：${person.returnReason}`" type="warning" :closable="false" show-icon />
-            <p class="scope">{{ readOnly ? '查看板块' : '本次补录' }}：{{ (readOnly ? scope : editableScope).map(moduleName).join('、') || '暂无待补内容' }} · {{ task.accountingMonth }}</p>
+            <p class="scope">{{ readOnly ? '查看板块' : '本次补录' }}：{{ (readOnly ? visibleScope : visibleEditableScope).map(moduleName).join('、') || '暂无待补内容' }} · {{ task.accountingMonth }}</p>
             <div class="module-heading">
               <h3>{{ moduleName(activeModule) }} · {{ moduleStatus(activeModule) }}</h3>
-              <span v-if="editable">第 {{ activeStep + 1 }} / {{ editableScope.length }} 项</span>
-              <el-select v-else-if="scope.length > 1" :model-value="activeModule" aria-label="切换查看板块" @change="selectModule">
-                <el-option v-for="code in scope" :key="code" :value="code" :label="`${moduleName(code)} · ${moduleStatus(code)}`" />
+              <span v-if="editable">第 {{ activeStep + 1 }} / {{ visibleEditableScope.length }} 项</span>
+              <el-select v-else-if="visibleScope.length > 1" :model-value="activeModule" aria-label="切换查看板块" @change="selectModule">
+                <el-option v-for="code in visibleScope" :key="code" :value="code" :label="`${moduleName(code)} · ${moduleStatus(code)}`" />
               </el-select>
             </div>
             <el-table v-if="validation && !validation.valid" :data="validation.issues" size="small" border>
@@ -27,15 +27,16 @@
               <el-table-column prop="lineNo" label="明细行" width="80" /><el-table-column prop="message" label="问题" />
               <el-table-column label="操作" width="90"><template #default="{ row }"><el-button link type="primary" @click="selectModule(row.moduleType)">去处理</el-button></template></el-table-column>
             </el-table>
-            <component v-if="showForm" :is="formComponent" ref="formRef" :key="formKey" v-bind="formProps" @dirty="dirty = $event" @busy="busy = $event" @saved="afterSave" @open-price="selectModule('PRICE')" />
+            <el-alert v-if="coveredState" title="已有（来自BOM）" description="本模块材料及用量已随完整BOM提供，无需重复填写。已有待办仍按原流程提交。" type="success" :closable="false" show-icon />
+            <component v-else-if="showForm" :is="formComponent" ref="formRef" :key="formKey" v-bind="formProps" @dirty="dirty = $event" @busy="busy = $event" @saved="afterSave" @open-price="selectModule('PRICE')" />
             <TechnicalDataEntryPreview v-else-if="readOnly && !submissionId && previewModules.includes(activeModule)" :row="previewRow" :module-type="activeModule" />
             <el-empty v-else :description="readOnly ? '本板块尚未提交，当前为待处理。' : '请选择本人需要补录的板块。'" />
             <details v-if="workflow && !submissionId" class="progress-details"><summary>查看办理进度</summary><TechnicalDataApprovalPanel :task="task" :workflow="workflow" @changed="load" /></details>
             <div v-if="editable" class="product-actions">
               <span>{{ dirty ? '当前修改尚未保存' : adminDirect ? '已保存的资料在确认前仍可修改' : '草稿仅本人可见' }}</span>
-              <el-button v-if="activeStep > 0" :disabled="busy" @click="selectModule(editableScope[activeStep - 1])">上一步</el-button>
-              <el-button :loading="busy" :disabled="!formRef?.canSave" @click="save(false)">保存草稿</el-button>
-              <el-button :type="adminDirect && confirmationReady ? 'default' : 'primary'" :loading="busy" :disabled="!formRef?.canSave" @click="save(true)">{{ nextModule ? '保存并下一步' : adminDirect ? '保存并检查资料' : '保存并返回列表' }}</el-button>
+              <el-button v-if="activeStep > 0" :disabled="busy" @click="selectModule(visibleEditableScope[activeStep - 1])">上一步</el-button>
+              <el-button v-if="!coveredState" :loading="busy" :disabled="!formRef?.canSave" @click="save(false)">保存草稿</el-button>
+              <el-button :type="adminDirect && confirmationReady ? 'default' : 'primary'" :loading="busy" :disabled="!coveredState && !formRef?.canSave" @click="save(true)">{{ coveredState ? (nextModule ? '下一步' : '检查资料') : nextModule ? '保存并下一步' : adminDirect ? '保存并检查资料' : '保存并返回列表' }}</el-button>
               <el-button v-if="adminDirect" type="primary" :loading="confirming" :disabled="busy || dirty || !confirmationReady" @click="confirmSave">确认保存</el-button>
             </div>
           </template>
@@ -49,13 +50,13 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { fetchTechnicalDataTask, fetchTechnicalDataWorkflow, fetchTechnicalDataDocument, validateTechnicalDataTask, saveAdminTechnicalDataForQuote, checkTechnicalDataBomPrices } from '../../api/technicalDataTasks'
-import { TECHNICAL_DATA_MODULES, moduleName, findModule, canEditTechnicalModule, nextTechnicalModule, needsBomPriceCheck } from '../../utils/technicalDataWorkbench'
+import { TECHNICAL_DATA_MODULES, moduleName as originalModuleName, findModule, canEditTechnicalModule, nextTechnicalModule, needsBomPriceCheck, isCompleteBomCovered } from '../../utils/technicalDataWorkbench'
 import { showErrorOnce } from '../../utils/errorHandler'
 import TechnicalDataApprovalPanel from './TechnicalDataApprovalPanel.vue'
 import TechnicalDataEntryPreview from './TechnicalDataEntryPreview.vue'
 import TechnicalDataProfileForm from './TechnicalDataProfileForm.vue'
-import TechnicalDataDrawingForm from './TechnicalDataDrawingForm.vue'
-import TechnicalDataManufacturingForm from './TechnicalDataManufacturingForm.vue'
+import TechnicalDataBomForm from './TechnicalDataBomForm.vue'
+import { BOM_MODULE_CODES, isBomModule, bomGroup, hasCompleteBom } from '../../utils/technicalBomWorkbench.js'
 import TechnicalDataPackageForm from './TechnicalDataPackageForm.vue'
 import TechnicalDataAuxiliaryForm from './TechnicalDataAuxiliaryForm.vue'
 import TechnicalDataSolderForm from './TechnicalDataSolderForm.vue'
@@ -80,20 +81,32 @@ const scope = computed(() => TECHNICAL_DATA_MODULES.map(module => module.code).f
   findModule(product.value, code)?.required && (readOnly.value || workflow.value?.assignedModules.includes(code))))
 const editableScope = computed(() => readOnly.value ? [] : scope.value.filter(code =>
   canEditTechnicalModule(workflow.value, code, findModule(product.value, code)?.moduleStatus)))
-const activeStep = computed(() => editableScope.value.indexOf(activeModule.value))
-const nextModule = computed(() => nextTechnicalModule(product.value, workflow.value, activeModule.value, editableScope.value))
+const visibleScope = computed(() => bomGroup(scope.value))
+const visibleEditableScope = computed(() => bomGroup(editableScope.value))
+const activeStep = computed(() => visibleEditableScope.value.indexOf(activeModule.value))
+const nextModule = computed(() => visibleEditableScope.value[activeStep.value + 1])
 const activeState = computed(() => findModule(product.value, activeModule.value))
-const editable = computed(() => !readOnly.value && canEditTechnicalModule(workflow.value, activeModule.value, activeState.value?.moduleStatus))
-const showForm = computed(() => !!formComponent.value && !!activeState.value && (!readOnly.value || activeState.value.currentVersionId != null))
-const forms = { PROFILE: TechnicalDataProfileForm, DRAWING_BOM: TechnicalDataDrawingForm, MANUFACTURING: TechnicalDataManufacturingForm, PACKAGE: TechnicalDataPackageForm, AUXILIARY: TechnicalDataAuxiliaryForm, SOLDER: TechnicalDataSolderForm, SALARY: TechnicalDataSalaryForm, NET_LOSS: TechnicalDataNetLossForm, PRICE: TechnicalDataPriceForm }
+const coveredState = computed(() => isCompleteBomCovered(activeState.value) || activeModule.value === 'BOM'
+  && scope.value.filter(isBomModule).length > 0 && scope.value.filter(isBomModule).every(code => isCompleteBomCovered(findModule(product.value, code))))
+const editable = computed(() => !readOnly.value && (activeModule.value === 'BOM' ? BOM_MODULE_CODES.some(code => editableScope.value.includes(code)) : canEditTechnicalModule(workflow.value, activeModule.value, activeState.value?.moduleStatus)))
+const showForm = computed(() => !!formComponent.value && (activeModule.value === 'BOM' || !!activeState.value && (!readOnly.value || activeState.value.currentVersionId != null)))
+const forms = { PROFILE: TechnicalDataProfileForm, BOM: TechnicalDataBomForm, PACKAGE: TechnicalDataPackageForm, AUXILIARY: TechnicalDataAuxiliaryForm, SOLDER: TechnicalDataSolderForm, SALARY: TechnicalDataSalaryForm, NET_LOSS: TechnicalDataNetLossForm, PRICE: TechnicalDataPriceForm }
 const formComponent = computed(() => forms[activeModule.value])
 const formProps = computed(() => activeModule.value === 'PROFILE' ? { product: product.value, taskId: props.taskId, editable: editable.value }
+  : activeModule.value === 'BOM' ? { productId: product.value.id, oaNo: task.value.oaNo,
+    drawingEditable: editableScope.value.includes('DRAWING_BOM'), manufacturingEditable: editableScope.value.includes('MANUFACTURING'),
+    drawingVersionId: readOnly.value ? findModule(product.value, 'DRAWING_BOM')?.currentVersionId : undefined,
+    manufacturingVersionId: readOnly.value ? findModule(product.value, 'MANUFACTURING')?.currentVersionId : undefined,
+    historical: Boolean(props.submissionId), priceEditable: editableScope.value.includes('PRICE'),
+    previewContext: props.adminDirect && readOnly.value && !props.submissionId
+      ? { itemId: product.value.oaFormItemId, accountingMonth: task.value.accountingMonth } : undefined }
   : { productId: product.value.id, editable: editable.value, oaNo: task.value.oaNo,
     ...(activeModule.value === 'MANUFACTURING' ? { priceEditable: editableScope.value.includes('PRICE') } : {}),
     versionId: readOnly.value ? activeState.value?.currentVersionId : undefined })
 const formKey = computed(() => `${props.taskId}:${activeModule.value}:${props.submissionId || ''}:${revision.value}`)
 
-function moduleStatus(code) { return ({ PENDING: '待处理', EDITING: '填写中', READY: '已补齐', FROZEN: '待确认', SUBMITTED: '已提交', APPROVED: '已提交', RETURNED: '待修改' })[findModule(product.value, code)?.moduleStatus] || '待处理' }
+function moduleName(code) { return isBomModule(code) ? 'BOM补录' : originalModuleName(code) }
+function moduleStatus(code) { if (code === 'BOM') return BOM_MODULE_CODES.filter(type => scope.value.includes(type) && (type !== 'MANUFACTURING' || !hasCompleteBom(product.value))).map(type => `${type === 'DRAWING_BOM' ? '明细' : '图库制造件'}：${moduleStatus(type)}`).join(' · '); return ({ PENDING: '待处理', EDITING: '填写中', READY: '已补齐', FROZEN: '待确认', SUBMITTED: '已提交', APPROVED: '已提交', RETURNED: '待修改' })[findModule(product.value, code)?.moduleStatus] || '待处理' }
 async function load(autoCheck = true) {
   const current = ++generation
   loading.value = true
@@ -113,9 +126,10 @@ async function load(autoCheck = true) {
     task.value = visibleTask; workflow.value = state
     confirmationReady.value = props.adminDirect && editableScope.value.length > 0
       && editableScope.value.every(code => ['READY', 'RETURNED'].includes(findModule(product.value, code)?.moduleStatus))
-    if (!scope.value.includes(activeModule.value)) {
-      activeModule.value = scope.value.includes(route.query.module) ? route.query.module
-        : nextTechnicalModule(product.value, state, null, editableScope.value) || editableScope.value[0] || scope.value[0]
+    if (!visibleScope.value.includes(activeModule.value)) {
+      const requested = isBomModule(route.query.module) ? 'BOM' : route.query.module
+      const first = nextTechnicalModule(product.value, state, null, editableScope.value) || editableScope.value[0] || scope.value[0]
+      activeModule.value = visibleScope.value.includes(requested) ? requested : isBomModule(first) ? 'BOM' : first
     }
   } catch (cause) {
     if (current === generation) { task.value = null; workflow.value = null; showErrorOnce(cause, '任务加载失败') }
@@ -141,13 +155,18 @@ async function mayLeave() {
     dirty.value = false; return true
   } catch { return false }
 }
-async function selectModule(code) { if (code !== activeModule.value && await mayLeave()) { activeModule.value = code; validation.value = null } }
+async function selectModule(code) { code = isBomModule(code) ? 'BOM' : code; if (code !== activeModule.value && await mayLeave()) { activeModule.value = code; validation.value = null } }
 async function refresh() { if (await mayLeave()) { await load(); revision.value++ } }
-async function save(next) { if (editable.value && !busy.value) await formRef.value?.save(next) }
+async function save(next) { if (!editable.value || busy.value) return; if (coveredState.value) await afterSave({ next }); else await formRef.value?.save(next) }
 async function afterSave({ next = false } = {}) {
   dirty.value = false
   await load(); emit('changed')
   if (!next || !task.value) return
+  if (activeModule.value === 'BOM' && editableScope.value.some(code => isBomModule(code)
+      && !['READY', 'SUBMITTED', 'APPROVED', 'FROZEN'].includes(findModule(product.value, code)?.moduleStatus))) {
+    ElMessage.info('BOM资料已保存，请继续处理本模块中尚未补齐的节点')
+    return
+  }
   if (nextModule.value) { activeModule.value = nextModule.value; return }
   try {
     if (props.adminDirect) {

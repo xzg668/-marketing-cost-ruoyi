@@ -145,7 +145,8 @@
 
     <el-drawer v-model="drawingBomVisible" title="图库 BOM 与已保存的财务修正" size="90%" append-to-body destroy-on-close>
       <DrawingBomPreview v-if="drawingBomVisible && drawingBomAvailable" :oa-no="oaNo" :item-id="itemId"
-        :product="item" :month="displayedPeriodMonth" :revision="drawingBomRevision" />
+        :product="item" :month="displayedPeriodMonth" :revision="drawingBomRevision"
+        :resolution-state="drawingResolution" :resolution-loading="drawingResolutionLoading" :resolution-error="drawingResolutionError" />
     </el-drawer>
 
     <section ref="workspaceRef" class="workspace-band section-block">
@@ -178,8 +179,9 @@
           >
             <div class="pricing-bom-summary">
               <div>
-                <strong>{{ showDrawingBomPreview ? '图库 BOM（待完善）' : '计价 BOM' }}</strong>
-                <span v-if="!showDrawingBomPreview">{{ presentedEffectiveBom.nodes.length }} 个节点</span>
+                <strong>{{ showRawDrawingPreview ? '图库明细（BOM待准备）' : showDrawingBomPreview ? '图库 BOM（待完善）' : '计价 BOM' }}</strong>
+                <span v-if="showRawDrawingPreview">{{ currentDrawingWorkspace.sourceReceipt.receivedDetailCount }} 条原始明细</span>
+                <span v-else-if="!showDrawingBomPreview">{{ presentedEffectiveBom.nodes.length }} 个节点</span>
               </div>
               <div class="pricing-bom-summary-status">
                 <el-tag v-if="effectiveBomPreviewActive" type="warning" effect="light">
@@ -209,7 +211,7 @@
             </div>
 
             <el-alert
-              v-if="isWaitingForBom() && presentedEffectiveBom.nodes.length > 0"
+              v-if="isWaitingForBom() && presentedEffectiveBom.nodes.length > 0 && !drawingPreparation.applies"
               type="warning"
               show-icon
               :closable="false"
@@ -218,7 +220,23 @@
             />
 
             <el-alert
-              v-if="effectiveBomBlocked && (!showDrawingBomPreview || storedCostingWorkspace.workspaceStatus === 'SYSTEM_FAILED')"
+              v-if="drawingPreparation.applies && (drawingPreparation.pendingImport || drawingPreparation.issues.length)"
+              :type="drawingPreparation.type"
+              show-icon
+              :closable="false"
+              class="inline-alert drawing-preparation-notice"
+              :title="drawingPreparation.issues.length ? drawingPreparation.type === 'error' ? '资料读取或处理异常' : `${drawingPreparation.issues.length}项资料待处理，请查看下方BOM树` : drawingPreparation.title"
+            >
+              <template v-if="drawingPreparation.type === 'error' || drawingPreparation.pendingImport && !drawingPreparation.issues.length" #default>
+                <template v-if="drawingPreparation.type === 'error'">
+                  <span>{{ currentDrawingWorkspace?.receiptReadError || drawingResolutionError }}</span>
+                  <el-button link type="primary" @click="refreshWorkbench">重新读取</el-button>
+                </template>
+                <span v-else-if="drawingPreparation.pendingImport && !drawingPreparation.issues.length">请点击电子图库栏的“继续处理”。</span>
+              </template>
+            </el-alert>
+            <el-alert
+              v-else-if="effectiveBomBlocked && (!showDrawingBomPreview || storedCostingWorkspace.workspaceStatus === 'SYSTEM_FAILED')"
               type="error"
               show-icon
               :closable="false"
@@ -244,7 +262,16 @@
             />
 
             <DrawingBomPreview v-if="showDrawingBomPreview" :oa-no="oaNo" :item-id="itemId"
-              :product="item" :month="displayedPeriodMonth" :revision="drawingBomRevision" />
+              :product="item" :month="displayedPeriodMonth" :revision="drawingBomRevision"
+              :resolution-state="drawingResolution" :resolution-loading="drawingResolutionLoading" :resolution-error="drawingResolutionError" />
+            <section v-else-if="showRawDrawingPreview" class="raw-drawing-preview" aria-label="已接收图库明细，计价BOM待准备">
+              <p>以下是已接收的原始图纸明细，尚未形成可核算的计价BOM。请从已有结果继续准备，核对物料及下级资料。</p>
+              <el-table :data="currentDrawingWorkspace.sourceReceipt.rows" border size="small" height="380">
+                <el-table-column v-for="[field, label] in drawingColumns" :key="field" :label="label" :min-width="field === 'note' ? 140 : 95">
+                  <template #default="{ row }">{{ drawingText(row[field]) }}</template>
+                </el-table-column>
+              </el-table>
+            </section>
             <div v-else class="pricing-bom-designer">
               <div class="pricing-bom-tree-column">
             <div v-if="!historyViewMode && effectiveBomTreeData.length" class="bom-shape-batch">
@@ -589,7 +616,7 @@
               @updated="completePriceSourceMaintenance"
             />
             <section v-if="technicalPriceCorrection?.items?.length" class="technical-price-correction">
-              <el-alert type="warning" :closable="false" :title="`本产品有 ${technicalPriceCorrection.items.length} 项自行公式尚未形成可用价格，请下载修正后导入。`" />
+              <el-alert type="warning" :closable="false" :title="`本产品有 ${technicalPriceCorrection.items.length} 项补录联动公式尚未形成可用价格，请下载核对后导入。`" />
               <p class="technical-price-correction__help">下载技术员填写的公式后，报价员按联动价模板整理“联动价-部品6”和“影响因素10”两个业务 Sheet，核对公式与影响因素绑定，再预检、导入。请保留下载文件中的“补录说明”Sheet；只有导入后确认取价可用，才能继续核算。</p>
               <el-table :data="technicalPriceCorrection.items" border>
                 <el-table-column prop="materialNo" label="料号" width="220" />
@@ -1216,7 +1243,9 @@
 </template>
 
 <script setup>
-import { fetchQuoteCostingPreparation, prepareQuoteCosting, fetchDrawingVerificationWorkspace } from '../api/quoteRequests'
+import { fetchQuoteCostingPreparation, prepareQuoteCosting, fetchDrawingVerificationWorkspace, fetchElectronicDrawingMaterialResolution } from '../api/quoteRequests'
+import { drawingPreparationView, hasCurrentDrawingSource } from '../utils/drawingPreparation'
+import { drawingColumns, drawingText } from '../utils/drawingVerification'
 import { useDrawingCostingContinuation } from '../composables/useDrawingCostingContinuation'
 import { useQuoteCostingPreparation } from '../composables/useQuoteCostingPreparation'
 import { currentSupplementWorkspace, productSupplement, currentPriceGaps, currentPriceGapCount } from '../utils/technicalDataGaps'
@@ -1526,12 +1555,27 @@ const bomTreeProps = {
   children: 'children',
 }
 const presentedEffectiveBom = computed(() => effectiveBomPreview.value || effectiveBom.value)
+const currentDrawingWorkspace = computed(() => !historyViewMode.value
+  && drawingWorkspace.value?.oaNo === oaNo.value
+  && String(drawingWorkspace.value?.itemId) === String(itemId.value)
+  && drawingWorkspace.value?.accountingMonth === displayedPeriodMonth.value ? drawingWorkspace.value : null)
+const drawingResolution = ref(null), drawingResolutionLoading = ref(false), drawingResolutionError = ref('')
+let drawingResolutionRead = 0
+const drawingPreparation = computed(() => drawingPreparationView({
+  drawing: currentDrawingWorkspace.value, effectiveBom: presentedEffectiveBom.value,
+  resolution: drawingResolution.value,
+  supplement: productSupplement(materialState.value, itemId.value, displayedPeriodMonth.value),
+  readError: currentDrawingWorkspace.value?.receiptReadError || drawingResolutionError.value,
+  historyView: historyViewMode.value,
+}))
+const showRawDrawingPreview = computed(() => drawingPreparation.value.pendingImport
+  && !presentedEffectiveBom.value.nodes.length)
 const drawingBomVisible = ref(false)
 const drawingBomAvailable = computed(() => !historyViewMode.value
   && String(drawingWorkspace.value?.itemId) === String(itemId.value)
   && drawingWorkspace.value?.accountingMonth === displayedPeriodMonth.value
   && drawingWorkspace.value?.current?.taskState === 'RECEIVED'
-  && Boolean(drawingWorkspace.value?.sourceVersionId))
+  && hasCurrentDrawingSource(currentDrawingWorkspace.value))
 const showDrawingBomPreview = computed(() => !inputTabsNeedRefresh.value
   && drawingBomAvailable.value && !presentedEffectiveBom.value.nodes.length)
 watch(() => [route.query.drawingBom, drawingBomAvailable.value], ([requested, available]) => {
@@ -1546,6 +1590,9 @@ const effectiveBomStateInfo = computed(() => {
   if (inputTabsNeedRefresh.value && costingWorkspace.value.workspaceStatus === 'SUCCESS') {
     return { label: '已就绪', type: 'success' }
   }
+  if (drawingPreparation.value.applies && (drawingPreparation.value.pendingImport || drawingPreparation.value.issues.length))
+    return { label: drawingPreparation.value.type === 'error' ? '资料读取或处理异常' : drawingPreparation.value.pendingImport ? '待继续准备BOM' : '待补齐BOM资料',
+      type: drawingPreparation.value.type === 'error' ? 'danger' : 'warning' }
   if (showDrawingBomPreview.value) return { label: '待完善图库资料', type: 'warning' }
   if (String(costingWorkspace.value.workspaceStatus || '').toUpperCase() === 'STALE') {
     return { label: '待重算', type: 'warning' }
@@ -1721,6 +1768,29 @@ const displayedPeriodMonth = computed(() => (
     ? displayedCostVersion.value.pricingMonth || displayedCostVersion.value.resultPeriod || '-'
     : workbench.value.periodMonth || '-'
 ))
+watch(() => [oaNo.value, itemId.value, displayedPeriodMonth.value, historyViewMode.value,
+  currentDrawingWorkspace.value?.sourceVersionId, currentDrawingWorkspace.value?.workflowStage,
+  currentDrawingWorkspace.value?.current?.consumedResultId, classificationRevision.value,
+  presentedEffectiveBom.value.state, presentedEffectiveBom.value.nodes.length,
+  presentedEffectiveBom.value.blockIssues.length, drawingBomVisible.value], async () => {
+  const id = ++drawingResolutionRead, state = currentDrawingWorkspace.value
+  drawingResolution.value = null; drawingResolutionError.value = ''; drawingResolutionLoading.value = false
+  if (!hasCurrentDrawingSource(state)) return
+  if (effectiveBomCanPrepare(presentedEffectiveBom.value) && !drawingBomVisible.value) return
+  drawingResolutionLoading.value = true
+  try {
+    const result = await fetchElectronicDrawingMaterialResolution(state.itemId, state.accountingMonth)
+    if (id !== drawingResolutionRead) return
+    if (String(result.sourceVersionId) !== String(state.sourceVersionId)
+        || String(result.productTaskId) !== String(state.itemId)
+        || result.accountingMonth !== state.accountingMonth) throw new Error('BOM资料版本已变化，请刷新后核对')
+    drawingResolution.value = result
+  } catch (error) {
+    if (id === drawingResolutionRead) drawingResolutionError.value = error?.message || 'BOM资料读取失败，请重试'
+  } finally { if (id === drawingResolutionRead) drawingResolutionLoading.value = false }
+}, { immediate: true })
+onBeforeUnmount(() => { drawingResolutionRead++ })
+
 const costPartRows = computed(() => (costRun.value.partItems || []).map((row, index) => ({
   key: `PART-${row.bomRowId || row.partCode || index}`,
   partName: row.partName || '-',
@@ -1761,6 +1831,7 @@ const costingStatusSummary = computed(() => {
   if (materialError.value) return '资料状态读取失败'
   if (costRunActionLoading.value || hasRunningCostVersion.value) return '正在核算'
   if (materialState.value?.canCost === false) return '暂不能核算'
+  if (drawingPreparation.value.applies && (drawingPreparation.value.pendingImport || drawingPreparation.value.issues.length)) return drawingPreparation.value.title
   if (submittedGapResolved.value) return '补录已提交，待核算'
   if (showDrawingBomPreview.value) return '图库明细已接收，待完善物料后继续核算'
   if (hasPriceGaps.value) return `价格缺口 ${currentPriceSourceGapCount()} 项`
@@ -1769,7 +1840,10 @@ const costingStatusSummary = computed(() => {
 })
 const costingPreviousIssueDetail = computed(() => previousPriceIssueResolved.value
   ? costingWorkspace.value.lastErrorMessage || localWorkflowGuideText.value : '')
-const costingIssueDetail = computed(() => previousPriceIssueResolved.value
+const costingIssueDetail = computed(() => drawingPreparation.value.applies
+  && (drawingPreparation.value.pendingImport || drawingPreparation.value.issues.length)
+  ? [drawingPreparation.value.message, ...drawingPreparation.value.issues.map(issue => [issue.title, issue.materialCode, issue.message].filter(Boolean).join(' · '))].join('\n')
+  : previousPriceIssueResolved.value
   ? `${currentCostingBlockText.value}。${currentSuccessVersion.value?.id ? '已有历史成功结果，本次尚未更新成本。' : '本次尚未生成成功成本。'}`
   : materialError.value
   || (materialState.value?.canCost === false ? materialState.value.message : '')
@@ -1793,6 +1867,7 @@ const inputGapGuideText = computed(() => {
     return costingWorkspace.value.lastErrorMessage || '当前月份缺少已审核生效的技术资料，请由产品技术处理后重新核算'
   }
   if (workspaceStatus === 'WAIT_BOM' || blockedStep === 'QUOTE_BOM') {
+    if (drawingPreparation.value.applies && (drawingPreparation.value.pendingImport || drawingPreparation.value.issues.length)) return drawingPreparation.value.message
     return storedCostingWorkspace.value.lastErrorMessage || '当前产品缺少可核算 BOM，请由产品技术补录后重新核算本产品'
   }
   const missingSourceCount = currentMissingSourceCount()
@@ -1848,7 +1923,7 @@ async function loadWorkbench(options = {}) {
     }
     await loadEffectiveBom()
     if (isWaitingForBom()) {
-      if (effectiveBom.value.nodes.length === 0 && effectiveBom.value.state !== 'ERROR') applyStoredBomGap()
+      if (effectiveBom.value.nodes.length === 0 && effectiveBom.value.state !== 'ERROR' && !effectiveBom.value.blockIssues.length) applyStoredBomGap()
       resetCurrentInputTabs()
       resetCostRunResult()
       activeRepriceLock.value = { locked: false }
@@ -3121,6 +3196,7 @@ function tabBadgeLabel(tab) {
     return effectiveBomStateInfo.value.label
   }
   if (code === 'QUOTE_BOM') {
+    if (drawingPreparation.value.applies && drawingPreparation.value.pendingImport) return '待BOM准备'
     if (isWaitingForBom()) return '待准备 BOM'
     if (showDrawingBomPreview.value) return '待生成计价明细'
     const workspaceStatus = String(costingWorkspace.value.workspaceStatus || '').toUpperCase()
@@ -3170,6 +3246,7 @@ function tabBadgeType(tab) {
     return effectiveBomStateInfo.value.type
   }
   if (code === 'QUOTE_BOM') {
+    if (drawingPreparation.value.applies && (drawingPreparation.value.pendingImport || drawingPreparation.value.issues.length)) return drawingPreparation.value.type === 'error' ? 'danger' : 'warning'
     if (isWaitingForBom()) return 'danger'
     if (showDrawingBomPreview.value) return 'warning'
     const workspaceStatus = String(costingWorkspace.value.workspaceStatus || '').toUpperCase()
@@ -4116,6 +4193,7 @@ onMounted(() => initializeWorkbench())
 .effective-bom-message-list li + li {
   margin-top: 4px;
 }
+.raw-drawing-preview > p { color: #667085; line-height: 1.6; }
 
 .pricing-bom-designer {
   display: block;

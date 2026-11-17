@@ -3,10 +3,11 @@
     <div class="drawing-toolbar">
       <strong v-if="!inline">电子图库</strong>
       <template v-if="current">
-        <el-tag :type="current.taskState === 'WAIT_REVIEW' || current.taskState === 'FAILED' ? 'warning' : current.taskState === 'RECEIVED' ? 'success' : 'info'" effect="plain">{{ drawingTaskLabel(current) }}</el-tag>
+        <el-tag :type="current.taskState === 'WAIT_REVIEW' || current.taskState === 'FAILED' ? 'warning' : current.taskState === 'RECEIVED' ? 'success' : 'info'" effect="plain">{{ drawingTaskLabel(displayTask) }}</el-tag>
         <a v-if="editUrl && canOperate && !error" :href="editUrl" target="_blank" rel="noopener noreferrer" class="edit-link">去修正</a>
         <el-button v-if="current.taskState === 'RECEIVED' && current.currentResultId" link type="primary" @click="showResult(current.currentResultId)">查看明细</el-button>
         <el-button v-if="current.taskState === 'FAILED' && canOperate" link type="primary" :loading="busy" @click="restart">重新获取</el-button>
+        <el-button v-if="current.taskState === 'RECEIVED' && current.consumptionState === 'FAILED' && canOperate" link type="primary" :loading="busy" @click="perform('CONTINUE')">继续处理</el-button>
       </template>
       <span v-else class="drawing-empty">{{ loading ? '读取中…' : '—' }}</span>
       <el-button v-if="error" link type="warning" @click="refresh">读取失败，重试</el-button>
@@ -14,6 +15,13 @@
     <p v-if="!inline && current?.taskState === 'WAIT_REVIEW'" class="drawing-hint">明细有差异，请点击“去修正”。修正结果接收后自动继续处理。</p>
     <p v-if="current?.taskState === 'WAIT_REVIEW' && !editUrl" class="drawing-hint">编辑地址未返回，请联系管理员。</p>
     <p v-if="!inline && current?.taskState === 'FAILED'" class="drawing-hint">{{ current.errorMessage }}</p>
+    <p v-if="!inline && current?.taskState === 'RECEIVED'" class="drawing-hint">BOM准备：{{ preparationLabel }}</p>
+    <p v-if="receiptError" class="drawing-hint">{{ receiptError }} <el-button link type="primary" @click="refreshReceipt">重试读取</el-button></p>
+    <details v-if="current?.taskState === 'RECEIVED' && current?.consumptionState === 'FAILED'" class="drawing-previous">
+      <summary>上次处理记录</summary>
+      <p class="drawing-empty">对应取图时间（北京时间）{{ drawingDateTime(current.createdAt) }}</p>
+      <p>{{ current.errorMessage || '上次处理未完成，可从已有结果继续检查。' }}</p>
+    </details>
 
     <el-dialog v-model="detailVisible" title="电子图库原始明细" width="min(1200px, 96vw)" top="5vh" append-to-body destroy-on-close>
       <div v-loading="detailLoading" class="drawing-detail-content">
@@ -24,12 +32,14 @@
           <p v-if="detail.summary.confirmedAt" class="drawing-empty">确认时间（北京时间）{{ drawingDateTime(detail.summary.confirmedAt) }}</p>
           <section v-if="selectedGroup" class="drawing-group">
             <h4>图号 {{ selectedDrawingNo }}</h4>
+            <p v-if="detail.productGroupKey && detail.productGroupKey !== selectedDrawingNo" class="drawing-empty">本次明细按请求图号与图纸来源关联展示，图库原始内容完整保留。</p>
             <el-table :data="selectedGroup.params?.items || []" border size="small">
               <el-table-column v-for="[field, label] in drawingColumns" :key="field" :label="label" :min-width="field === 'note' ? 140 : 95">
                 <template #default="{ row }">{{ drawingText(row[field]) }}</template>
               </el-table-column>
             </el-table>
           </section>
+          <el-alert v-else-if="additionalGroups.length" title="图库已返回明细，但无法唯一关联本产品图号，请核对下方图纸来源与原始分组。" type="warning" :closable="false" />
           <el-empty v-else description="当前产品尚无可采用的图纸明细" :image-size="60" />
           <el-collapse class="drawing-history">
             <el-collapse-item title="图纸来源" name="source">
@@ -73,6 +83,7 @@ import { ElMessageBox } from 'element-plus'
 import { useUserStore } from '../../store/modules/user'
 import { fetchDrawingVerificationWorkspace, fetchDrawingVerificationResult, operateDrawingVerification } from '../../api/quoteRequests'
 import { useDrawingVerification } from '../../composables/useDrawingVerification'
+import { useDrawingReceipt } from '../../composables/useDrawingReceipt'
 import { drawingColumns, drawingTaskLabel, drawingEditUrl, drawingResultLabel, drawingText, safeDrawingUrl, drawingDateTime, drawingDetailGroups } from '../../utils/drawingVerification'
 
 const props = defineProps({ oaNo: String, itemId: [Number, String], accountingMonth: String, readonly: Boolean, inline: Boolean })
@@ -84,13 +95,33 @@ const { state, detail, loading, busy, detailLoading, error, detailError, refresh
 })
 const detailVisible = ref(false)
 const current = computed(() => state.value?.current)
+const { receipt, loading: receiptLoading, error: receiptError, refresh: refreshReceipt } = useDrawingReceipt(
+  scope, state, fetchDrawingVerificationResult,
+  computed(() => !props.inline || current.value?.consumptionState === 'FAILED'),
+)
+const displayTask = computed(() => ({ ...current.value, ...(receipt.value ? {
+  receivedDetailCount: receipt.value.receivedDetailCount, productGroupResolved: true,
+} : {}) }))
+const displayedState = computed(() => state.value ? {
+  ...state.value, current: current.value ? displayTask.value : null,
+  sourceReceipt: receipt.value, receiptReadError: receiptError.value,
+} : null)
+const preparationLabel = computed(() => {
+  if (receiptLoading.value) return '正在核对已接收明细'
+  if (receiptError.value) return '明细读取失败，待重试'
+  if (current.value?.consumptionState === 'PENDING') return '正在准备'
+  if (state.value?.workflowStage === 'MAPPING_PENDING') return '待确认物料料号'
+  if (['E_DRAWING_COMPOSED', 'E_DRAWING_PUBLISHED'].includes(state.value?.workflowStage)
+      && current.value?.consumptionState === 'COMPLETE') return 'BOM已就绪'
+  return current.value?.consumptionState === 'FAILED' ? '上次处理未完成，请从已有结果继续检查' : '待完善资料'
+})
 const canOperate = computed(() => !props.readonly && user.permissions.some(p => ['*:*:*', 'ingest:quote:cost-run:execute'].includes(p)))
 const editUrl = computed(() => drawingEditUrl(current.value))
 const adoptionLabel = computed(() => ({ MANUAL_CONFIRMED: '图库人工确认后的接收明细', DIRECT_ACCEPTED: '零差异接收的图库明细', WAIT_REVIEW: '待图库人工确认' })[detail.value?.adoption])
 const plmFields = ['drawingNo', 'plmVersion', 'departmentName', 'createTime', 'fileUrl', 'expireTime']
-const selectedDrawingNo = computed(() => state.value?.history?.find(task => task.localTaskId === detail.value?.localTaskId)?.drawingNo
+const selectedDrawingNo = computed(() => detail.value?.productDrawingNo || state.value?.history?.find(task => task.localTaskId === detail.value?.localTaskId)?.drawingNo
   || (current.value?.localTaskId === detail.value?.localTaskId ? current.value?.drawingNo : ''))
-const groups = computed(() => drawingDetailGroups(detail.value?.data, selectedDrawingNo.value))
+const groups = computed(() => drawingDetailGroups(detail.value?.data, selectedDrawingNo.value, detail.value?.productGroupKey))
 const selectedGroup = computed(() => groups.value.current)
 const additionalGroups = computed(() => groups.value.additional)
 const plmLabel = field => ({ drawingNo: '图号', createTime: '创建时间（北京时间）', fileUrl: '原图', plmVersion: 'PLM 版本', departmentName: '部门', expireTime: '到期时间（北京时间）' })[field] || field
@@ -104,7 +135,7 @@ async function restart() {
   await perform('RESTART')
 }
 function showResult(resultId) { detailVisible.value = true; openResult(resultId) }
-watch(state, value => { if (value) emit('state-change', value) })
+watch(displayedState, value => { if (value) emit('state-change', value) })
 function returnToPage() { if (document.visibilityState === 'visible') refresh() }
 onMounted(() => { window.addEventListener('focus', returnToPage); document.addEventListener('visibilitychange', returnToPage) })
 onBeforeUnmount(() => { window.removeEventListener('focus', returnToPage); document.removeEventListener('visibilitychange', returnToPage) })
@@ -117,6 +148,9 @@ onBeforeUnmount(() => { window.removeEventListener('focus', returnToPage); docum
 .drawing-panel--inline { padding: 0; border: 0; margin: 0; }
 .drawing-panel--inline .drawing-toolbar { margin: 0; gap: 6px 10px; }
 .drawing-hint { margin: 4px 0 0; font-size: 13px; color: #a66c19; }
+.drawing-previous { margin-top: 6px; color: #667085; font-size: 12px; }
+.drawing-previous summary { cursor: pointer; }
+.drawing-previous p { margin: 6px 0; overflow-wrap: anywhere; }
 .drawing-empty { color: #909399; }
 .edit-link { color: #1765c1; font-weight: 600; }
 .history-task { padding: 6px 0; border-top: 1px solid #eaecf0; overflow-wrap: anywhere; }

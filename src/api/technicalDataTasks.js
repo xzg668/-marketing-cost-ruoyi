@@ -4,6 +4,34 @@ import { technicalProfilePayload } from '../utils/technicalDataPlateMaterial'
 
 const id = (value) => encodeURIComponent(String(value))
 
+export const searchQuoteBomPreviewReferences = (itemId, accountingMonth, keyword) =>
+  request(`/api/v2/technical-data/quote-items/${id(itemId)}/bom-preview/references`, { params: { accountingMonth, keyword }, suppressErrorToast: true })
+export const fetchQuoteBomPreviewReference = (itemId, accountingMonth, code) =>
+  request(`/api/v2/technical-data/quote-items/${id(itemId)}/bom-preview/reference`, { params: { accountingMonth, code }, suppressErrorToast: true })
+export const checkQuoteBomPreviewReference = (itemId, accountingMonth, body) =>
+  request(`/api/v2/technical-data/quote-items/${id(itemId)}/bom-preview/check-reference`, { method: 'POST', params: { accountingMonth }, body, suppressErrorToast: true })
+export const uploadQuoteBomPreview = (itemId, accountingMonth, file) => {
+  const body = new FormData(); body.append('file', file)
+  return request(`/api/v2/technical-data/quote-items/${id(itemId)}/bom-preview/upload`, { method: 'POST', params: { accountingMonth }, body, suppressErrorToast: true })
+}
+export const downloadQuoteBomPreviewTemplate = (itemId, accountingMonth, exampleCode) =>
+  downloadTechnicalDataPath(`/api/v2/technical-data/quote-items/${id(itemId)}/bom-preview/template`, 'BOM填写模板.xlsx', { accountingMonth, exampleCode })
+
+export const fetchTechnicalBom = (productId, versionId) =>
+  request(`/api/v2/technical-data/products/${id(productId)}/bom`, { params: { versionId }, suppressErrorToast: true })
+export const searchTechnicalBomReferences = (productId, keyword) =>
+  request(`/api/v2/technical-data/products/${id(productId)}/bom/references`, { params: { keyword }, suppressErrorToast: true })
+export const fetchTechnicalBomReference = (productId, code) =>
+  request(`/api/v2/technical-data/products/${id(productId)}/bom/reference`, { params: { code }, suppressErrorToast: true })
+export const previewTechnicalBomUpload = (productId, file) => {
+  const body = new FormData(); body.append('file', file)
+  return request(`/api/v2/technical-data/products/${id(productId)}/bom/upload-preview`, { method: 'POST', body, suppressErrorToast: true })
+}
+export const saveTechnicalBom = (productId, body) =>
+  request(`/api/v2/technical-data/products/${id(productId)}/bom`, { method: 'PUT', body, suppressErrorToast: true })
+export const downloadTechnicalBom = (productId, kind, fileName, { versionId, exampleCode } = {}) =>
+  downloadTechnicalDataFile(productId, 'bom', kind, fileName, versionId, { exampleCode })
+
 export const startAdminTechnicalDataEntry = (itemId, accountingMonth) =>
   request(`/api/v2/technical-data/quote-items/${id(itemId)}/admin-entry`, {
     method: 'POST', params: { accountingMonth }, suppressErrorToast: true,
@@ -185,11 +213,16 @@ export const downloadTechnicalDataAuxiliary = (productId, kind, fileName, versio
 export const downloadTechnicalDataSalary = (productId, kind, fileName, versionId) =>
   downloadTechnicalDataFile(productId, 'salary', kind, fileName, versionId)
 
-async function downloadTechnicalDataFile(productId, module, kind, fileName, versionId) {
+async function downloadTechnicalDataFile(productId, module, kind, fileName, versionId, extra = {}) {
   if (!['template', 'file'].includes(kind)) throw new Error('补录文件类型无效')
+  return downloadTechnicalDataPath(`/api/v2/technical-data/products/${id(productId)}/${module}/${kind}`, fileName, { versionId, ...extra })
+}
+async function downloadTechnicalDataPath(path, fileName, parameters) {
   const token = requestToken(window.location.pathname)
-  const params = versionId == null ? '' : `?versionId=${id(versionId)}`
-  const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/v2/technical-data/products/${id(productId)}/${module}/${kind}${params}`, {
+  const query = new URLSearchParams()
+  for (const [key, value] of Object.entries(parameters)) if (value != null) query.set(key, String(value))
+  const params = query.size ? `?${query}` : ''
+  const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}${path}${params}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   })
   if (!response.ok || response.headers.get('content-type')?.includes('application/json')) {

@@ -31,6 +31,9 @@
                 {{ materialNatureInfo(data.resolvedMaterialNature).label }}
               </el-tag>
               <el-tag v-if="data.requiresAction" class="pending-material-tag" type="warning" size="small">待确认料号</el-tag>
+              <el-tag v-else-if="['MISSING_RAW', 'ERROR', 'WAIT_FINANCE'].includes(data.processingState)"
+                :type="drawingIssueKind(data.processingState, data.processingMessage) === 'SYSTEM' ? 'danger' : 'warning'"
+                size="small" :title="data.processingMessage">{{ nodePreparationLabel(data) }}</el-tag>
               <span v-if="data.children.length" class="node-child-count">{{ data.children.length }} 个子项</span>
               <el-button v-if="!data.isProductRoot && data.canModify"
                 v-hasPermi="['ingest:quote:cost-run:execute']" link type="primary" size="small"
@@ -80,15 +83,22 @@ import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchElectronicDrawingMaterialResolution } from '../../api/quoteRequests'
 import { buildDrawingSourceTree } from '../../utils/electronicDrawingMaterialResolution'
-const props = defineProps({ oaNo: String, itemId: [String, Number], product: Object, month: String, revision: String })
+import { drawingIssueKind } from '../../utils/drawingPreparation'
+const props = defineProps({ oaNo: String, itemId: [String, Number], product: Object, month: String, revision: String,
+  resolutionState: Object, resolutionLoading: Boolean, resolutionError: String })
 const router = useRouter()
 const state = ref({}), loading = ref(false), error = ref('')
 const treeRef = ref(null), selectedNode = ref(null), detailVisible = ref(false)
 const treeProps = { children: 'children', label: row => row.isProductRoot ? productIdentity(row) : row.sourceName }
 let generation = 0
 const tree = computed(() => buildDrawingSourceTree(state.value.items, props.product))
-watch(() => [props.itemId, props.month, props.revision], async () => {
+watch(() => [props.itemId, props.month, props.revision, props.resolutionState, props.resolutionLoading, props.resolutionError], async () => {
   const current = ++generation
+  if (props.resolutionState !== undefined) {
+    state.value = props.resolutionState || {}; loading.value = props.resolutionLoading; error.value = props.resolutionError || ''
+    detailVisible.value = false; selectedNode.value = null
+    return
+  }
   loading.value = true; error.value = ''; state.value = {}; detailVisible.value = false; selectedNode.value = null
   try {
     const result = await fetchElectronicDrawingMaterialResolution(props.itemId, props.month)
@@ -99,6 +109,10 @@ watch(() => [props.itemId, props.month, props.revision], async () => {
 }, { immediate: true })
 function productIdentity(product) {
   return product.materialNo || product.sunlModel || product.customerDrawing || '报价产品'
+}
+function nodePreparationLabel(node) {
+  return { MANUFACTURING: '待补制造件明细', CHILD_RELATION: '待补子件关系', MATERIAL_SHAPE: '待确认物料形态', SYSTEM: '资料读取异常' }[
+    drawingIssueKind(node.processingState, node.processingMessage)] || '待完善资料'
 }
 function quantityLabel(node) {
   if (node.nodeOrigin === 'U9') return 'U9 用量（按母件底数）'

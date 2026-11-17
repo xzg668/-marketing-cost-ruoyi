@@ -5,7 +5,7 @@
         <h1>报价单接入</h1>
         <p>单据维度工作台，用于查看报价单和处理完成状态。</p>
       </div>
-      <div class="head-actions">
+      <div v-if="canImportQuote(user.roles)" class="head-actions">
         <el-button type="primary" :icon="Upload" @click="goImport">导入</el-button>
       </div>
     </div>
@@ -154,6 +154,8 @@ import { onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Refresh, Search, Upload } from '@element-plus/icons-vue'
+import { useUserStore } from '../../../store/modules/user'
+import { canImportQuote } from '../../../utils/quoteImport'
 import BasePagination from '../../../components/BasePagination.vue'
 import {
   confirmQuoteRequestClassification,
@@ -173,6 +175,7 @@ import {
 } from '../../../utils/quoteRequestWorkbench'
 
 const router = useRouter()
+const user = useUserStore()
 
 const filters = reactive({
   oaNo: '',
@@ -228,6 +231,7 @@ async function loadRows() {
 }
 
 function goImport() {
+  if (!canImportQuote(user.roles)) return
   router.push('/ingest/quote-requests/import')
 }
 

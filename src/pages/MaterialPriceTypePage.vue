@@ -1,5 +1,6 @@
 <template>
   <div class="base-page">
+    <MaterialSpecialPricePanel />
     <el-card shadow="never">
       <div class="page-heading">
         <h2>物料价格类型对照</h2>
@@ -20,7 +21,7 @@
           <el-button @click="resetFilters">重置</el-button>
         </el-form-item>
       </el-form>
-      <p class="hint">未指定时按系统顺序自动取价；财务指定后仅使用该类型。已有适用月价继续复用。</p>
+      <p class="hint">未配置特殊取价要求时，按以下普通规则处理：未指定则按系统顺序取价；财务指定则仅使用该类型，已有适用月价继续复用。</p>
     </el-card>
 
     <el-card shadow="never">
@@ -89,6 +90,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import BasePagination from '../components/BasePagination.vue'
+import MaterialSpecialPricePanel from '../components/MaterialSpecialPricePanel.vue'
 import { useUserStore } from '../store/modules/user'
 import { fetchMaterialPriceTypes, updateMaterialPricePriority } from '../api/materialPriceTypes'
 import { businessPricingMonth, financePriceOrder, priceTypeOptions, priceTypeLabel } from './materialPricePriorityUtils'

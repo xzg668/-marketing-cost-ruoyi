@@ -14,6 +14,17 @@ const drawing = (task = {}, workflowStage = '') => ({
   current: { localTaskId: 5, taskState: 'RECEIVED', consumptionState: 'COMPLETE', currentResultId: 12, ...task },
 })
 
+test('已核实当前图号29行时，旧图号关联失败只作历史，当前提示待继续准备且不放行核算', () => {
+  const saved = drawing({ consumptionState: 'FAILED', currentResultId: 12,
+    receivedDetailCount: 29, productGroupResolved: true,
+    errorMessage: '已接收明细中没有本产品图号的有效行：PRODUCT-MX' })
+  const workflow = quoteItemWorkflow(item, saved)
+  assert.equal(workflow.currentStatusLabel, '待继续准备BOM')
+  assert.doesNotMatch(workflow.message, /没有本产品图号/)
+  assert.notEqual(workflow.currentStatus, 'READY_FOR_COSTING')
+  assert.notEqual(workflow.nextAction, 'START_COSTING')
+})
+
 function noMissingBom(workflow) {
   assert.notEqual(workflow.bomStatus, 'NO_BOM')
   assert.notEqual(workflow.currentStatus, 'MISSING_BOM')

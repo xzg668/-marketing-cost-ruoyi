@@ -138,6 +138,7 @@ const problems=computed(()=>{
   return list
 })
 let epoch=0, timer, refreshNo=0, historyNo=0, resultNo=0, detailNo=0, auditNo=0
+let refreshingEpoch=null
 async function loadOperations(){
   const current=epoch,id=++auditNo,no=batch.value?.repriceNo
   if(!no)return
@@ -149,10 +150,15 @@ watch(activeTab,value=>{if(value==='operations')loadOperations()})
 watch(()=>batch.value?.repriceNo,()=>{auditNo++;audits.value=[];auditPage.value=1;auditTotal.value=0;auditError.value='';if(activeTab.value==='operations')loadOperations()})
 watch(()=>batch.value?.publishedRevision,()=>{if(activeTab.value==='operations')loadOperations()})
 async function refresh() {
-  if(busy.value)return
+  if(busy.value || refreshingEpoch===epoch)return
   const current=epoch,id=++refreshNo
+  refreshingEpoch=current
   try {const value=await fetchRepriceCurrent();if(current===epoch && id===refreshNo){view.value=value;error.value=''}}
   catch(e){if(current===epoch && id===refreshNo) error.value=e.message || '调价状态读取失败'}
+  finally {if(refreshingEpoch===current) refreshingEpoch=null}
+}
+function pollProgress() {
+  if(document.visibilityState==='visible' && ['QUEUED','RUNNING','CHECKING'].includes(batch.value?.status)) refresh()
 }
 async function run(action) {
   if(busy.value) return
@@ -168,7 +174,7 @@ async function showResults(no){selectedNo.value=no;resultPage.value=1;resultsOpe
 async function loadResults(){const current=epoch,id=++resultNo,no=selectedNo.value;try{const v=await fetchMonthlyRepriceResults(no,{page:resultPage.value,pageSize:20});if(current===epoch && id===resultNo && no===selectedNo.value){results.value=v.list || [];resultTotal.value=v.total || 0;historyError.value=''}}catch(e){if(current===epoch && id===resultNo && no===selectedNo.value)historyError.value=e.message}}
 async function showDetails(row){const current=epoch,id=++detailNo,no=selectedNo.value;try{const [p,c]=await Promise.all([fetchMonthlyRepricePartItems(no,row.id),fetchMonthlyRepriceCostItems(no,row.id)]);if(current===epoch && id===detailNo && no===selectedNo.value){parts.value=p;costs.value=c;detailsOpen.value=true}}catch(e){if(current===epoch && id===detailNo && no===selectedNo.value)historyError.value=e.message}}
 watch(()=>user.businessUnitType,()=>{epoch++;refreshNo++;historyNo++;resultNo++;detailNo++;view.value=null;history.value=[];results.value=[];parts.value=[];costs.value=[];resultsOpen.value=false;detailsOpen.value=false;activeTab.value='comparison';busy.value=false;refresh();loadHistory()})
-onMounted(()=>{refresh();loadHistory();window.addEventListener('focus',refresh);timer=setInterval(()=>{if(!busy.value)refresh()},2000)})
+onMounted(()=>{refresh();loadHistory();window.addEventListener('focus',refresh);timer=setInterval(pollProgress,2000)})
 onUnmounted(()=>{epoch++;clearInterval(timer);window.removeEventListener('focus',refresh)})
 </script>
 <style scoped>

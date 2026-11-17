@@ -43,6 +43,10 @@ export function isTechnicalModuleStatusOnly(product, code) {
     && !(code === 'DRAWING_BOM' && module.requirementReasonCode === 'DRAWING_SOURCE_AVAILABLE')
 }
 
+export function isCompleteBomCovered(module) {
+  return ['TECH_BOM_COVERED', 'TECH_BOM_MATERIALS_AVAILABLE', 'TECH_BOM_RELATIONS_AVAILABLE'].includes(module?.requirementReasonCode)
+}
+
 export function modulePresentation(product, moduleType, taskStatus) {
   const module = findModule(product, moduleType)
   if (!module) return { label: '待检查', type: 'warning' }
@@ -57,6 +61,7 @@ export function modulePresentation(product, moduleType, taskStatus) {
   if (['PRICE_SHARED_SAVED', 'TECHNICAL_BOM_PRICE_SHARED', 'SHARED_MODULE_SAVED', 'SHARED_MODULE_SUBMITTED'].includes(module.requirementReasonCode)) return { label: '已有资料', type: 'success' }
   if (module.sourceAvailability === 'ERROR') return { label: '检查失败', type: 'danger' }
   if (module.sourceAvailability === 'UNCONFIRMED') return { label: '待检查', type: 'warning' }
+  if (isCompleteBomCovered(module)) return { label: '已有（来自BOM）', type: 'success' }
   if (module.moduleStatus === 'NOT_REQUIRED') return {
     label: module.sourceAvailability === 'AVAILABLE' && module.requirementReasonCode !== 'U9_ORIGINAL_AVAILABLE' ? '已有资料' : '无需补录', type: 'info',
   }
@@ -70,6 +75,7 @@ export function unassignedModulePresentation(product, code) {
   const module = findModule(product, code)
   const state = modulePresentation(product, code)
   if (!module || ['ERROR', 'UNCONFIRMED'].includes(module.sourceAvailability)) return state
+  if (isCompleteBomCovered(module)) return state
   if (module.required && module.sourceAvailability === 'MISSING') {
     return { label: module.assigneeUserId ? '其他人员负责' : '待分派补录', type: 'warning' }
   }
@@ -79,6 +85,7 @@ export function unassignedModulePresentation(product, code) {
 export function technicalModuleSummary(product, code) {
   const module = findModule(product, code)
   if (!module) return '尚未检查本项资料'
+  if (isCompleteBomCovered(module)) return '材料及用量随完整BOM核算，无需重复填写'
   if (module.sourceAvailability === 'ERROR') return module.requirementReason || '查询失败，请核实后重查'
   if (module.sourceAvailability === 'UNCONFIRMED') return module.requirementReason || '资料来源待确认'
   if (!module.required) return ({
@@ -186,8 +193,9 @@ export function workbenchDispatchRow(row) {
 // 制造件已填好的旧任务或失败检查，在打开时检查一次；成功结果不随普通刷新重算。
 export function needsBomPriceCheck(product, editableModules = []) {
   const price = findModule(product, 'PRICE')
-  return editableModules.includes('MANUFACTURING')
-    && findModule(product, 'MANUFACTURING')?.moduleStatus === 'READY'
+  const ready = editableModules.includes('MANUFACTURING') && findModule(product, 'MANUFACTURING')?.moduleStatus === 'READY'
+    || editableModules.includes('DRAWING_BOM') && product?.supplementContent?.technicalBom && findModule(product, 'DRAWING_BOM')?.moduleStatus === 'READY'
+  return Boolean(ready)
     && ['PRICE_BOM_NOT_READY', 'MANUFACTURING_PRICE_MISSING', 'TECHNICAL_BOM_PRICE_FAILED'].includes(price?.requirementReasonCode)
     && ['PENDING', 'NOT_REQUIRED', 'EDITING', 'READY', 'RETURNED'].includes(price?.moduleStatus)
 }

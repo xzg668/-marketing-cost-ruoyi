@@ -1,6 +1,6 @@
 export const drawingColumns = [
   ['no', '序号'], ['code', '图号'], ['name', '名称'], ['qty', '数量'], ['mat', '材料'],
-  ['grade', '重要性'], ['hsf', '风险'], ['weight', '单重'], ['note', '备注'],
+  ['grade', '重要性'], ['hsf', '风险'], ['weight', '单重（g）'], ['note', '备注'],
 ]
 
 export function safeDrawingUrl(value) {
@@ -20,8 +20,7 @@ export function drawingText(value) {
 export function drawingTaskLabel(task) {
   if (!task) return '尚未获取图库'
   if (task.taskState === 'RECEIVED') {
-    return task.results?.some(result => result.resultId === task.currentResultId && result.eventType === 'MANUAL_CONFIRMATION')
-      || task.differenceCount > 0 ? '已确认' : '无差异'
+    return task.receivedDetailCount > 0 ? `已接收${task.receivedDetailCount}条` : '明细已接收'
   }
   return { REQUESTING: '核验中', WAIT_REVIEW: '待人工确认', RECEIVED: '明细已接收',
     FAILED: '核验失败', SUPERSEDED: '历史任务' }[task.taskState] || task.taskState
@@ -37,10 +36,11 @@ export function drawingNeedsRefresh(task) {
     || (task?.taskState === 'RECEIVED' && task.consumptionState === 'PENDING')
 }
 
-export function drawingDetailGroups(data, drawingNo) {
+export function drawingDetailGroups(data, drawingNo, productGroupKey) {
+  const key = drawingNo ? productGroupKey || drawingNo : ''
   return {
-    current: drawingNo && data ? data[drawingNo] || null : null,
-    additional: Object.entries(data || {}).filter(([key]) => key !== drawingNo),
+    current: key && data ? data[key] || null : null,
+    additional: Object.entries(data || {}).filter(([group]) => group !== key),
   }
 }
 

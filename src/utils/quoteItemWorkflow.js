@@ -1,5 +1,6 @@
 import { carriedForwardPriceCount, priceReadyLabel } from './pricePrepareDisplay.js'
 import { currentSupplementWorkspace, productSupplement } from './technicalDataGaps.js'
+import { resolvedDrawingMismatch } from './drawingPreparation.js'
 
 const READY_BOM_STATUSES = new Set([
   'SYNCED',
@@ -233,6 +234,10 @@ function drawingBomProgress(item, workspace) {
   }
   if (current?.taskState === 'SUPERSEDED') return null
   if (current?.taskState === 'RECEIVED' && current.consumptionState === 'FAILED') {
+    if (resolvedDrawingMismatch(current)) {
+      return progress('E_DRAWING_RECEIVED', '已有图库明细', 'BOM_IN_PROGRESS', '待继续准备BOM',
+        '已有图库明细已保留，请从已存结果继续检查料号、子件关系及制造件明细。', 'VIEW_COSTING_GAP', '查看待办')
+    }
     return progress('E_DRAWING_RECEIVED', '已有图库明细', 'E_DRAWING_FAILED', '图库处理失败',
       current.errorMessage || '图库明细已保存，后续处理失败，请查看原因。', 'VIEW_COSTING_GAP', '查看原因')
   }

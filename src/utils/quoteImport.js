@@ -1,3 +1,5 @@
+export const canImportQuote = (roles = []) => Array.isArray(roles) && roles.some(role => String(role).toLowerCase() === 'admin')
+
 export const QUOTE_IMPORT_MAX_FILE_SIZE = 20 * 1024 * 1024
 export const QUOTE_IMPORT_ACCEPTED_EXTENSIONS = ['.pdf']
 

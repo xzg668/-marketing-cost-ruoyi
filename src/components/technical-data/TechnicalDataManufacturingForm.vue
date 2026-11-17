@@ -13,7 +13,7 @@
         <b>待确认 · {{ waiting.length }} 项</b>
         <p v-for="row in waiting" :key="row.sourceNodeId">{{ row.name }}（图号 {{ row.drawingNo }}）：{{ row.message }}</p>
       </div>
-      <el-table v-if="editableRows.length" :data="editableRows" border class="material-table">
+      <el-table v-if="visibleRows.length" :data="visibleRows" border class="material-table">
         <el-table-column label="制造件／图号" min-width="170">
           <template #default="{ row }"><b>{{ row.name }}</b><p>{{ row.drawingNo }}</p><small>{{ row.parentMaterialNo }}</small><p v-if="row.specification">{{ row.specification }}</p></template>
         </el-table-column>
@@ -40,10 +40,10 @@
           <template #default="{ row }"><el-button v-if="!draft[row.sourceNodeId]?.reuseReference" link type="danger" @click="clear(row)">清除</el-button></template>
         </el-table-column>
       </el-table>
-      <p v-if="!editableRows.length && !state.source?.unavailableReason && !waiting.length" class="note">当前没有需要填写的原材料关系。</p>
-      <div v-if="state.saved?.items?.length" class="saved-relations">
+      <p v-if="!visibleRows.length && !state.source?.unavailableReason && !waiting.length" class="note">当前没有需要填写的原材料关系。</p>
+      <div v-if="visibleSaved.length" class="saved-relations">
         <b>已保存的原材料关系</b>
-        <p v-for="row in state.saved.items" :key="row.itemKey">
+        <p v-for="row in visibleSaved" :key="row.itemKey">
           {{ row.evidence?.parentName || row.parentMaterialNo }} → {{ row.rawMaterialNo }}；单件原料用量 {{ row.quantityPerParent }} {{ row.unit }}，净长 {{ row.netLengthMm ?? '未记录' }} mm。
           <span v-if="row.evidence?.scrapStatus === 'MATCHED'">CMS 废料：{{ row.evidence.scrapMappings.map(item => item.materialNo).join('、') }}。</span>
           <span v-else-if="row.evidence?.scrapStatus === 'NO_SCRAP_CONFIRMED'">已有本月无废料确认。</span>
@@ -70,9 +70,10 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { manufacturingNodeRows } from '../../utils/technicalBomWorkbench.js'
 import { fetchTechnicalDataManufacturing, fetchQuoteTechnicalDataManufacturing, fetchTechnicalDataRawMaterial, saveTechnicalDataManufacturing } from '../../api/technicalDataTasks'
 
-const props = defineProps({ productId: Number, quoteItemId: [String, Number], accountingMonth: String, editable: Boolean, versionId: Number, priceEditable: Boolean })
+const props = defineProps({ productId: Number, quoteItemId: [String, Number], accountingMonth: String, editable: Boolean, versionId: Number, priceEditable: Boolean, sourceNodeId: [String, Number] })
 const emit = defineEmits(['dirty', 'busy', 'saved', 'open-price'])
 const state = ref(null)
 const loading = ref(false)
@@ -82,14 +83,17 @@ const draft = reactive({})
 const options = reactive({})
 const lookupErrors = reactive({})
 const canEdit = computed(() => !props.quoteItemId && props.editable && state.value?.editable && !state.value?.historical)
-const inherited = computed(() => (state.value?.source?.nodes || []).filter(row => ['U9_READY', 'DRAWING_READY'].includes(row.state)))
-const waiting = computed(() => (state.value?.source?.nodes || []).filter(row => ['WAIT_FINANCE', 'ERROR'].includes(row.state)))
+const inherited = computed(() => manufacturingNodeRows((state.value?.source?.nodes || []).filter(row => ['U9_READY', 'DRAWING_READY'].includes(row.state)), props.sourceNodeId))
+const waiting = computed(() => manufacturingNodeRows((state.value?.source?.nodes || []).filter(row => ['WAIT_FINANCE', 'ERROR'].includes(row.state)), props.sourceNodeId))
 const editableRows = computed(() => state.value?.historical
   ? (state.value.saved?.items || []).map(row => ({ sourceNodeId: row.parentSourceNodeId,
     name: row.evidence?.parentName || row.parentMaterialNo, drawingNo: row.evidence?.parentDrawingNo,
     parentMaterialNo: row.parentMaterialNo, quantityPerParent: row.evidence?.parentQuantity,
     sourceNetWeight: row.evidence?.sourceNetWeight, sourceNetWeightUnit: row.evidence?.sourceNetWeightUnit }))
   : (state.value?.source?.nodes || []).filter(row => row.state === 'MISSING_RAW'))
+
+const visibleRows = computed(() => manufacturingNodeRows(editableRows.value, props.sourceNodeId))
+const visibleSaved = computed(() => (state.value?.saved?.items || []).filter(row => props.sourceNodeId == null || String(row.parentSourceNodeId) === String(props.sourceNodeId)))
 
 function install(value) {
   state.value = value

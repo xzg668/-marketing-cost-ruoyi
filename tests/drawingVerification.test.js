@@ -8,6 +8,24 @@ const flush = () => new Promise(resolve => setImmediate(resolve))
 const pending = () => { let resolve; const promise = new Promise(r => { resolve = r }); return { promise, resolve } }
 const waiting = { current: { localTaskId: 42, externalTaskId: 'external-string-task', taskState: 'WAIT_REVIEW', differenceCount: 2 } }
 
+test('后台按请求与PLM确认的未知分组显示为本产品明细，保留原始数据', () => {
+  const data = { _unknown_1: { params: { items: [{ code: 'PART-01', qty: '2.5000' }] } } }
+  const original = JSON.stringify(data)
+  const groups = drawingDetailGroups(data, 'PRODUCT-MX', '_unknown_1')
+  assert.equal(groups.current, data._unknown_1)
+  assert.deepEqual(groups.additional, [])
+  assert.equal(JSON.stringify(data), original)
+  assert.equal(drawingDetailGroups(data, 'PRODUCT-MX').current, null)
+})
+
+test('图库已接收与后续准备失败分开展示，接收标签不冒充BOM就绪', () => {
+  const task = { taskState: 'RECEIVED', differenceCount: 0, consumptionState: 'FAILED' }
+  assert.equal(drawingTaskLabel(task), '明细已接收')
+  assert.equal(drawingTaskLabel({ ...task, receivedDetailCount: 29 }), '已接收29条')
+  assert.equal(drawingEditUrl(task), '')
+  assert.match(drawingConsumptionLabel(task), /失败/)
+})
+
 test('明细只展示当前任务图号，附带分组保留为来源且不能替代缺失的当前图号', () => {
   const data = { OTHER: { params: { items: [{ qty: '7.0000' }] } }, PRODUCT: { params: { items: [{ qty: '2.5000' }] } } }
   const groups = drawingDetailGroups(data, 'PRODUCT')
@@ -36,7 +54,7 @@ test('进入、返回和刷新只读本地状态；确认后保留大于零的�
   await flush(); await h.refresh(); await h.refresh()
   assert.equal(posts, 0); assert.equal(reads, 3)
   assert.equal(h.state.value.current.differenceCount, 2)
-  assert.equal(drawingTaskLabel(h.state.value.current), '已确认')
+  assert.equal(drawingTaskLabel(h.state.value.current), '明细已接收')
   assert.equal(drawingConsumptionLabel(h.state.value.current), '等待导入和物料匹配')
   h.effect.stop()
 })
@@ -47,7 +65,7 @@ test('只有等待人工确认可跳转；接收、历史及零差异均关闭�
   for (const taskState of ['RECEIVED', 'SUPERSEDED', 'REQUESTING', 'FAILED']) {
     assert.equal(drawingEditUrl({ ...task, taskState }), '')
   }
-  assert.equal(drawingTaskLabel({ ...task, taskState: 'RECEIVED', differenceCount: 0 }), '无差异')
+  assert.equal(drawingTaskLabel({ ...task, taskState: 'RECEIVED', differenceCount: 0 }), '明细已接收')
 })
 
 test('等待时只轮询已保存状态，确认接收立即关链接，消费完成后停止轮询', async () => {

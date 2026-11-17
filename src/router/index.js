@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { canImportQuote } from '../utils/quoteImport'
 import MainLayout from '../layout/index.vue'
 import CostRunDetailPage from '../pages/CostRunDetailPage.vue'
 import LoginPage from '../pages/LoginPage.vue'
@@ -207,6 +208,10 @@ router.beforeEach(async (to, from, next) => {
   }
   if (hasWorkbenchWithoutQuoteList() && to.path === QUOTE_REQUEST_LIST_PATH) {
     return next({ path: TECHNICAL_TASK_LIST_PATH, replace: true })
+  }
+
+  if (to.path.replace(/\/+$/, '') === '/ingest/quote-requests/import' && !canImportQuote(userStore.roles)) {
+    return next({ path: resolveLandingPath(), replace: true })
   }
 
   next()
