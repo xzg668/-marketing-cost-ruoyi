@@ -1,5 +1,5 @@
 <template>
-  <div class="linked-result">
+  <div class="linked-result price-source-page">
     <el-alert v-if="correctionContextInvalid" title="补录修正上下文不完整，请回原产品核算页重新进入" type="error" :closable="false" />
     <el-alert v-else-if="correctionContext" :title="`正在处理报价 ${correctionContext.oaNo} 产品行 ${correctionContext.oaFormItemId}／${correctionContext.pricingMonth} 的自行公式。导入后请返回原产品检查价格。`" type="info" :closable="false" />
     <el-card v-if="lastImportResult?.technicalResults?.length" class="technical-import-results">
@@ -15,7 +15,7 @@
     <el-card shadow="never" class="filter-card">
       <div class="filter-header">
         <div class="filter-title">
-          联动价格表
+          <h1>联动价格表</h1><span class="price-unit-label">{{ businessUnitLabel(filters.businessUnitType) }}</span>
           <el-button v-if="pendingTotal > 0 || onlyBindingIssues" link type="warning" @click="openPendingList">{{ onlyBindingIssues ? '显示全部' : `本页异常 ${pendingTotal}` }}</el-button>
         </div>
         <div class="filter-actions">
@@ -40,10 +40,7 @@
           </el-button>
         </div>
       </div>
-      <el-form :inline="true" label-width="90px">
-        <el-form-item label="业务单元">
-          <span>{{ businessUnitLabel(filters.businessUnitType) }}</span>
-        </el-form-item>
+      <el-form :inline="true" label-width="auto" class="price-search-form" @submit.prevent="applyFilters">
         <el-form-item label="价格月份">
           <el-date-picker
             v-model="filters.pricingMonth"
@@ -54,8 +51,9 @@
           />
         </el-form-item>
         <el-form-item label="物料代码">
-          <el-input v-model="filters.materialCode" placeholder="MAT-1001" />
+          <el-input v-model="filters.materialCode" clearable placeholder="输入料号" @keyup.enter="applyFilters" />
         </el-form-item>
+        <el-form-item label="型号"><el-input v-model="filters.model" placeholder="输入型号，支持部分匹配" clearable @keyup.enter="applyFilters" @clear="applyFilters" /></el-form-item>
         <el-form-item>
           <el-button type="primary" @click="applyFilters">查询</el-button>
           <el-button @click="resetFilters">重置</el-button>
@@ -63,20 +61,22 @@
       </el-form>
     </el-card>
 
-    <el-card shadow="never">
+    <el-card shadow="never" class="price-results-card">
+      <div class="price-results-heading"><span>价格明细</span><span class="price-result-count">共 {{ total }} 条</span></div>
       <el-table
         :data="visibleRows"
         stripe
         v-loading="loading"
         class="linked-main-table"
-        max-height="calc(100vh - 360px)"
+        max-height="calc(100vh - 300px)"
         scrollbar-always-on
       >
         <el-table-column prop="materialCode" label="料号" width="145" fixed="left" />
-        <el-table-column prop="materialName" label="名称" min-width="140" show-overflow-tooltip />
-        <el-table-column prop="supplierName" label="供应商名称" min-width="165" show-overflow-tooltip />
-        <el-table-column prop="supplierCode" label="供应商代码" width="120" />
-        <el-table-column prop="specModel" label="规格" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="materialName" label="名称" min-width="125" class-name="price-wrap-cell" />
+        <el-table-column label="供应商" min-width="230">
+          <template #default="{ row }"><div class="price-cell-text">{{ row.supplierName || '—' }}</div><span class="price-secondary">{{ row.supplierCode }}</span></template>
+        </el-table-column>
+        <el-table-column prop="specModel" label="规格 / 型号" min-width="210" class-name="price-wrap-cell" />
         <el-table-column prop="unit" label="单位" width="65" />
         <el-table-column label="原稿未税单价" width="135" align="right">
           <template #default="{ row }">{{ priceText(row.sourceTaxExcludedPrice) }}</template>
@@ -89,7 +89,7 @@
         </el-table-column>
         <el-table-column prop="pricingMonth" label="原稿月份" width="110" />
         <el-table-column label="财务来源月" width="110"><template #default="{ row }">{{ rowTraceMap[row.id]?.financeMonth || '—' }}</template></el-table-column>
-        <el-table-column label="操作" width="170" fixed="right">
+        <el-table-column label="操作" width="115" fixed="right">
           <template #default="{ row }">
             <el-button v-hasPermi="['price:linked-item:list']" link type="primary" @click="openImportBasis(row)">详情</el-button>
             <el-popover v-if="row.expressionVersion !== 'ORIGINAL_V1'" placement="bottom" trigger="click" width="210">
@@ -558,6 +558,7 @@
 </template>
 
 <script setup>
+import '../styles/priceSources.css'
 import { priceExportPage } from '../utils/priceWorkbookExport'
 import WorkbookActions from '../components/WorkbookActions.vue'
 import OriginalLinkedImportDialog from '../components/OriginalLinkedImportDialog.vue'
@@ -776,12 +777,14 @@ const formulaConvertWarning = computed(() => {
 })
 
 const filters = ref({
+  model: queryString('model', ''),
   businessUnitType: queryString('businessUnitType', userStore.businessUnitType || ''),
   pricingMonth: queryString('pricingMonth', currentMonthText()),
   materialCode: queryString('materialCode', ''),
 })
 
 const buildParams = () => ({
+  model: filters.value.model?.trim(),
   pricingMonth: filters.value.pricingMonth,
   materialCode: filters.value.materialCode?.trim(),
   page: currentPage.value,
@@ -898,6 +901,7 @@ const fetchVariables = async () => {
 }
 
 const applyFilters = () => {
+  router.replace({ path: route.path, query: { ...route.query, materialCode: filters.value.materialCode?.trim() || undefined, model: filters.value.model?.trim() || undefined } })
   if (currentPage.value === 1) {
     fetchList()
   } else {
@@ -907,6 +911,7 @@ const applyFilters = () => {
 
 const resetFilters = () => {
   filters.value = {
+  model: '',
     businessUnitType: userStore.businessUnitType || '',
     pricingMonth: currentMonthText(),
     materialCode: '',

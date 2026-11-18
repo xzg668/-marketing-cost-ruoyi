@@ -59,3 +59,18 @@ test('blank gross provenance is displayed from saved evidence while the decimal 
   assert.equal(grossWeightWithSource('0', 'U9 BOM用量'), '0（U9 BOM用量）')
   assert.equal(grossWeightWithSource(null, 'SRM联动价表'), '')
 })
+
+
+test('结算Cu重仅备注在净重栏，零值可见，原净重与金额保持', () => {
+  for (const weight of ['0.119', '0']) {
+    for (const net of [null, '5']) {
+      const row = { kind: 'PART', code: '203240247', netWeight: net, settlementCopperWeightG: weight, amount: '0.023200' }
+      const cells = sheetRowCells(row, { code: 'ORDINARY_PARTS' }, 0)
+      assert.equal(cells[8].value, [net, `${weight} g`, '（家用结算Cu重）'].filter(v => v != null).join('\n'))
+      assert.equal(row.netWeight, net)
+      assert.equal(cells[6].value, '0.023200')
+      assert.ok(!cells[8].value.includes('Zn'))
+    }
+  }
+  assert.equal(sheetRowCells({ kind: 'PART', netWeight: '12' }, { code: 'ORDINARY_PARTS' }, 0)[8].value, '12')
+})

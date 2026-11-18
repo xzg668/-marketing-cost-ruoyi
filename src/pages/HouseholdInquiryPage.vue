@@ -1,10 +1,11 @@
 <template>
-  <div class="household-inquiry-page">
+  <div class="household-inquiry-page price-source-page">
     <el-card>
-      <template #header><div class="page-heading"><div><h2>家用部件询价</h2><p>按月份查询适用的部件询价。当月导入优先，未重新导入的询价沿用最近以前月份；已保存的核算结果保留。</p></div><WorkbookActions kind="household" :fetch-page="canList ? fetchHouseholdInquiries : undefined" :query="{ materialCode, sourceMonth: sourceMonth || undefined }" size-key="size" import-permission="price:household-inquiry:import" /><el-button v-if="canImport" type="primary" @click="importOpen = true">导入询价原件</el-button></div></template>
+      <template #header><div class="page-heading"><div><h2>家用部件询价</h2><p>按月份查询适用的部件询价。当月导入优先，未重新导入的询价沿用最近以前月份；已保存的核算结果保留。</p></div><WorkbookActions kind="household" :fetch-page="canList ? fetchHouseholdInquiries : undefined" :query="{ materialCode, model, sourceMonth: sourceMonth || undefined }" size-key="size" import-permission="price:household-inquiry:import" /><el-button v-if="canImport" type="primary" @click="importOpen = true">导入询价原件</el-button></div></template>
       <el-form inline @submit.prevent="search">
         <el-form-item label="适用月份"><el-date-picker v-model="sourceMonth" type="month" value-format="YYYY-MM" placeholder="全部当前来源" clearable @change="search" /></el-form-item>
-        <el-form-item label="料号 / 型号 / 规格"><el-input v-model="materialCode" placeholder="填写完整料号、型号或规格" clearable style="width:290px" @keyup.enter="search" /></el-form-item>
+        <el-form-item label="料号"><el-input v-model="materialCode" placeholder="填写完整料号" clearable style="width:290px" @keyup.enter="search" /></el-form-item>
+        <el-form-item label="型号"><el-input v-model="model" placeholder="输入型号，支持部分匹配" clearable @keyup.enter="search" @clear="search" /></el-form-item>
         <el-button @click="search">查询</el-button><el-button @click="refresh">刷新来源</el-button>
         <el-button v-if="batchId && canDownload" link type="primary" @click="openBatch">查看本次发布记录</el-button>
       </el-form>
@@ -41,6 +42,7 @@
   </div>
 </template>
 <script setup>
+import '../styles/priceSources.css'
 import WorkbookActions from '../components/WorkbookActions.vue'
 import { computed, onBeforeUnmount, ref, toRefs, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -58,13 +60,14 @@ const canImport = computed(() => canList.value && allowed('import')), canQuery =
 const scope = computed(() => user.userId && user.username && ['COMMERCIAL', 'HOUSEHOLD'].includes(user.businessUnitType) ? inquiryScope(user) : '')
 const list = createInquiryList({ fetch: fetchHouseholdInquiries, scope: () => scope.value, allowed: () => canList.value })
 const { rows, total, loading, error } = toRefs(list.state)
-const page = ref(1), size = ref(20), materialCode = ref(''), sourceMonth = ref('')
+const page = ref(1), size = ref(20), materialCode = ref(''), model = ref(''), sourceMonth = ref('')
 const importOpen = ref(false), detailOpen = ref(false), selected = ref(null), batchOpen = ref(false), batch = ref(null), batchError = ref('')
 const trialOpen = ref(false), trialEntry = ref(null)
 const batchId = computed(() => /^\d+$/.test(String(route.query.batchId || '')) ? String(route.query.batchId) : '')
 let batchSequence = 0, alive = true
 onBeforeUnmount(() => { alive = false; batchSequence++; list.dispose() })
 watch([() => route.fullPath, scope, canList], () => {
+  model.value = typeof route.query.model === 'string' ? route.query.model : ''
   materialCode.value = typeof route.query.materialCode === 'string' ? route.query.materialCode : ''
   sourceMonth.value = typeof route.query.sourceMonth === 'string' ? route.query.sourceMonth : ''
   page.value = Math.min(1000000, Math.max(1, Number(route.query.page) || 1)); size.value = [20, 50, 100].includes(Number(route.query.size)) ? Number(route.query.size) : 20
@@ -73,20 +76,20 @@ watch([() => route.fullPath, scope, canList], () => {
 watch([scope, canList], () => { importOpen.value = false; detailOpen.value = false; selected.value = null; batchOpen.value = false; batch.value = null; batchSequence++ }, { flush: 'sync' })
 watch(canDownload, value => { batchSequence++; if (!value) { batch.value = null; batchOpen.value = false } }, { flush: 'sync' })
 watch([scope, canQuery], () => { trialOpen.value = false; trialEntry.value = null }, { flush: 'sync' })
-function load() { return list.load({ materialCode: materialCode.value, sourceMonth: sourceMonth.value || undefined, page: page.value, size: size.value }) }
+function load() { return list.load({ materialCode: materialCode.value, ...(model.value.trim() ? { model: model.value.trim() } : {}), sourceMonth: sourceMonth.value || undefined, page: page.value, size: size.value }) }
 function search() { page.value = 1; navigate() }
 function paginate() { navigate() }
 function resize() { page.value = 1; navigate() }
 function navigate() {
-  const target = { path: route.path, query: { ...route.query, materialCode: materialCode.value || undefined, sourceMonth: sourceMonth.value || undefined, page: page.value > 1 ? String(page.value) : undefined, size: String(size.value) } }
+  const target = { path: route.path, query: { ...route.query, materialCode: materialCode.value || undefined, model: model.value.trim() || undefined, sourceMonth: sourceMonth.value || undefined, page: page.value > 1 ? String(page.value) : undefined, size: String(size.value) } }
   if (router.resolve(target).fullPath === route.fullPath) load(); else router.replace(target)
 }
 function refresh() { load() }
 function detail(row) { selected.value = row; detailOpen.value = true }
 function trial(row) { trialEntry.value = row; trialOpen.value = true }
 function imported(result) {
-  sourceMonth.value = result.sourceMonth; materialCode.value = ''; page.value = 1
-  const target = { path: route.path, query: { ...route.query, sourceMonth: result.sourceMonth, materialCode: undefined, page: undefined, batchId: String(result.batchId) } }
+  sourceMonth.value = result.sourceMonth; materialCode.value = ''; model.value = ''; page.value = 1
+  const target = { path: route.path, query: { ...route.query, sourceMonth: result.sourceMonth, materialCode: undefined, model: undefined, page: undefined, batchId: String(result.batchId) } }
   if (router.resolve(target).fullPath === route.fullPath) load(); else router.replace(target)
 }
 async function openBatch() {

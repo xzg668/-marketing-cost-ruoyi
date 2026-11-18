@@ -1,12 +1,13 @@
 <template>
-  <div class="inquiry-page">
+  <div class="inquiry-page price-source-page">
     <el-card>
       <template #header><div class="heading"><div><h2>询价</h2><p>固定价取批量价总价；联动价按原公式和所选月份的商用基价自动刷新。</p></div>
-        <WorkbookActions kind="inquiry" :fetch-page="mode === 'current' && allowed('list') ? fetchInquiryPrices : undefined" :query="{ priceMonth, search: keyword || undefined, view: mode }" size-key="size" import-permission="price:inquiry:import" />
+        <WorkbookActions kind="inquiry" :fetch-page="mode === 'current' && allowed('list') ? fetchInquiryPrices : undefined" :query="{ priceMonth, search: keyword || undefined, model: model || undefined, view: mode }" size-key="size" import-permission="price:inquiry:import" />
         <el-button v-if="allowed('import')" type="primary" :disabled="!priceMonth" @click="openImport">导入询价</el-button></div></template>
       <el-form inline @submit.prevent="search">
         <el-form-item label="价格月份"><el-date-picker v-model="priceMonth" type="month" value-format="YYYY-MM" format="YYYY-MM" :clearable="false" :disabled="session.state.busy" aria-label="价格月份" /></el-form-item>
         <el-form-item label="物料"><el-input v-model="keyword" placeholder="料号、名称或规格型号" clearable @keyup.enter="search" /></el-form-item>
+        <el-form-item v-if="mode === 'current'" label="型号"><el-input v-model="model" placeholder="输入型号，支持部分匹配" clearable @keyup.enter="search" @clear="search" /></el-form-item>
         <el-button @click="search">查询</el-button><el-button @click="load">刷新列表</el-button>
       </el-form>
       <p class="hint">取价顺序：SRM固定价 → 阶梯价 → 发票价 → 订单价 → 询价。商用和板换的询价均使用商用基价；已采用的月价继续复用。</p>
@@ -68,6 +69,7 @@
   </div>
 </template>
 <script setup>
+import '../styles/priceSources.css'
 import WorkbookActions from '../components/WorkbookActions.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
@@ -78,6 +80,7 @@ const user = useUserStore()
 const allowed = permission => user.permissions.includes('*:*:*') || user.permissions.includes(`price:inquiry:${permission}`)
 const today = new Date()
 const priceMonth = ref(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`), keyword = ref(''), mode = ref('current'), page = ref(1)
+const model = ref('')
 const rows = ref([]), total = ref(0), error = ref(''), loading = ref(false)
 const importOpen = ref(false), fileKey = ref(0), detailOpen = ref(false), detailId = ref(null), details = ref([]), detailError = ref(''), detailLoading = ref(false)
 const calculationOpen = ref(false), calculation = ref(null)
@@ -103,7 +106,7 @@ async function load() {
   loading.value = true; error.value = ''; rows.value = []; total.value = 0
   try {
     const fetch = mode.value === 'history' ? fetchInquiryHistory : fetchInquiryPrices
-    const result = await fetch({ priceMonth: priceMonth.value, search: keyword.value || undefined, page: page.value, size: 20 })
+    const result = await fetch({ priceMonth: priceMonth.value, search: keyword.value || undefined, model: model.value.trim(), page: page.value, size: 20 })
     if (alive && ticket === listSequence && owner === scope.value) { rows.value = result.records; total.value = result.total }
   } catch (failure) { if (alive && ticket === listSequence) error.value = failure.message || '询价查询失败' }
   finally { if (alive && ticket === listSequence) loading.value = false }

@@ -1,0 +1,29 @@
+.price-source-page { --el-card-border-radius: 8px; }
+.price-source-page > .el-card { box-shadow: none; border-color: #e2e6ec; }
+.price-source-page > .filter-card .el-card__body { padding: 22px 24px 8px; }
+.price-source-page .filter-header { display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: center; margin-bottom: 22px; }
+.price-source-page .filter-title { display: flex; align-items: center; gap: 12px; white-space: nowrap; }
+.price-source-page .filter-title h1 { margin: 0; font-size: 21px; line-height: 32px; font-weight: 600; color: #202b3c; }
+.price-source-page .price-unit-label { font-size: 13px; font-weight: 400; color: #687587; padding-left: 12px; border-left: 1px solid #dce2e9; }
+.price-source-page .filter-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+.price-source-page .filter-actions .el-button + .el-button { margin-left: 0; }
+.price-source-page .price-search-form { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0 22px; }
+.price-source-page .price-search-form .el-form-item { margin: 0 0 16px; }
+.price-source-page .price-search-form .el-form-item__label { color: #526075; }
+.price-source-page .price-search-form .el-input { width: 220px; }
+.price-source-page .price-search-form .el-date-editor { width: 156px; }
+.price-source-page .price-results-card .el-card__body { padding: 0 22px 14px; }
+.price-source-page .price-results-heading { display: flex; align-items: center; gap: 12px; padding: 18px 0; font-size: 15px; font-weight: 600; color: #344155; }
+.price-source-page .price-result-count { margin-left: auto; font-size: 13px; font-weight: 400; color: #778395; }
+.price-source-page .linked-main-table { --el-table-header-bg-color: #f5f7fa; --el-table-header-text-color: #627086; --el-table-border-color: #e9edf2; color: #384559; }
+.price-source-page .linked-main-table th.el-table__cell { height: 44px; font-size: 13px; font-weight: 500; }
+.price-source-page .linked-main-table td.el-table__cell { padding: 12px 0; font-variant-numeric: tabular-nums; }
+.price-source-page .price-wrap-cell .cell, .price-source-page .price-cell-text { white-space: normal; overflow-wrap: anywhere; line-height: 1.5; }
+.price-source-page .price-secondary { display: block; font-size: 12px; color: #8791a0; line-height: 1.5; margin-top: 3px; }
+.price-source-page .price-results-card .base-pagination { background: transparent; border: 0; border-radius: 0; padding: 16px 0 0; }
+@media (max-width: 900px) {
+  .price-source-page .filter-actions { margin-left: 0; width: 100%; }
+  .price-source-page > .filter-card .el-card__body { padding: 18px 16px 2px; }
+  .price-source-page .price-results-card .el-card__body { padding: 0 14px 12px; }
+  .price-source-page .price-search-form { gap: 0 14px; }
+}

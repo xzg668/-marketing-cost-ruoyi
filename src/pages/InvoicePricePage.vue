@@ -1,14 +1,15 @@
 <template>
-  <div class="invoice-page">
+  <div class="invoice-page price-source-page">
     <el-card>
       <template #header>
         <div class="heading"><div><h2>发票价格</h2><p>按料件取最新导入批次，同批次适用发票取最高未税单价。新导入用于后续核算，历史核算结果保留。</p></div>
-          <WorkbookActions kind="invoice" :fetch-page="mode === 'current' && allowed('list') ? fetchInvoicePrices : undefined" :query="{ orgCode, materialCode: materialCode || undefined, view: mode }" size-key="size" import-permission="price:invoice:import" />
+          <WorkbookActions kind="invoice" :fetch-page="mode === 'current' && allowed('list') ? fetchInvoicePrices : undefined" :query="{ orgCode, materialCode: materialCode || undefined, model: model || undefined, view: mode }" size-key="size" import-permission="price:invoice:import" />
           <el-button v-if="allowed('import')" type="primary" @click="openImport">导入发票价格</el-button></div>
       </template>
       <el-form inline @submit.prevent="search">
         <el-form-item label="取价组织"><el-select v-model="orgCode" aria-label="取价组织" style="width:160px" :disabled="session.state.busy"><el-option label="商用（210）" value="210" /><el-option label="板换（220）" value="220" /></el-select></el-form-item>
         <el-form-item label="料号"><el-input v-model="materialCode" placeholder="输入精确料号" clearable @keyup.enter="search" /></el-form-item>
+        <el-form-item v-if="mode === 'current'" label="型号"><el-input v-model="model" placeholder="输入型号，支持部分匹配" clearable @keyup.enter="search" @clear="search" /></el-form-item>
         <el-button @click="search">查询</el-button><el-button @click="load">刷新</el-button>
       </el-form>
       <el-tabs v-model="mode" @tab-change="search"><el-tab-pane label="当前发票记录" name="current" /><el-tab-pane v-if="allowed('query')" label="导入历史" name="history" /></el-tabs>
@@ -62,6 +63,7 @@
   </div>
 </template>
 <script setup>
+import '../styles/priceSources.css'
 import WorkbookActions from '../components/WorkbookActions.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
@@ -71,6 +73,7 @@ import { createInvoiceImport } from './invoicePriceImport'
 const user = useUserStore()
 const allowed = permission => user.permissions.includes('*:*:*') || user.permissions.includes(`price:invoice:${permission}`)
 const orgCode = ref('210'), materialCode = ref(''), mode = ref('current'), page = ref(1)
+const model = ref('')
 const rows = ref([]), total = ref(0), error = ref(''), loading = ref(false)
 const importOpen = ref(false), fileKey = ref(0), detailOpen = ref(false), detailId = ref(null)
 const details = ref([]), detailError = ref(''), detailLoading = ref(false)
@@ -94,7 +97,7 @@ async function load() {
   loading.value = true; error.value = ''; rows.value = []
   try {
     const fetch = mode.value === 'history' ? fetchInvoiceHistory : fetchInvoicePrices
-    const result = await fetch({ orgCode: orgCode.value, materialCode: materialCode.value || undefined, page: page.value, size: 20 })
+    const result = await fetch({ orgCode: orgCode.value, materialCode: materialCode.value || undefined, model: mode.value === 'current' ? model.value.trim() : undefined, page: page.value, size: 20 })
     if (alive && ticket === listSequence && owner === scope.value) { rows.value = result.records; total.value = result.total }
   } catch (failure) { if (alive && ticket === listSequence) { error.value = failure.message || '发票查询失败'; total.value = 0 } }
   finally { if (alive && ticket === listSequence) loading.value = false }

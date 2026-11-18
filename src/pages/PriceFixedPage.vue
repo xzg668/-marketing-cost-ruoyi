@@ -1,5 +1,5 @@
 <template>
-  <div class="fixed-page">
+  <div class="fixed-page price-source-page">
     <el-card shadow="never" class="filter-card">
       <div class="filter-header">
         <div class="filter-title">固定采购价</div>
@@ -30,10 +30,11 @@
         每日来源由系统接入，在此查看有效来源即可。财务无需为月度调价导入或手动刷新SRM价格；已采用月价继续按保存依据复用。
       </el-alert>
       <!-- 固定采购价页面只展示 PURCHASE_FIXED，结算固定价后续独立页面维护。 -->
-      <el-form :inline="true" label-width="90px">
+      <el-form :inline="true" label-width="auto" class="price-search-form" @submit.prevent="applyFilters">
         <el-form-item label="物料代码">
           <el-input v-model="filters.materialCode" placeholder="1008000300944" />
         </el-form-item>
+        <el-form-item label="型号"><el-input v-model="filters.model" placeholder="输入型号，支持部分匹配" clearable @keyup.enter="applyFilters" @clear="applyFilters" /></el-form-item>
         <el-form-item label="供应商代码">
           <el-input v-model="filters.supplierCode" placeholder="1004" />
         </el-form-item>
@@ -191,6 +192,7 @@
 </template>
 
 <script setup>
+import '../styles/priceSources.css'
 import WorkbookActions from '../components/WorkbookActions.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -224,6 +226,7 @@ const sourceTagType = (v) =>
   SOURCE_TYPE_OPTIONS.find((o) => o.value === v)?.tag || ''
 
 const filters = ref({
+  model: String(route.query.model || ''),
   materialCode: '',
   supplierCode: '',
 })
@@ -277,6 +280,7 @@ const dialogTitle = computed(() =>
 )
 
 const buildParams = () => ({
+  model: filters.value.model?.trim(),
   sourceType: FIXED_PURCHASE_SOURCE_TYPE,
   materialCode: filters.value.materialCode.trim(),
   supplierCode: filters.value.supplierCode.trim(),
@@ -284,18 +288,22 @@ const buildParams = () => ({
   pageSize: pageSize.value,
 })
 
+let listRequest = 0
 const fetchList = async () => {
+  const request = ++listRequest
   loading.value = true
   try {
     const data = await fetchFixedItems(buildParams())
+    if (request !== listRequest) return
     tableRows.value = data?.list || []
     total.value = data?.total || 0
   } catch (error) {
+    if (request !== listRequest) return
     tableRows.value = []
     total.value = 0
     ElMessage.error(error?.message || '查询失败')
   } finally {
-    loading.value = false
+    if (request === listRequest) loading.value = false
   }
 }
 
@@ -312,6 +320,7 @@ watch(pageSize, () => {
 })
 
 const applyFilters = () => {
+  router.replace({ path: route.path, query: { ...route.query, materialCode: filters.value.materialCode?.trim() || undefined, model: filters.value.model?.trim() || undefined } })
   if (currentPage.value === 1) {
     fetchList()
   } else {
@@ -321,6 +330,7 @@ const applyFilters = () => {
 
 const resetFilters = () => {
   filters.value = {
+  model: '',
     materialCode: '',
     supplierCode: '',
   }

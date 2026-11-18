@@ -83,3 +83,20 @@ test('导入沿用列表所选月份，完成事件使用实际发布预览的�
     assert.deepEqual(events, [{ batchId: 19, sourceMonth: '2026-09' }])
   } finally { app.unmount() }
 })
+
+
+test('型号与料号组合查询，分页、重新进入保留，导入后清空', async () => {
+  const f = pageFixture({ sourceMonth: '2026-11', materialCode: '001', model: ' RFK ', page: '3' })
+  try {
+    await settle()
+    assert.equal(f.requests.at(-1).model, 'RFK')
+    f.state.model = ' rfk-2 '; f.state.search(); await settle()
+    assert.equal(f.state.page, 1); assert.equal(f.requests.at(-1).model, 'rfk-2')
+    assert.equal(f.requests.at(-1).materialCode, '001')
+    const reentered = pageFixture({ ...f.route.query })
+    try { await settle(); assert.equal(reentered.requests.at(-1).model, 'rfk-2') }
+    finally { reentered.app.unmount() }
+    f.state.imported({ batchId: 21, sourceMonth: '2026-11' }); await settle()
+    assert.equal(f.state.model, ''); assert.equal(f.requests.at(-1).model, undefined)
+  } finally { f.app.unmount() }
+})

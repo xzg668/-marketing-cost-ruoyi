@@ -61,6 +61,7 @@ const numericColumns = new Set(['unitPrice', 'quantity', 'amount', 'grossWeight'
 .jjb-columns .metal-column { background:#f00; }
 .jjb-table .numeric { font-variant-numeric:tabular-nums; }
 .jjb-table td[data-column="grossWeight"] { white-space:normal; overflow-wrap:anywhere; }
+.jjb-table td[data-column="netWeight"] { white-space:pre-line; overflow-wrap:anywhere; text-overflow:clip; line-height:16px; }
 .jjb-table td[data-column="drawingNo"] { white-space:pre-wrap; overflow-wrap:anywhere; text-overflow:clip; line-height:18px; }
 .jjb-table .side-label { font-weight:700; white-space:normal; }
 .kind-subtotal td,.kind-property td,.summary-row td { font-weight:700; }

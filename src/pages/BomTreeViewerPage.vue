@@ -1,23 +1,24 @@
 <template>
   <!-- BOM 层级树查看页（T6）
-       按顶层产品码查嵌套树；支持切"版本日期"看历史版本；节点点击抽屉看完整字段 -->
+       按顶层产品或自制件料号查嵌套树；支持切"版本日期"看历史版本 -->
   <div class="base-page">
     <el-card shadow="never" class="header-card">
       <div class="header-row">
         <div>
           <div class="page-title">BOM 层级树查看</div>
           <div class="page-subtitle">
-            按顶层产品展开多层树，可按"版本日期"复现历史版本（留空 = 今天）。
+            输入顶层产品或自制件料号，查看该件及其下级 BOM；用量以当前查询件为基准。
+            可按"版本日期"查看历史版本（留空 = 今天）。
             接管 / 部品联动 等业务属性通过节点色彩与标签高亮。
           </div>
         </div>
       </div>
 
-      <el-form :inline="true" class="query-form">
-        <el-form-item label="顶层料号" required>
+      <el-form :inline="true" class="query-form" @submit.prevent>
+        <el-form-item label="料号" required>
           <el-input
             v-model="query.topProductCode"
-            placeholder="例：1079900000536"
+            placeholder="顶层产品／自制件料号"
             style="width: 240px"
             clearable
             @keyup.enter="loadTree"
@@ -71,7 +72,7 @@
           <el-button
             type="primary"
             :loading="loading"
-            :disabled="!query.topProductCode"
+            :disabled="!query.topProductCode.trim()"
             @click="loadTree"
           >
             查询
@@ -83,22 +84,23 @@
     </el-card>
 
     <el-card shadow="never" class="tree-card">
-      <div v-if="!tree && !loading" class="empty-tip">
-        请输入顶层料号并点"查询"
+      <div v-if="!queried && !loading" class="empty-tip">
+        请输入顶层产品或自制件料号，按回车或点击“查询”
       </div>
       <div
-        v-else-if="empty"
+        v-else-if="!tree && !loading"
         class="empty-tip"
       >
-        该版本日期下查不到 BOM —— 请确认该日期是否在某个有效 BOM 版本的生效期内
+        {{ queryError || '当前组织、日期和来源下未找到该料号的有效 BOM，请核对查询条件' }}
       </div>
       <el-tree
         v-else
+        :key="requestVersion"
         ref="treeRef"
         :data="treeData"
         :props="treeProps"
         node-key="path"
-        :default-expand-all="false"
+        :default-expand-all="true"
         :expand-on-click-node="false"
         @node-click="onNodeClick"
         v-loading="loading"
@@ -159,6 +161,9 @@ const query = reactive({
 })
 
 const loading = ref(false)
+const queried = ref(false)
+const queryError = ref('')
+const requestVersion = ref(0)
 const tree = ref(null)
 const treeRef = ref(null)
 
@@ -171,29 +176,48 @@ const treeProps = {
 }
 
 const treeData = computed(() => (tree.value ? [tree.value] : []))
-const empty = computed(() => tree.value && !tree.value.materialCode)
-
 async function loadTree() {
-  if (!query.topProductCode) {
-    ElMessage.warning('请输入顶层料号')
+  const materialCode = query.topProductCode.trim()
+  if (!materialCode) {
+    ElMessage.warning('请输入顶层产品或自制件料号')
     return
   }
+  const version = ++requestVersion.value
   loading.value = true
+  queried.value = true
+  queryError.value = ''
+  tree.value = null
+  drawerVisible.value = false
+  selectedNode.value = null
   try {
-    const data = await getBomHierarchy(query.topProductCode.trim(), {
+    const data = await getBomHierarchy(materialCode, {
       bomPurpose: query.bomPurpose || null,
       priceOrgCode: query.priceOrgCode,
       asOfDate: query.asOfDate || null,
       sourceType: query.sourceType,
     })
-    tree.value = data
+    if (version !== requestVersion.value) return
+    tree.value = data?.materialCode ? data : null
   } catch (error) {
+    if (version !== requestVersion.value) return
     tree.value = null
-    ElMessage.error(error?.message || '查询失败')
+    queryError.value = error?.message || '查询失败，请重试'
+    ElMessage.error(queryError.value)
   } finally {
-    loading.value = false
+    if (version === requestVersion.value) loading.value = false
   }
 }
+
+// 修改查询条件即撤下旧树，防止迟到响应显示为新料号/组织的结果。
+watch(() => ({ ...query }), () => {
+  requestVersion.value++
+  tree.value = null
+  queried.value = false
+  queryError.value = ''
+  loading.value = false
+  drawerVisible.value = false
+  selectedNode.value = null
+}, { flush: 'sync' })
 
 function onNodeClick(node) {
   selectedNode.value = node

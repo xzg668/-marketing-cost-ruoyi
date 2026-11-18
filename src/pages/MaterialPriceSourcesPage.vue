@@ -1,10 +1,11 @@
 <template>
-  <div class="base-page">
+  <div class="base-page price-source-page">
     <el-card shadow="never">
       <div class="heading"><h2>物料多形态属性价格表</h2><div><el-button :loading="exporting" :disabled="loading || refreshing" @click="exportSources">导出 Excel</el-button><el-button v-if="canRefresh" type="primary" :loading="refreshing" @click="refreshSources">更新</el-button></div></div>
       <el-form :inline="true" @submit.prevent="search">
         <el-form-item label="价格月份"><el-date-picker v-model="filter.month" type="month" value-format="YYYY-MM" placeholder="最新资料月份" /></el-form-item>
         <el-form-item label="料号"><el-input v-model="filter.materialCode" placeholder="输入料号" clearable /></el-form-item>
+        <el-form-item label="型号"><el-input v-model="filter.model" placeholder="输入型号，支持部分匹配" clearable @keyup.enter="search" @clear="search" /></el-form-item>
         <el-form-item label="组织"><el-select v-model="filter.organization" clearable placeholder="全部组织" style="width:135px"><el-option label="210 商用" value="210" /><el-option label="220 板换" value="220" /></el-select></el-form-item>
         <el-form-item label="料号属性"><el-select v-model="filter.materialAttribute" clearable placeholder="全部属性" style="width:150px"><el-option v-for="item in attributeFilterOptions" :key="item.value" :label="item.label" :value="item.value" /><el-option label="未选择" value="EMPTY" /></el-select></el-form-item>
         <el-form-item><el-button type="primary" native-type="submit" :loading="loading">查询</el-button><el-button @click="reset">重置</el-button></el-form-item>
@@ -66,6 +67,7 @@
 </template>
 
 <script setup>
+import '../styles/priceSources.css'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import BasePagination from '../components/BasePagination.vue'
@@ -83,7 +85,7 @@ const canEdit = computed(() => user.roles.some(role => ['admin', 'bu_director', 
 const canRefresh = computed(() => allowed('price:material-sources:refresh'))
 const attributeOptions = [{ value: 'PURCHASE', label: '采购件' }, { value: 'OUTSOURCE', label: '委外加工件' }]
 const attributeFilterOptions = [{ value: 'MANUFACTURE', label: '自制件' }, ...attributeOptions]
-const defaults = () => ({ month: '', materialCode: '', organization: '', materialAttribute: '', page: 1, size: 20 })
+const defaults = () => ({ month: '', materialCode: '', model: '', organization: '', materialAttribute: '', page: 1, size: 20 })
 const filter = reactive(defaults())
 const rows = ref([]), total = ref(0), loading = ref(false), error = ref(''), refreshState = ref(null), refreshing = ref(false), priceDetail = ref(null)
 const selectedRows = ref([]), batchAttribute = ref(''), batchSaving = ref(false)
@@ -130,7 +132,7 @@ async function exportSources() {
   if (exporting.value) return
   exporting.value = true
   try {
-    const params = new URLSearchParams({ month: filter.month || displayedMonth || '', materialCode: filter.materialCode,
+    const params = new URLSearchParams({ month: filter.month || displayedMonth || '', materialCode: filter.materialCode, model: filter.model,
       organization: filter.organization, materialAttribute: filter.materialAttribute })
     await downloadAuthenticatedBlob(`/api/v1/material-price-sources/export?${params}`, `物料多形态属性价格表_${filter.month || displayedMonth || '全部'}.xlsx`)
   } catch (cause) { ElMessage.error(cause?.message || '导出失败，请重试') }

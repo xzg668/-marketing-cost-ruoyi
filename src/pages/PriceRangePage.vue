@@ -1,5 +1,5 @@
 <template>
-  <div class="range-page">
+  <div class="range-page price-source-page">
     <el-card shadow="never" class="filter-card">
       <div class="filter-header">
         <div class="filter-title">区间价</div>
@@ -22,10 +22,11 @@
           <el-button v-hasPermi="['price:range:add']" @click="openCreate">新增数量区间</el-button>
         </div>
       </div>
-      <el-form :inline="true" label-width="90px">
+      <el-form :inline="true" label-width="auto" class="price-search-form" @submit.prevent="applyFilters">
         <el-form-item label="物料代码">
           <el-input v-model="filters.materialCode" placeholder="请输入物料代码" />
         </el-form-item>
+        <el-form-item label="型号"><el-input v-model="filters.model" placeholder="输入型号，支持部分匹配" clearable @keyup.enter="applyFilters" @clear="applyFilters" /></el-form-item>
         <el-form-item label="帐期">
           <el-date-picker
             v-model="filters.effectiveFrom"
@@ -172,6 +173,7 @@
 </template>
 
 <script setup>
+import '../styles/priceSources.css'
 import { priceExportPage } from '../utils/priceWorkbookExport'
 import WorkbookActions from '../components/WorkbookActions.vue'
 import { fetchRangeEffectivePrices } from '../api/originalPriceTrials'
@@ -202,6 +204,7 @@ const editingId = ref(null)
 
 const currentMonth = () => { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}` }
 const filters = ref({
+  model: String(route.query.model || ''),
   materialCode: '',
   effectiveFrom: currentMonth(),
 })
@@ -243,6 +246,7 @@ const dialogTitle = computed(() => (
 ))
 
 const buildParams = () => ({
+  specModel: filters.value.model?.trim(),
   materialCode: filters.value.materialCode.trim(),
   effectiveFrom: filters.value.effectiveFrom || '',
   page: currentPage.value,
@@ -359,6 +363,7 @@ watch(pageSize, () => {
 })
 
 const applyFilters = () => {
+  router.replace({ path: route.path, query: { ...route.query, materialCode: filters.value.materialCode?.trim() || undefined, model: filters.value.model?.trim() || undefined } })
   if (currentPage.value === 1) {
     fetchList()
   } else {
@@ -368,6 +373,7 @@ const applyFilters = () => {
 
 const resetFilters = () => {
   filters.value = {
+  model: '',
     materialCode: '',
     effectiveFrom: currentMonth(),
   }

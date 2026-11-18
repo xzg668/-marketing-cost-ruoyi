@@ -1,5 +1,5 @@
 <template>
-  <div class="settlement-page">
+  <div class="settlement-page price-source-page">
     <el-card>
       <template #header><div class="heading"><div><h2>结算价格</h2><p>商用与板换共用结算规则；发布商用基价或导入原稿时，生成并保存对应月份的结算价格。</p></div><div>
         <el-button v-if="returnTo" @click="router.push(returnTo)">返回报价核算</el-button>
@@ -36,6 +36,7 @@
   </div>
 </template>
 <script setup>
+import '../styles/priceSources.css'
 import WorkbookActions from '../components/WorkbookActions.vue'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'

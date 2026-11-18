@@ -1,10 +1,11 @@
 <template>
-  <div class="monthly-price-page">
+  <div class="monthly-price-page price-source-page">
     <el-card>
       <template #header><h2>月度物料核算价</h2><p>查看核算时自动采用的月价。后续来源更新不会改变本月已采用的价格与计价口径。</p></template>
       <el-form inline @submit.prevent="search" aria-label="月价筛选">
         <el-form-item label="核算月份"><el-date-picker v-model="filter.month" type="month" value-format="YYYY-MM" placeholder="选择核算月份" style="width:150px" /></el-form-item>
         <el-form-item label="料号"><el-input v-model="filter.materialCode" placeholder="精确料号，保留前导零" clearable @keyup.enter="search" /></el-form-item>
+        <el-form-item label="型号"><el-input v-model="filter.model" placeholder="输入型号，支持部分匹配" clearable @keyup.enter="search" @clear="search" /></el-form-item>
         <el-form-item label="适用组织"><el-select v-model="filter.organization" clearable placeholder="全部组织" style="width:150px"><el-option label="210 商用" value="210" /><el-option label="220 板换" value="220" /></el-select></el-form-item>
         <el-form-item label="计价类型"><el-select v-model="filter.pricingType" clearable placeholder="全部类型" style="width:150px"><el-option label="普通物料" value="NORMAL" /><el-option label="家用询价" value="HOUSEHOLD_INQUIRY" /></el-select></el-form-item>
         <el-button type="primary" native-type="submit">查询</el-button><el-button @click="list.load(filter)">刷新月价</el-button>
@@ -64,6 +65,7 @@
   </div>
 </template>
 <script setup>
+import '../styles/priceSources.css'
 import { computed, reactive, ref, watch, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '../store/modules/user'
@@ -85,7 +87,7 @@ const now = new Date(), defaultMonth = `${now.getFullYear()}-${String(now.getMon
 const filter = reactive(monthlyFilter(route.query, defaultMonth)), referencePage = ref(1), sourceOpen = ref(false)
 const selectedId = computed(() => /^[1-9]\d*$/.test(String(route.query.id || '')) ? String(route.query.id) : '')
 const selected = computed(() => detail.state.data?.price), origin = computed(() => detail.state.data?.firstUse?.origin || {})
-const fields = [{ key: 'specification', label: '规格', placeholder: '精确规格' }, { key: 'unit', label: '计价单位', placeholder: '如：件' }, { key: 'currency', label: '币种', placeholder: '如：CNY' }, { key: 'supplier', label: '指定供应商条件', placeholder: '供应商编码' }]
+const fields = [{ key: 'specification', label: '精确规格', placeholder: '完整规格' }, { key: 'unit', label: '计价单位', placeholder: '如：件' }, { key: 'currency', label: '币种', placeholder: '如：CNY' }, { key: 'supplier', label: '指定供应商条件', placeholder: '供应商编码' }]
 watch([() => route.fullPath, scope, canList], () => { Object.assign(filter, monthlyFilter(route.query, defaultMonth)); list.load(filter) }, { immediate: true })
 watch([selectedId, scope, canQuery, canReferences], () => {
   detail.clear(); references.clear(); source.clear(); sourceOpen.value = false; referencePage.value = 1

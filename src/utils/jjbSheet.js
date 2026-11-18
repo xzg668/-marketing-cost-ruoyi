@@ -48,6 +48,8 @@ export function sheetRowCells(row, group, index) {
   }
   const grossSource = row.manufacturing?.length === 1 ? row.manufacturing[0].grossWeightSource : null
   if (row.grossWeight != null && grossSource) cells[7].value = `${row.grossWeight}（${grossSource}）`
+  if (row.settlementCopperWeightG != null) cells[8].value =
+    [row.netWeight, `${row.settlementCopperWeightG} g`, '（家用结算Cu重）'].filter(value => value != null && value !== '').join('\n')
   if (row.kind === 'HOUSEHOLD') cells[13].value = row.priceSource || '询价（家用部件）'
   if (['LOSS', 'MANUFACTURE'].includes(row.code)) {
     cells[3].value = ratePercent(row.rate); cells[3].key = 'rate'

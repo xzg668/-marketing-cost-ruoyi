@@ -1,5 +1,5 @@
 <template>
-  <div class="scrap-page">
+  <div class="scrap-page price-source-page">
     <el-card shadow="never">
       <div class="page-heading">
         <h2>废料价格</h2>
@@ -13,6 +13,7 @@
         <el-form-item label="料号 / 名称">
           <el-input v-model="filters.keyword" clearable placeholder="输入料号或名称" style="width: 190px" @keyup.enter="search" />
         </el-form-item>
+        <el-form-item label="型号"><el-input v-model="filters.model" placeholder="输入型号，支持部分匹配" clearable @keyup.enter="search" @clear="search" /></el-form-item>
         <el-form-item label="类型">
           <el-select v-model="filters.priceType" clearable placeholder="全部" style="width: 110px" @change="search">
             <el-option label="固定价" value="FIXED" /><el-option label="联动价" value="LINKED" />
@@ -57,6 +58,7 @@
 </template>
 
 <script setup>
+import '../styles/priceSources.css'
 import WorkbookActions from '../components/WorkbookActions.vue'
 import { onMounted, onBeforeUnmount, reactive, ref } from 'vue'
 import { fetchScrapPrices, fetchScrapPrice } from '../api/scrapPrices'
@@ -66,7 +68,7 @@ import ScrapPriceEditDialog from '../components/scrap/ScrapPriceEditDialog.vue'
 import ScrapPriceDetailDrawer from '../components/scrap/ScrapPriceDetailDrawer.vue'
 import { calcStatusLabel, currentPriceMonth, displayPrice, typeLabel } from './scrapPriceUtils.js'
 
-const filters = reactive({ priceMonth: currentPriceMonth(), keyword: '', priceType: '', supplier: '' })
+const filters = reactive({ priceMonth: currentPriceMonth(), keyword: '', model: '', priceType: '', supplier: '' })
 const rows = ref([]), total = ref(0), page = ref(1), size = ref(20), loading = ref(false), error = ref('')
 const importVisible = ref(false), editVisible = ref(false), detailVisible = ref(false), selected = ref(null), opening = ref(false)
 let sequence = 0
@@ -84,7 +86,7 @@ async function load() {
   }
 }
 function search() { page.value = 1; load() }
-function reset() { Object.assign(filters, { keyword: '', priceType: '', supplier: '' }); search() }
+function reset() { Object.assign(filters, { keyword: '', model: '', priceType: '', supplier: '' }); search() }
 function changePage(value) { page.value = value; load() }
 function changeSize(value) { size.value = value; search() }
 function imported(month) { filters.priceMonth = month; reset() }

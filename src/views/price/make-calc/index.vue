@@ -66,6 +66,7 @@
         <el-form-item label="制造件料号">
           <el-input v-model="filters.parentMaterialNo" clearable placeholder="制造件料号" />
         </el-form-item>
+        <el-form-item label="型号"><el-input v-model="filters.model" placeholder="输入型号，支持部分匹配" clearable @keyup.enter="applyFilters" @clear="applyFilters" /></el-form-item>
         <el-form-item label="只看异常">
           <el-switch v-model="filters.onlyError" @change="handleOnlyErrorChange" />
         </el-form-item>
@@ -280,24 +281,7 @@
       <MakePartPriceGroupDetails v-if="groupVisible && selectedGroup" :key="selectedGroup.id" :group-id="selectedGroup.id" :initial-tab="groupTab" @trace="openTrace" />
     </el-dialog>
 
-    <el-drawer v-model="traceDrawerVisible" title="计算追溯" size="640px">
-      <section v-if="traceRow" class="trace-panel">
-        <div class="trace-head">
-          <h2>{{ traceRow.parentMaterialNo || '-' }}</h2>
-          <el-tag :type="statusTagType(traceRow.status)">{{ statusLabel(traceRow.status) }}</el-tag>
-        </div>
-        <div class="trace-grid">
-          <div><span>批次</span><strong>{{ traceRow.calcBatchId || '-' }}</strong></div>
-          <div><span>原材料价</span><strong>{{ formatMoney(traceRow.rawUnitPrice) }}</strong></div>
-          <div><span>回收单价</span><strong>{{ formatMoney(traceRow.scrapUnitPrice) }}</strong></div>
-          <div><span>本行成本</span><strong>{{ formatMoney(traceRow.costPrice) }}</strong></div>
-          <div><span>零件价格</span><strong>{{ formatMoney(traceRow.parentTotalCostPrice) }}</strong></div>
-          <div><span>创建时间</span><strong>{{ traceRow.createdAt || '-' }}</strong></div>
-        </div>
-        <!-- 重量字段由后端统一按 g 返回；涉及元/kg 的公式已在后端计算时转 kg。 -->
-        <pre class="trace-text">{{ traceText }}</pre>
-      </section>
-    </el-drawer>
+    <MakePartPriceTraceDrawer v-model="traceDrawerVisible" :row-id="traceRowId" />
   </div>
 </template>
 
@@ -316,11 +300,11 @@ import {
 } from '@element-plus/icons-vue'
 import BasePagination from '../../../components/BasePagination.vue'
 import MakePartPriceGroupDetails from '../../../components/MakePartPriceGroupDetails.vue'
+import MakePartPriceTraceDrawer from '../../../components/MakePartPriceTraceDrawer.vue'
 import {
   MAKE_PART_PROCESS_TYPE_OPTIONS,
   MAKE_PART_STATUS_OPTIONS,
   exportMakePartPriceCalc,
-  fetchMakePartPriceCalcDetail,
   fetchMakePartPriceGroupPage,
   normalizeMakePartPriceGroups,
   exportMakePartPriceGroups,
@@ -336,6 +320,7 @@ const filters = reactive({
   oaNo: '',
   businessUnitType: '',
   parentMaterialNo: '',
+  model: '',
   childMaterialNo: '',
   scrapCode: '',
   itemProcessType: '',
@@ -372,7 +357,7 @@ const generateForm = reactive({
 const groupVisible = ref(false), selectedGroup = ref(null), groupTab = ref('materials')
 const openGroup = (row, tab) => { selectedGroup.value = row; groupTab.value = tab; groupVisible.value = true }
 const traceDrawerVisible = ref(false)
-const traceRow = ref(null)
+const traceRowId = ref(null)
 
 const statusOptionMap = computed(() =>
   Object.fromEntries(MAKE_PART_STATUS_OPTIONS.map((item) => [item.value, item]))
@@ -405,22 +390,6 @@ const currentMonthText = () => {
   const month = `${date.getMonth() + 1}`.padStart(2, '0')
   return `${date.getFullYear()}-${month}`
 }
-
-const traceText = computed(() => {
-  if (!traceRow.value) return ''
-  const row = traceRow.value
-  const materialPriceUnit = ['RAW', '原材料加工'].includes(row.itemProcessType) ? '元/千克'
-    : ['BLANK', '毛坯加工'].includes(row.itemProcessType) ? '元/件' : '（单位待核实）'
-  const lines = [row.displayReason || '请核对本次计算资料',
-    `制造件：${row.parentMaterialNo || '未记录'}；材料：${row.childMaterialNo || '未记录'}`,
-    `毛重：${row.grossWeightG == null ? '未取得' : grossWeightWithSource(row.grossWeightG, manufacturingGrossWeightSource(row)) + ' 克'}`,
-    `净重：${row.netWeightG == null ? '未取得' : row.netWeightG + ' 克'}`,
-    `材料单价：${row.rawUnitPrice == null ? '未取得' : row.rawUnitPrice + ' ' + materialPriceUnit}`,
-    `废料 ${row.scrapCode || '未记录'} 回收单价：${row.scrapUnitPrice == null ? '未取得' : row.scrapUnitPrice + ' 元/千克'}`]
-  if (row.remark?.includes('净重按U9副产品反算')) lines.push('净重依据：毛重扣除U9中匹配的废料产出重量。')
-  else if (row.remark?.includes('净重取 parent 理论净重')) lines.push('净重依据：使用制造件档案的理论净重。')
-  return lines.join('\n')
-})
 
 const buildParams = () => ({
   ...filters,
@@ -493,6 +462,7 @@ const resetFilters = async () => {
     oaNo: '',
     businessUnitType: '',
     parentMaterialNo: '',
+    model: '',
     childMaterialNo: '',
     scrapCode: '',
     itemProcessType: '',
@@ -602,17 +572,9 @@ const exportRows = async () => {
   }
 }
 
-let traceRequestId = 0
-const openTrace = async (row) => {
-  const requestId = ++traceRequestId
+const openTrace = (row) => {
+  traceRowId.value = row.id
   traceDrawerVisible.value = true
-  traceRow.value = row
-  try {
-    const detail = await fetchMakePartPriceCalcDetail(row.id)
-    if (requestId === traceRequestId) traceRow.value = detail
-  } catch (error) {
-    if (requestId === traceRequestId) ElMessage.error(error?.message || '读取计算追溯失败')
-  }
 }
 
 const statusLabel = (status) => statusOptionMap.value[status]?.label || status || 'UNKNOWN'
@@ -658,7 +620,7 @@ watch([currentPage, pageSize], fetchRows)
 watch([gapCurrentPage, gapPageSize], fetchGapRows)
 
 onMounted(refreshLatest)
-onBeforeUnmount(() => { rowsRequestId++; traceRequestId++ })
+onBeforeUnmount(() => { rowsRequestId++ })
 </script>
 
 <style scoped>
@@ -778,68 +740,6 @@ onBeforeUnmount(() => { rowsRequestId++; traceRequestId++ })
   width: 100%;
 }
 
-.trace-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.trace-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.trace-head h2 {
-  margin: 0;
-  font-size: 18px;
-  letter-spacing: 0;
-}
-
-.trace-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.trace-grid div {
-  min-width: 0;
-  padding: 10px;
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
-  background: #f8fafc;
-}
-
-.trace-grid span {
-  display: block;
-  color: #6b7280;
-  font-size: 12px;
-}
-
-.trace-grid strong {
-  display: block;
-  margin-top: 4px;
-  overflow-wrap: anywhere;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.trace-text {
-  min-height: 220px;
-  margin: 0;
-  padding: 12px;
-  overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  background: #111827;
-  color: #f9fafb;
-  font-size: 13px;
-  line-height: 1.6;
-}
-
 @media (max-width: 900px) {
   .make-calc-page {
     padding: 12px;
@@ -866,8 +766,5 @@ onBeforeUnmount(() => { rowsRequestId++; traceRequestId++ })
     width: 100%;
   }
 
-  .trace-grid {
-    grid-template-columns: 1fr;
-  }
 }
 </style>

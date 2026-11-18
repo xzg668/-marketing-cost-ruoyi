@@ -76,7 +76,7 @@ test('received drawing details are present while manufacturing inputs remain a s
 test('drawing absence is distinct from source errors, unknown state and U9 not requiring a drawing', () => {
   const drawing = { moduleType: 'DRAWING_BOM', moduleStatus: 'PENDING', required: true,
     sourceAvailability: 'MISSING', requirementReasonCode: 'U9_ORIGINAL_NOT_FOUND' }
-  assert.equal(technicalModuleSummary({ modules: [drawing] }, 'DRAWING_BOM'), '尚无电子图库明细表')
+  assert.equal(technicalModuleSummary({ modules: [drawing] }, 'DRAWING_BOM'), 'BOM资料待处理，查看当前来源')
   for (const [sourceAvailability, label] of [['ERROR', '检查失败'], ['UNCONFIRMED', '待检查']]) {
     const data = { modules: [{ ...drawing, sourceAvailability, requirementReason: '图库查询待核实' }] }
     assert.equal(modulePresentation(data, 'DRAWING_BOM').label, label)

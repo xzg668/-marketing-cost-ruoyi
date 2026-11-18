@@ -34,6 +34,7 @@
         <el-form-item label="包装父料号">
           <el-input v-model="activeFilters.packageMaterialCode" clearable placeholder="9830000026238" />
         </el-form-item>
+        <el-form-item label="型号"><el-input v-model="activeFilters.model" placeholder="输入型号，支持部分匹配" clearable @keyup.enter="applyFilters" @clear="applyFilters" /></el-form-item>
         <el-form-item v-if="activeTab === 'prices'" label="顶层产品">
           <el-input v-model="priceFilters.topProductCode" clearable placeholder="参考/顶层料号" />
         </el-form-item>
@@ -432,18 +433,18 @@ const canViewGaps = computed(() => hasPermission('price:package-component:gaps')
 
 const priceFilters = reactive({
   periodMonth: '',
-  packageMaterialCode: '',
+  packageMaterialCode: '', model: '',
   topProductCode: '',
   priceStatus: '',
 })
 const snapshotFilters = reactive({
   periodMonth: '',
-  packageMaterialCode: '',
+  packageMaterialCode: '', model: '',
   status: '',
 })
 const gapFilters = reactive({
   periodMonth: '',
-  packageMaterialCode: '',
+  packageMaterialCode: '', model: '',
   gapType: '',
   oaPushStatus: '',
 })
@@ -588,13 +589,13 @@ const applyFilters = async () => {
 
 const resetFilters = async () => {
   if (activeTab.value === 'snapshots') {
-    Object.assign(snapshotFilters, { periodMonth: '', packageMaterialCode: '', status: '' })
+    Object.assign(snapshotFilters, { periodMonth: '', packageMaterialCode: '', model: '', status: '' })
     snapshotPage.value = 1
   } else if (activeTab.value === 'gaps') {
-    Object.assign(gapFilters, { periodMonth: '', packageMaterialCode: '', gapType: '', oaPushStatus: '' })
+    Object.assign(gapFilters, { periodMonth: '', packageMaterialCode: '', model: '', gapType: '', oaPushStatus: '' })
     gapPage.value = 1
   } else {
-    Object.assign(priceFilters, { periodMonth: '', packageMaterialCode: '', topProductCode: '', priceStatus: '' })
+    Object.assign(priceFilters, { periodMonth: '', packageMaterialCode: '', model: '', topProductCode: '', priceStatus: '' })
     pricePage.value = 1
   }
   await fetchActiveRows()

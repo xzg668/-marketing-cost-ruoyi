@@ -102,7 +102,7 @@ export function technicalModuleSummary(product, code) {
   })[module.requirementReasonCode] || '本次无需补录'
   const count = module.itemCount > 0 ? ` ${module.itemCount} 项` : ''
   const plateSummary = plateMaterialSummary(product?.profile?.plateMaterial)
-  return ({ PROFILE: ['产品属性与单件费用', plateSummary].filter(Boolean).join(' · '), DRAWING_BOM: '尚无电子图库明细表',
+  return ({ PROFILE: ['产品属性与单件费用', plateSummary].filter(Boolean).join(' · '), DRAWING_BOM: 'BOM资料待处理，查看当前来源',
     MANUFACTURING: `制造件${count} · 原材料、净长、毛重`, PACKAGE: `包装子件${count} · 母件底数、子件用量`,
     AUXILIARY: `辅料明细${count} · 参考 / 上传`, SOLDER: `焊料${count} · 单件用量`,
     SALARY: '直接人工 / 辅助人员工资', NET_LOSS: '参考产品 / 填写费率', PRICE: `价格${count} · 公式 / 固定价` })[code] || moduleName(code)

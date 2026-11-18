@@ -2283,12 +2283,12 @@ async function loadPriceType(showError = true) {
 }
 
 // 补价返回、供货比率导入和人工确认共用此入口；普通查询、刷新不触发核算。
-async function completePriceSourceMaintenance(result) {
+async function completePriceSourceMaintenance(result, continueCosting = true) {
   if (historyViewMode.value || costRunActionLoading.value
     || result?.oaNo !== oaNo.value || String(result?.oaFormItemId) !== itemId.value
     || result?.periodMonth !== workbench.value.periodMonth) return
   pricePrepare.value = result
-  if (result.readiness?.status === 'READY') {
+  if (continueCosting && result.readiness?.status === 'READY') {
     await submitProductCosting()
     return
   }

@@ -39,7 +39,7 @@ export function monthlyCondition(domain) {
 }
 export function monthlyFilter(query, defaultMonth) {
   const result = {}
-  for (const key of ['materialCode', 'organization', 'pricingType', 'specification', 'unit', 'currency', 'taxBasis', 'supplier']) result[key] = typeof query[key] === 'string' ? query[key] : ''
+  for (const key of ['model', 'materialCode', 'organization', 'pricingType', 'specification', 'unit', 'currency', 'taxBasis', 'supplier']) result[key] = typeof query[key] === 'string' ? query[key] : ''
   result.month = typeof query.month === 'string' ? query.month : defaultMonth
   for (const [key, fallback, max] of [['page', 1, 1000000], ['size', 20, 100]]) {
     const n = Number(query[key]); result[key] = Number.isInteger(n) && n >= 1 && n <= max ? n : fallback

@@ -9,9 +9,9 @@
 import { request } from './http'
 
 /**
- * 按顶层料号查询 EasyData 已准备好的嵌套树。
+ * 按顶层产品或自制件料号查询现有 BOM 树/子树。
  *
- * @param {string} topProductCode 顶层产品料号
+ * @param {string} topProductCode 查询料号（沿用现有接口参数名）
  * @param {object} query { bomPurpose?, asOfDate?(YYYY-MM-DD), sourceType?='U9' }
  */
 export const getBomHierarchy = (topProductCode, query = {}) =>

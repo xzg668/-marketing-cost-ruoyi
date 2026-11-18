@@ -37,3 +37,8 @@ for(const [kind,definition] of Object.entries(definitions)) {
  XLSX.writeFile(book,path.join(target,kind+'-filled.xlsx'))
 }
 console.log('Generated blank templates and '+Object.keys(cases).length+' filled fixtures in '+target)
+XLSX.writeFile(createWorkbook(XLSX, definitions.supplier, [
+ {...cases.supplier, supplyRatio:0},
+ {...cases.supplier, supplierCode:'S002', supplierName:'供应商2', supplyRatio:null, selectionRule:'无供货比率，取最高价'},
+ {...cases.supplier, supplierCode:'S003', supplierName:'供应商3', supplyRatio:.000001},
+]),path.join(target,'supplier-data.xlsx'))

@@ -1,7 +1,7 @@
 import { sourceColumns } from './workbookSourceColumns.js'
 const c = (field, label, type = 'text', help = '', example = '') => ({ field, label, type, help, example })
 const columns = entries => entries.map(entry => c(...entry))
-const define = (title, sheet, entries, notes = []) => ({ title, sheet, columns: columns(entries), notes })
+const define = (title, sheet, entries, notes = [], purpose = '') => ({ title, sheet, columns: columns(entries), notes, purpose })
 const formula = (sheet, address, expression) => { sheet[address] = { t: 'n', f: expression, v: 0, z: '0.############' } }
 
 export const workbookDefinitions = {
@@ -34,11 +34,17 @@ export const workbookDefinitions = {
     ['productCode','料号'],['productName','品名'],['productSpec','规格'],['productModel','型号'],
     ['productAttr','产品属性','text','标准品、非标品、定制品或OEM'],['businessDivision','生产事业部'],
   ], ['导入年度和增量／全量方式在页面选择，原规则保持。']),
-  supplier: define('供应商供货比例', '供货比例', [
+  supplier: define('供应商供货比例', '供货比率', [
     ['materialCode','物料代码'],['materialName','物料名称'],['specification','规格'],['specModel','型号'],['unit','单位'],
-    ['materialShape','物料形态属性'],['supplierName','供应商'],['supplierCode','供应商代码'],
-    ['supplyRatio','供货比例','percent','20%表示二成；0%表示退出，空白表示未填写','20%'],['selectionRule','取价规则','text','可填写“无供货比率，取最高价”'],
-  ], ['按料号整组更新：导入同一料号时请保留该料号完整供应商集合。文件未出现的料号保持原值。']),
+    ['materialShape','物料形态属性'],['supplierCode','供应商代码'],['supplierName','供应商名称'],
+    ['supplyRatio','供货比例','percent','20%表示二成；0%表示退出，空白表示未填写','20%'],
+    ['explanation','说明','text','仅供核对，不参与导入'],['selectionRule','取价规则','text','可填写“无供货比率，取最高价”'],
+  ], [
+    '按料号整组更新：导入同一料号时请保留该料号完整供应商集合。文件未出现的料号保持原值。',
+    '供货比例填写实际百分比，如20%；0%表示退出供货，空白表示未填写。',
+    '没有供货比率时，可在“供货比例”或“取价规则”列填写“无供货比率，取最高价”。',
+    '规格与型号分别填写，型号未维护时留空；说明列仅供核对，不参与导入。',
+  ], '在第一个工作表填写实际数据后保存，再通过供货比率页面导入。'),
   plate: define('板片材质映射', '提供财务', [['_sequence','序号'],['normalizedModel','产品型号'],['plateMaterial','产品应用材质','text','按原导入器支持的材质填写']],
     ['保留“提供财务”工作表及第2行B/C列表头。']),
   invoice: define('发票价格', '发票价格', [

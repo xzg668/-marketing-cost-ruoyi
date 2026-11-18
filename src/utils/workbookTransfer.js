@@ -63,7 +63,7 @@ export function createWorkbook(XLSX, definition, rows, template = false) {
   if (template && definition.customizeTemplate) definition.customizeTemplate(book, XLSX)
   const instructions = [
     ['说明', definition.title],
-    ['用途', template ? '在第一个工作表填写实际数据后保存，再通过对应页面导入。' : '本文件包含当前筛选范围的系统数据；导入仍按原业务规则校验。'],
+    ['用途', definition.purpose || (template ? '在第一个工作表填写实际数据后保存，再通过对应页面导入。' : '本文件包含当前筛选范围的系统数据；导入仍按原业务规则校验。')],
     ['编码', '料号、型号、供应商编码按文本保存，请保留前导零。'],
     ...(definition.notes || []).map(note => ['填写要求', note]),
     ['字段', '填写说明', '示例（仅供参考）'],

@@ -99,3 +99,6 @@ async function exportFile(endpoint, params) {
     fileName: encodedName ? decodeURIComponent(encodedName) : `制造件价格生成_${Date.now()}.xlsx`,
   }
 }
+
+export const fetchMakePartPriceTrace = (id) => request(`${BASE_URL}/${id}/trace`)
+export const trialMakePartPrice = (id, body) => request(`${BASE_URL}/${id}/trial`, { method: 'POST', body })

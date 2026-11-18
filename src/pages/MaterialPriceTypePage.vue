@@ -1,5 +1,5 @@
 <template>
-  <div class="base-page">
+  <div class="base-page price-source-page">
     <MaterialSpecialPricePanel />
     <el-card shadow="never">
       <div class="page-heading">
@@ -16,6 +16,7 @@
         <el-form-item label="料号">
           <el-input v-model="filters.materialCode" placeholder="输入料号" clearable />
         </el-form-item>
+        <el-form-item label="型号"><el-input v-model="filters.model" placeholder="输入型号，支持部分匹配" clearable @keyup.enter="applyFilters" @clear="applyFilters" /></el-form-item>
         <el-form-item>
           <el-button type="primary" native-type="submit">查询</el-button>
           <el-button @click="resetFilters">重置</el-button>
@@ -86,6 +87,7 @@
 </template>
 
 <script setup>
+import '../styles/priceSources.css'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -102,7 +104,7 @@ const canEdit = computed(() => user.permissions.includes('*:*:*') || user.permis
 const returnTarget = computed(() => String(route.query.returnTo || ''))
 const returnToWorkbenchVisible = computed(() => returnTarget.value.startsWith('/') && !returnTarget.value.startsWith('//'))
 const returnToWorkbench = () => { if (returnToWorkbenchVisible.value) router.push(returnTarget.value) }
-const defaultFilters = () => ({ period: businessPricingMonth(), priceOrgCode: '', materialCode: '' })
+const defaultFilters = () => ({ period: businessPricingMonth(), priceOrgCode: '', materialCode: '', model: '' })
 const filters = ref(defaultFilters())
 const tableRows = ref([])
 const total = ref(0)
@@ -143,7 +145,7 @@ async function fetchList() {
     const data = await fetchMaterialPriceTypes({
       period: filters.value.period,
       priceOrgCode: filters.value.priceOrgCode.trim(),
-      materialCode: filters.value.materialCode.trim(),
+      materialCode: filters.value.materialCode.trim(), model: filters.value.model.trim(),
       page: currentPage.value,
       pageSize: pageSize.value,
     })

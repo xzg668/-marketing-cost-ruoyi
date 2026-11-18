@@ -7,6 +7,7 @@
         :loading="exporting" :disabled="readonly" @click="exportRatios">导出供货比率补齐表</el-button>
     </div>
     <p class="supplier-review__help">导出包含各物料的完整供应商集合及已有比率，补齐后可到供货比率表导入；型号未维护时留空。</p>
+    <el-alert v-if="confirmationNotice" :title="confirmationNotice" type="warning" show-icon :closable="false" />
     <el-table :data="tableRows" border>
       <el-table-column label="物料代码" min-width="170">
         <template #default="{ row }">{{ row.scope.materialCode }}</template>
@@ -30,7 +31,7 @@
         </template>
       </el-table-column>
     </el-table>
-    <p v-if="reviews.some(row => row.status === 'FALLBACK_HIGH')" class="supplier-review__note">已按最高价取价，请关注成本偏高风险。</p>
+    <p v-if="tableRows.some(row => row.status === 'FALLBACK_HIGH')" class="supplier-review__note">已确认按最高价取价，请关注成本偏高风险。</p>
 
     <el-dialog v-model="confirmVisible" title="供货比率新增审核" width="720px" :close-on-click-modal="false">
       <template v-if="selected">
@@ -86,14 +87,25 @@ const importVisible = ref(false)
 const saving = ref(false)
 const refreshing = ref(false)
 const exporting = ref(false)
+const confirmedReviews = ref([])
+const confirmationNotice = ref('')
 const tableRows = computed(() => {
   const materials = new Map(props.materials.map(material => [material.scopeKey, material]))
-  return props.reviews.map(review => ({ ...review, ...materials.get(review.scopeKey) }))
+  return props.reviews.map(review => {
+    const confirmed = confirmedReviews.value.find(saved => saved.scopeKey === review.scopeKey
+      && saved.fingerprint === review.fingerprint)
+    return { ...review, ...materials.get(review.scopeKey), ...(confirmed ? {
+      status: confirmed.decision,
+      message: confirmed.decision === 'FALLBACK_HIGH' ? '已确认按最高价取价' : '已确认新增审核，等待导入供货比率',
+    } : {}) }
+  })
 })
 let exportController
 let timer
 let disposed = false
 let importStartedAt = 0
+let confirmationGeneration = 0
+const currentScope = () => JSON.stringify([props.oaNo, String(props.itemId), props.periodMonth])
 
 async function exportRatios() {
   const scope = JSON.stringify([props.oaNo, String(props.itemId), props.periodMonth])
@@ -115,29 +127,51 @@ async function exportRatios() {
 }
 
 function openReview(row) {
+  if (props.readonly || saving.value) return
   selected.value = row
   choice.value = null
   confirmVisible.value = true
 }
 
 async function confirm() {
+  if (props.readonly || saving.value || !selected.value || choice.value === null) return
+  const scope = currentScope()
+  const generation = confirmationGeneration
+  const review = selected.value
+  const hasNewApproval = choice.value
+  const isCurrent = () => !disposed && !props.readonly
+    && generation === confirmationGeneration && scope === currentScope()
   saving.value = true
   try {
     const result = await confirmSupplierPriceReview(props.oaNo, props.itemId, {
       periodMonth: props.periodMonth,
-      scopeKey: selected.value.scopeKey,
-      fingerprint: selected.value.fingerprint,
-      hasNewApproval: choice.value,
-      pricingDate: selected.value.scope.pricingDate,
+      scopeKey: review.scopeKey,
+      fingerprint: review.fingerprint,
+      hasNewApproval,
+      pricingDate: review.scope.pricingDate,
     })
-    emit('updated', result)
+    if (!isCurrent()) return
+    if (!result?.decisionId || !['FALLBACK_HIGH', 'WAIT_IMPORT'].includes(result.decision)) {
+      throw new Error('确认结果暂未取得，请刷新后核对已保存的选择')
+    }
+    confirmedReviews.value = [
+      ...confirmedReviews.value.filter(saved => saved.scopeKey !== review.scopeKey),
+      { scopeKey: review.scopeKey, fingerprint: review.fingerprint, decision: result.decision },
+    ]
     confirmVisible.value = false
-    if (choice.value) importVisible.value = true
-    else ElMessage.success('已按最高价取价')
+    confirmationNotice.value = result.repriceStatus === 'COMPLETED' ? '' : result.message
+    if (result.repriceStatus === 'COMPLETED' && result.workbench) {
+      emit('updated', result.workbench)
+      ElMessage.success(result.message)
+    } else {
+      if (result.workbench) emit('updated', result.workbench, false)
+      ElMessage.warning(result.message)
+    }
+    if (hasNewApproval) importVisible.value = true
   } catch (error) {
-    ElMessage.error(error.message || '确认失败，请重试')
+    if (isCurrent() && !error.userNotified) ElMessage.error(error.message || '确认失败，请重试')
   } finally {
-    saving.value = false
+    if (generation === confirmationGeneration) saving.value = false
   }
 }
 
@@ -149,7 +183,7 @@ function onImported() {
 
 function schedulePoll(delay = 3000) {
   clearTimeout(timer)
-  if (!disposed && !props.readonly && props.reviews.some(row => row.status === 'WAIT_IMPORT')) {
+  if (!disposed && !props.readonly && tableRows.value.some(row => row.status === 'WAIT_IMPORT')) {
     timer = setTimeout(poll, delay)
   }
 }
@@ -183,6 +217,15 @@ async function poll() {
   }
 }
 
+watch(currentScope, () => {
+  confirmationGeneration++
+  confirmedReviews.value = []
+  confirmationNotice.value = ''
+  selected.value = null
+  confirmVisible.value = false
+  importVisible.value = false
+  saving.value = false
+})
 watch(() => props.reviews, () => schedulePoll(), { immediate: true })
 onUnmounted(() => { disposed = true; clearTimeout(timer); exportController?.abort() })
 </script>

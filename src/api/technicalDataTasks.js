@@ -4,6 +4,9 @@ import { technicalProfilePayload } from '../utils/technicalDataPlateMaterial'
 
 const id = (value) => encodeURIComponent(String(value))
 
+export const fetchQuoteBomPreviewSource = (itemId, accountingMonth) =>
+  request(`/api/v2/technical-data/quote-items/${id(itemId)}/bom-preview/source`, { params: { accountingMonth }, suppressErrorToast: true })
+
 export const searchQuoteBomPreviewReferences = (itemId, accountingMonth, keyword) =>
   request(`/api/v2/technical-data/quote-items/${id(itemId)}/bom-preview/references`, { params: { accountingMonth, keyword }, suppressErrorToast: true })
 export const fetchQuoteBomPreviewReference = (itemId, accountingMonth, code) =>
