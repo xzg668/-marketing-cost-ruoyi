@@ -43,6 +43,19 @@ test('all blank templates have help and no fabricated material or supplier ident
   cols.forEach((c,index)=>{if(/materialCode|supplierCode|productCode/.test(String(c.field)))assert.ok(!s[XLSX.utils.encode_cell({r,c:index})]?.v,definition.title)})
  }
 })
+test('product property workbook includes each row year and annual usage in ten thousands', () => {
+ const data = [
+  {productCode:'000101',productName:'产品',productAttr:'非标品',propertyYear:2026,estimatedAnnualUsageWan:10},
+  {productCode:'000102',productName:'产品',productAttr:'非标品',propertyYear:2026,estimatedAnnualUsageWan:0},
+ ]
+ const book = roundtrip(createWorkbook(XLSX,definitions.property,data))
+ const sheet = book.Sheets.产品属性
+ const headers = ['料号','品名','规格','型号','产品属性','生产事业部','年度','预计年用量（万只）']
+ assert.deepEqual(rows(book)[0],[...headers,'上浮比例','系数'])
+ assert.equal(sheet.A2.v,'000101');assert.equal(sheet.G2.v,2026)
+ assert.equal(sheet.H2.v,10);assert.equal(sheet.H3.v,0)
+ assert.deepEqual(rows(roundtrip(createWorkbook(XLSX,definitions.property,[],true)))[0],headers)
+})
 test('manufacture and department filled templates use the current import parsers',()=>{
  const m=parseManufactureRateRows(rows(fill('manufacture',{businessDivision:'商用',productCode:'001',feeRate:.1})),{rateYear:2026})
  assert.equal(m.error,null);assert.equal(m.rows[0].feeRate,.1);assert.equal(m.rows[0].productCode,'001')

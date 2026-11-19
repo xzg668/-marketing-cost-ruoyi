@@ -33,7 +33,9 @@ export const workbookDefinitions = {
   property: define('产品属性', '产品属性', [
     ['productCode','料号'],['productName','品名'],['productSpec','规格'],['productModel','型号'],
     ['productAttr','产品属性','text','标准品、非标品、定制品或OEM'],['businessDivision','生产事业部'],
-  ], ['导入年度和增量／全量方式在页面选择，原规则保持。']),
+    ['propertyYear','年度','number','填写与页面所选导入年度一致的年份','2026'],
+    ['estimatedAnnualUsageWan','预计年用量（万只）','number','填10表示10万只；留空表示未填写；支持最多6位小数','10'],
+  ], ['修改已导出的数据时选择增量导入，按当前业务单元、年度和料号更新。']),
   supplier: define('供应商供货比例', '供货比率', [
     ['materialCode','物料代码'],['materialName','物料名称'],['specification','规格'],['specModel','型号'],['unit','单位'],
     ['materialShape','物料形态属性'],['supplierCode','供应商代码'],['supplierName','供应商名称'],
@@ -224,7 +226,7 @@ workbookDefinitions.linked.columns.push(...columns([
 workbookDefinitions.household.columns = workbookDefinitions.household.columns.filter(column => !['copperWeight','zincWeight'].includes(column.field))
 
 for (const [kind, entries] of [
-  ['property',[['propertyYear','年度'],['upliftRate','上浮比例','percent'],['coefficient','系数','number']]],
+  ['property',[['upliftRate','上浮比例','percent'],['coefficient','系数','number']]],
   ['manufacture',[['rateYear','年度'],['businessUnitType','业务单元']]],
   ['department',[['rateYear','年度'],['rateCalculationMode','费率口径']]],
   ['quality',[['rateYear','年度']]],

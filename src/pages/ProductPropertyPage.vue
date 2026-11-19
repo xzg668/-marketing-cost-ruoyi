@@ -4,7 +4,7 @@
       <div class="filter-header">
         <div>
           <div class="filter-title">产品属性对照表</div>
-          <div class="filter-tip">数据以财务业务清单为准，唯一键为年度 + 料号</div>
+          <div class="filter-tip">按当前业务单元、年度和料号维护</div>
         </div>
         <div class="header-actions"><WorkbookActions kind="property" import-permission="base:product-property:import" :fetch-page="fetchProductProperties" :query="buildParams()" />
           <el-button :loading="importing" @click="openImportDialog">导入</el-button></div>
@@ -45,7 +45,7 @@
         <div class="card-header">
           <div>
             <div class="card-title">{{ filters.propertyYear }} 年产品属性上浮规则</div>
-            <div class="filter-tip">系数 = 1 + 上浮比例；规则变更会在重新核算时生效，已冻结结果不会被直接改写</div>
+            <div class="filter-tip">非标品预计年用量达到 10 万只时按标准品核算，系数为 1。其余系数 = 1 + 年度上浮比例。</div>
           </div>
           <el-button type="primary" :loading="savingRules" @click="saveRules">保存规则</el-button>
         </div>
@@ -78,6 +78,9 @@
         <el-table-column prop="productSpec" label="规格" min-width="140" show-overflow-tooltip />
         <el-table-column prop="productModel" label="型号" min-width="140" show-overflow-tooltip />
         <el-table-column prop="productAttr" label="产品属性" width="110" />
+        <el-table-column prop="estimatedAnnualUsageWan" label="预计年用量（万只）" min-width="150" align="right">
+          <template #default="{ row }">{{ row.estimatedAnnualUsageWan ?? '—' }}</template>
+        </el-table-column>
         <el-table-column prop="businessDivision" label="生产事业部" min-width="170" show-overflow-tooltip />
         <el-table-column label="上浮比例" width="110" align="right">
           <template #default="{ row }">{{ formatPercent(row.upliftRate) }}</template>
@@ -102,8 +105,8 @@
 
     <el-dialog v-model="importDialogVisible" title="导入产品属性" width="760px">
       <el-alert type="info" :closable="false" show-icon class="import-help">
-        <template #title>支持原工作簿第二页或单独的 A–E / A–F 工作表</template>
-        A–F 有生产事业部时以 Excel 为准；只有 A–E 或 F 为空时，系统按料号从料品档案匹配生产事业部。
+        <template #title>支持回导系统导出的 Excel，也可使用旧版 A–E / A–F 工作表</template>
+        文件中的年度须与所选导入年度一致。预计年用量按万只填写，留空表示未填写。生产事业部为空时，按料号从料品档案匹配。
       </el-alert>
       <el-form label-width="100px" class="import-form">
         <el-form-item label="导入年度" required>

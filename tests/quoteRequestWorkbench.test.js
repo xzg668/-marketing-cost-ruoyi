@@ -471,7 +471,7 @@ describe('T11 报价单接入页面契约', () => {
     assert.doesNotMatch(detailPageContent, /PREPARE_COSTING|CONTINUE_COSTING|launchQuoteCostingWorkbench/)
     assert.match(detailPageContent, /VIEW_COSTING_RESULT'[\s\S]*openCostResultHistory/)
     assert.match(detailPageContent, /fetchQuoteCostResultHistory/)
-    assert.match(detailPageContent, /原报价结果、月度调价结果分别保存/)
+    assert.match(detailPageContent, /默认查看最近保存的报价成本/)
     assert.match(detailPageContent, /versionId: selected\.versionId/)
     assert.match(detailPageContent, /historyResult: 'quote'/)
     assert.match(detailPageContent, /historyResultKind: selected\.resultTypeLabel === '报价重新核算结果'/)

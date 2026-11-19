@@ -278,7 +278,7 @@
         :closable="false"
         show-icon
         class="cost-result-guide"
-        title="原报价结果、月度调价结果分别保存；月度调价不会覆盖原报价，当前重新核算也不在这里冒充历史结果。"
+        title="默认查看最近保存的报价成本。原报价、重新核算和月度调价结果均可从列表查看。"
       />
       <div v-loading="costResultDialog.loading" class="cost-result-layout">
         <el-table
@@ -286,6 +286,7 @@
           border
           highlight-current-row
           row-key="historyKey"
+          :current-row-key="costResultDialog.selected?.historyKey"
           class="cost-result-list"
           @row-click="selectCostResult"
         >
@@ -333,6 +334,9 @@
             <el-descriptions-item label="核算月份">{{ costResultDialog.selected.periodMonth || '-' }}</el-descriptions-item>
             <el-descriptions-item label="结果状态">{{ costResultStatusLabel(costResultDialog.selected.status) }}</el-descriptions-item>
             <el-descriptions-item label="总成本">{{ formatCostAmount(costResultDialog.selected.finalQuoteAmount ?? costResultDialog.selected.totalCost) }}</el-descriptions-item>
+            <el-descriptions-item v-if="costResultDialog.selected.resultType === 'QUOTE_COST'" label="裸品码">
+              {{ costResultBareCode || '—' }}
+            </el-descriptions-item>
             <template v-if="costResultDialog.selected.cuMaterialAdjustment != null">
               <el-descriptions-item label="财务正常成本">{{ formatCostAmount(costResultDialog.selected.totalCost) }}</el-descriptions-item>
               <el-descriptions-item label="材料费差额">{{ formatCostAmount(costResultDialog.selected.cuMaterialAdjustment) }}</el-descriptions-item>
@@ -376,7 +380,7 @@
             type="success"
             :closable="false"
             show-icon
-            title="这是报价核算时保存的结果；点击“查看完整成本表”会按该历史版本打开，不会跳到当前月份。"
+            title="完整成本表按选中的保存版本打开。"
           />
         </template>
       </div>
@@ -419,6 +423,7 @@ import {
   confirmQuoteRequestClassification,
   fetchQuoteFinalSubmission,
   confirmQuoteFinalSubmission,
+  fetchQuoteCostRun,
   fetchQuoteCostResultHistory,
   fetchQuoteMonthlyCostResultDetail,
   fetchCurrentQuoteBatchCostRun,
@@ -536,6 +541,26 @@ const costResultDialog = reactive({
   data: { results: [] },
   selected: null,
   monthlyDetail: { partItems: [], costItems: [] },
+})
+const costResultBareCode = ref('')
+watch(() => [
+  oaNo.value,
+  costResultDialog.visible,
+  costResultDialog.itemId,
+  costResultDialog.selected?.resultType === 'QUOTE_COST' ? costResultDialog.selected.versionId : null,
+], async ([quote, visible, itemId, versionId], _, onCleanup) => {
+  costResultBareCode.value = ''
+  if (!visible || !itemId || !versionId) return
+  let active = true
+  onCleanup(() => { active = false })
+  costResultBareCode.value = '读取中…'
+  try {
+    const result = await fetchQuoteCostRun(quote, itemId, { versionId })
+    if (String(result?.sheet?.identity?.versionId) !== String(versionId)) throw new Error('成本版本不一致')
+    if (active) costResultBareCode.value = result.sheet.header?.bareCode || ''
+  } catch {
+    if (active) costResultBareCode.value = '读取失败'
+  }
 })
 const confirmDialog = reactive({ visible: false, form: { quoteScenario: '', businessUnitType: 'COMMERCIAL' } })
 let electronicDrawingContinuationHandled = false

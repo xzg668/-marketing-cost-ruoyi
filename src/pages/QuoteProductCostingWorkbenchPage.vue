@@ -943,6 +943,7 @@
                     <template #default="{ row }">{{ materialIdentityLabel(row) }}</template>
                   </el-table-column>
                   <el-table-column prop="materialName" label="品名" min-width="160" fixed="left" show-overflow-tooltip />
+                  <el-table-column prop="materialModel" label="型号" min-width="175" show-overflow-tooltip />
                   <el-table-column prop="quantity" label="数量" width="90" align="right" />
                   <el-table-column prop="financeUnitPrice" label="财务单价" width="120" align="right">
                     <template #default="{ row }">{{ formatMoney(row.financeUnitPrice) }}</template>

@@ -14,7 +14,7 @@ export function sheetHeaderRows(sheet) {
     ['OA单号', id.oaNo, null, '报价员', q.quoterName, '申请部门', q.applicantDept, '申请处室', q.applicantOffice, '不锈钢-316L\n（元/吨）', savedMoney(q.sus316lPrice), '电解铜\n（元/吨）', savedMoney(q.copperPrice), '电解铝\n（元/吨）', savedMoney(q.aluminumPrice)],
     ['客户名称', h.customerName, null, '客户编号', h.customerCode, '是否通过海外\n仓库发终端客户', q.overseasSalesMode, '销售价格\n是否联动', q.priceLinkMode, '不锈钢-304\n（元/吨）', savedMoney(q.sus304Price), '电解锌\n（元/吨）', savedMoney(q.zincPrice), '/', ''],
     ['父件名称', h.productName, null, '父件型号', h.productModel, '业务类型', q.businessType, '事业部', q.division, '美国柜装黄铜', '', 'H65黄铜边料', '', '/', ''],
-    ['一级编码', id.productCode, null, '父件规格', q.spec, '客户图号', h.customerDrawing, '客户Cu\n（元/公斤）', savedMoney(q.customerCuPrice), '白银', savedMoney(q.silverPrice), '黄金', savedMoney(q.goldPrice), '/', ''],
+    ['一级编码', id.productCode, null, '父件规格', q.spec, '裸品码', h.bareCode, '客户Cu\n（元/公斤）', savedMoney(q.customerCuPrice), '白银', savedMoney(q.silverPrice), '黄金', savedMoney(q.goldPrice), '/', ''],
   ]
   return values.map((row, index) => ({ height: [48, 64, 57, 60][index], cells: row.flatMap((value, column) => column === 2 ? [] : [{ column: column >= 5 ? column + 1 : column, colspan: [1, 4].includes(column) ? 2 : 1, value: value ?? '', label: [0, 3, 5, 7, 9, 11, 13].includes(column) }]) }))
 }

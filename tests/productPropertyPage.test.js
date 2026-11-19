@@ -6,14 +6,17 @@ const page = readFileSync(new URL('../src/pages/ProductPropertyPage.vue', import
 const api = readFileSync(new URL('../src/api/productProperties.js', import.meta.url), 'utf8')
 
 test('产品属性页面以年度业务清单和独立上浮规则为准', () => {
-  assert.match(page, /唯一键为年度 \+ 料号/)
-  assert.match(page, /系数 = 1 \+ 上浮比例/)
+  assert.match(page, /当前业务单元、年度和料号/)
+  assert.match(page, /系数 = 1 \+ 年度上浮比例/)
+  assert.match(page, /预计年用量达到 10 万只时按标准品核算，系数为 1/)
+  assert.match(page, /预计年用量（万只）/)
   assert.match(page, /非标品.*标准品.*定制品.*OEM/s)
-  assert.doesNotMatch(page, /预计年用量|OA报价|新增产品属性|编辑产品属性/)
+  assert.doesNotMatch(page, /OA报价|新增产品属性|编辑产品属性/)
 })
 
 test('导入支持 A-E A-F、增量和全量，并直接上传原始 Excel', () => {
   assert.match(page, /A–E \/ A–F/)
+  assert.match(page, /文件中的年度须与所选导入年度一致/)
   assert.match(page, /INCREMENTAL/)
   assert.match(page, /FULL/)
   assert.match(api, /new FormData\(\)/)

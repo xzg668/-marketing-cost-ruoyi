@@ -64,7 +64,7 @@ const renderer = Vue.createRenderer({ createComment: () => ({}), insert() {}, re
 function mount(props, responses = {}) {
   const calls = []
   const deps = { ...Vue, technicalBomQuantity, ElMessage: { success() {} }, ElMessageBox: { confirm: async () => {} } }
-  for (const name of ['searchTechnicalBomReferences', 'fetchTechnicalBomReference', 'searchQuoteBomPreviewReferences', 'fetchQuoteBomPreviewReference', 'checkQuoteBomPreviewReference', 'uploadQuoteBomPreview', 'downloadQuoteBomPreviewTemplate', 'previewTechnicalBomUpload', 'saveTechnicalBom', 'downloadTechnicalBom']) {
+  for (const name of ['searchTechnicalBomReferences', 'fetchTechnicalBomReference', 'checkTechnicalBomReference', 'searchTechnicalBomReplacements', 'searchQuoteBomPreviewReplacements', 'searchQuoteBomPreviewReferences', 'fetchQuoteBomPreviewReference', 'checkQuoteBomPreviewReference', 'uploadQuoteBomPreview', 'downloadQuoteBomPreviewTemplate', 'previewTechnicalBomUpload', 'saveTechnicalBom', 'downloadTechnicalBom']) {
     deps[name] = async (...args) => { calls.push({ name, args }); return responses[name] ?? { ...props.state, rowVersion: 2 } }
   }
   const component = new Function(...Object.keys(deps), script)(...Object.values(deps))
@@ -181,5 +181,31 @@ test('editable reference BOM still saves quantities with its original identity a
     assert.equal(await h.state.save(), true)
     assert.deepEqual(h.calls, [{ name: 'saveTechnicalBom', args: [34, { expectedVersion: 1, entryMode: 'REFERENCE',
       referenceCode: 'REF-1', referenceFingerprint: 'original-source', quantities: { 1: '3' } }] }])
+  } finally { h.app.unmount() }
+})
+
+
+test('exact model replacement refreshes the affected branch and saves its edited child quantity', async () => {
+  const reference = { productCode: 'REF', fingerprint: 'original-source' }
+  const newRoot = { hierarchy: '1', materialCode: 'NEW', model: 'NEW-MODEL', quantity: '2' }
+  const newChild = { hierarchy: '1.1', materialCode: 'NEW-CHILD', quantity: '3' }
+  const h = mount({ productId: 34, state: { editable: true, rowVersion: 1, target, bom: {
+    entryMode: 'REFERENCE', reference, product: target,
+    nodes: [{ input: { hierarchy: '1', materialCode: 'OLD', quantity: '2' } },
+      { input: { hierarchy: '1.1', materialCode: 'OLD-CHILD', quantity: '9' } }],
+  } }, allowed: true }, {
+    searchTechnicalBomReplacements: [{ code: 'NEW', model: 'NEW-MODEL' }],
+    checkTechnicalBomReference: { product: target, reference, rows: [newRoot, newChild], issues: [] },
+  })
+  try {
+    h.state.openReplacement(h.state.rows[0])
+    h.state.replacementKeyword = 'NEW-MODEL'
+    await h.state.searchReplacement()
+    assert.deepEqual(h.state.rows.map(row => row.materialCode), ['NEW', 'NEW-CHILD'])
+    assert.deepEqual(h.calls[1].args[1].quantities, { 1: '2' })
+    h.state.rows[1].quantity = '5'
+    assert.equal(await h.state.save(), true)
+    assert.deepEqual(h.calls[2].args[1].quantities, { 1: '2', '1.1': '5' })
+    assert.deepEqual(h.calls[2].args[1].replacements, { 1: 'NEW' })
   } finally { h.app.unmount() }
 })

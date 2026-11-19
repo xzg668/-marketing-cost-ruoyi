@@ -1,7 +1,7 @@
 import { excelCell } from './workbookTransfer.js'
 
 const columns = [
-  ['materialCode', '料号 / 图号'], ['materialName', '品名'], ['quantity', '数量'],
+  ['materialCode', '料号 / 图号'], ['materialName', '品名'], ['materialModel', '型号'], ['quantity', '数量'],
   ['financeUnitPrice', '财务单价'], ['oaUnitPrice', 'OA 单价'], ['unitPriceDifference', '单价差异'],
   ['financeAmount', '财务金额'], ['oaAmount', 'OA 金额'], ['amountDifference', '金额差异'], ['differenceRate', '差异率'],
 ]
@@ -25,13 +25,13 @@ export function materialDifferenceWorkbook(XLSX, data, { onlyDifferent = true } 
     let value = row[field]
     if (field === 'materialCode' && /^DRAWING[:#]/.test(String(value || '')))
       value = `图号：${row.drawingNo || row.drawingCode || value.replace(/^DRAWING[:#]/, '')}`
-    const cell = excelCell(value, { type: column < 2 ? 'text' : 'number' })
+    const cell = excelCell(value, { type: column < 3 ? 'text' : 'number' })
     if (changes.has(field) && value != null && value !== '') cell.z = differenceFormat(value, field === 'differenceRate')
     sheet[XLSX.utils.encode_cell({ r: index + 1, c: column })] = cell
   }))
   sheet['!ref'] = XLSX.utils.encode_range({ r: 0, c: 0 }, { r: rows.length, c: columns.length - 1 })
   sheet['!autofilter'] = { ref: sheet['!ref'] }
-  sheet['!cols'] = columns.map((_, i) => ({ wch: i < 2 ? 28 : 20 }))
+  sheet['!cols'] = columns.map((_, i) => ({ wch: i < 3 ? 28 : 20 }))
   XLSX.utils.book_append_sheet(book, sheet, '材料差异对比')
   const help = XLSX.utils.aoa_to_sheet([
     ['项目', '内容'], ['报价单号', data.oaNo || ''], ['产品料号', String(data.topProductCode || '')], ['核算月份', data.periodMonth || ''],

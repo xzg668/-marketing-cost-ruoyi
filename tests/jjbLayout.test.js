@@ -12,6 +12,15 @@ test('reference header uses one A:P grid with merged B:C and the six original he
   assert.equal(layout.jjbColumns[15][1], '备注-CMS\n来源信息')
 })
 
+test('saved quote header displays the bare code as text, with missing codes blank', () => {
+  const base = { customerDrawing: 'CUSTOMER-DRAW', bareCode: '000101' }
+  const actual = layout.sheetHeaderRows({ header: base })[3].cells
+  assert.equal(actual.find(cell => cell.column === 6).value, '裸品码')
+  assert.equal(actual.find(cell => cell.column === 7).value, '000101')
+  const missing = layout.sheetHeaderRows({ header: { ...base, bareCode: null } })[3].cells
+  assert.equal(missing.find(cell => cell.column === 7).value, '')
+})
+
 test('three expenses and four optional fees have vertical labels and names in column C', () => {
   const rows = ['模具费', '认证费', '折旧费', '工装夹具费'].map((name, i) => ({ section: 'PRODUCT_FEES', kind: 'FEE', name, amount: i ? null : '0.000000' }))
   const group = layout.sheetGroups({ rows })[0]

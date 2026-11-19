@@ -26,6 +26,12 @@ export const searchTechnicalBomReferences = (productId, keyword) =>
   request(`/api/v2/technical-data/products/${id(productId)}/bom/references`, { params: { keyword }, suppressErrorToast: true })
 export const fetchTechnicalBomReference = (productId, code) =>
   request(`/api/v2/technical-data/products/${id(productId)}/bom/reference`, { params: { code }, suppressErrorToast: true })
+export const searchTechnicalBomReplacements = (productId, keyword) =>
+  request(`/api/v2/technical-data/products/${id(productId)}/bom/replacement-options`, { params: { keyword }, suppressErrorToast: true })
+export const searchQuoteBomPreviewReplacements = (itemId, accountingMonth, keyword) =>
+  request(`/api/v2/technical-data/quote-items/${id(itemId)}/bom-preview/replacement-options`, { params: { accountingMonth, keyword }, suppressErrorToast: true })
+export const checkTechnicalBomReference = (productId, body) =>
+  request(`/api/v2/technical-data/products/${id(productId)}/bom/check-reference`, { method: 'POST', body, suppressErrorToast: true })
 export const previewTechnicalBomUpload = (productId, file) => {
   const body = new FormData(); body.append('file', file)
   return request(`/api/v2/technical-data/products/${id(productId)}/bom/upload-preview`, { method: 'POST', body, suppressErrorToast: true })
