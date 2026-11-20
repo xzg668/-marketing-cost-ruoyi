@@ -54,7 +54,7 @@ export function sheetRowCells(row, group, index) {
   if (['LOSS', 'MANUFACTURE'].includes(row.code)) {
     cells[3].value = ratePercent(row.rate); cells[3].key = 'rate'
   }
-  cells[14].value = row.remark || ''
+  cells[14].value = row.code === 'SALES_EXP' && row.rate != null && row.remark === '（OEM）' ? '' : row.remark || ''
   // Detailed source identities remain available through the existing trace action and tooltips.
   cells[15].value = (row.rate != null && !['LOSS', 'MANUFACTURE'].includes(row.code)) || ['HOUSEHOLD', 'FEE'].includes(row.kind) ? rowBasis(row) : ''
   return cells.filter(c => !c.omit)
@@ -100,7 +100,10 @@ export function rowBasis(row) {
   if (row.kind === 'PROPERTY') return row.coefficient == null ? '' : `系数 ${row.coefficient}（已在保存金额中应用）`
   if (row.kind === 'FEE') return ({ MISSING: '未填写', EXPLICIT_NONE: '明确无费用', EXPLICIT_AMOUNT: '有效填写金额', LEGACY: '历史保存值' })[row.feeState] || ''
   if (row.code === 'ADJUSTED_MANUFACTURE_COST') return row.rate == null ? '' : `系数 ${row.rate}`
-  if (row.rate != null) return ratePercent(row.rate)
+  if (row.rate != null) {
+    const oemNote = row.code === 'SALES_EXP' && row.remark?.includes('（OEM）') ? '（OEM）' : ''
+    return ratePercent(row.rate) + oemNote
+  }
   return row.sources?.map(s => [s.table, s.id].filter(v => v != null).join(' #')).filter(Boolean).join('；') || ''
 }
 export function sheetTotals(sheet) {

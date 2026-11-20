@@ -12,7 +12,7 @@
         <el-button
           type="primary"
           :loading="batchSubmitting"
-          :disabled="batchRun?.active || materialDisabled || detail.oaWorkflow?.canCost === false"
+          :disabled="batchRun?.active || materialDisabled || detail.oaWorkflow?.canCost === false || oemSavingId !== ''"
           @click="submitWholeQuoteCosting"
         >
           {{ batchRun?.active ? '整单核算中' : wholeLabel }}
@@ -133,6 +133,21 @@
           </el-table-column>
           <el-table-column label="客户图号" min-width="160">
             <template #default="{ row }">{{ row.customerDrawing || '未填写' }}</template>
+          </el-table-column>
+          <el-table-column label="是否 OEM" width="190">
+            <template #default="{ row }">
+              <div class="oem-cell">
+                <el-select v-if="canEditOem" :model-value="Boolean(row.oem)" aria-label="是否 OEM" size="small"
+                  :disabled="batchRun?.active || oemSavingId !== '' || Boolean(actionLoadingId)"
+                  @change="saveOemSelection(row, $event)">
+                  <el-option label="否" :value="false" />
+                  <el-option label="是" :value="true" />
+                </el-select>
+                <span v-else>{{ row.oem ? '是' : '否' }}</span>
+                <el-button v-if="row.oem && canUseOemConfig && row.materialNo" link type="primary"
+                  @click="openOemConfig(row)">去配置 OEM</el-button>
+              </div>
+            </template>
           </el-table-column>
           <el-table-column label="业务类型" prop="businessType" min-width="110">
             <template #default="{ row }">{{ row.businessType || '未填写' }}</template>
@@ -428,6 +443,7 @@ import {
   fetchQuoteMonthlyCostResultDetail,
   fetchCurrentQuoteBatchCostRun,
   fetchQuoteRequestDetail,
+  updateQuoteItemOem,
   submitQuoteProductCostRun,
   exportQuoteCostingGaps,
 } from '../api/quoteRequests'
@@ -479,10 +495,38 @@ watch(activeTab, value => {
   if (value !== (route.query.tab || 'items')) router.replace({ query: { ...route.query, tab: value === 'items' ? undefined : value } })
 })
 const detail = ref({})
+const oemSavingId = ref('')
+const canUseOemConfig = computed(() => user.roles.some(role => ['admin', 'bu_director', 'bu_staff']
+  .includes(String(role).toLowerCase())))
+const canEditOem = computed(() => canUseOemConfig.value && detail.value.oaWorkflow?.canCost !== false)
 const drawingStates = reactive({})
 const productRows = computed(() => withQuoteItemWorkflow(detail.value, drawingStates, materialState.value).items)
 const productSearch = ref('')
 const filteredProductRows = computed(() => filterQuoteProducts(productRows.value, productSearch.value))
+
+async function saveOemSelection(row, enabled) {
+  if (oemSavingId.value || enabled === Boolean(row.oem)) return
+  const scope = captureScope()
+  oemSavingId.value = String(row.id)
+  try {
+    const saved = await updateQuoteItemOem(scope.oaNo, row.id, enabled, Boolean(row.oem))
+    if (!scope.isCurrent()) return
+    const item = detail.value.items?.find(item => item.id === row.id)
+    if (item) item.oem = saved
+    await refreshQuoteState(false)
+  } catch (error) {
+    if (scope.isCurrent() && !error?.userNotified) ElMessage.error(error?.message || '保存 OEM 标记失败')
+  } finally {
+    if (scope.isCurrent()) oemSavingId.value = ''
+  }
+}
+
+function openOemConfig(row) {
+  router.push({ path: '/base/oemProductConfig', query: {
+    oaNo: oaNo.value, itemId: String(row.id), unit: user.businessUnitType,
+    productCode: row.materialNo, productModel: row.sunlModel, productSpec: row.spec, productName: row.productName,
+  } })
+}
 const currentCostSummary = computed(() => quoteCurrentCostSummary(productRows.value))
 const drawingReviewCount = computed(() => productRows.value.filter(isDrawingReview).length)
 function isDrawingReview(row) { return row.workflow?.currentStatus === 'E_DRAWING_WAIT_REVIEW' }
@@ -833,6 +877,7 @@ async function restartCosting(row) {
   return submitSingleProductCosting(row, 'INPUT_CHANGED')
 }
 async function submitSingleProductCosting(row, reason, periodMonth) {
+  if (oemSavingId.value) return
   if (actionLoadingId.value) return
   const scope = captureScope()
   actionLoadingId.value = rowActionKey(row)
@@ -909,6 +954,7 @@ watch(oaNo, () => {
   electronicDrawingContinuationHandled = false
   checking.value = false
   actionLoadingId.value = ''
+  oemSavingId.value = ''
   detail.value = {}
   loadDetail()
 })
@@ -916,6 +962,8 @@ onMounted(loadDetail)
 </script>
 
 <style scoped>
+.oem-cell { display: flex; align-items: center; gap: 8px; }
+.oem-cell .el-select { width: 64px; }
 .current-cost-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 24px; padding: 12px 16px; border: 1px solid #e4e9f1; border-radius: 6px; background: #fff; font-size: 13px; }
 .current-cost-summary__title { font-size: 14px; font-weight: 600; color: #344054; }
 .current-cost-summary--error .current-cost-summary__title { color: #b42318; }

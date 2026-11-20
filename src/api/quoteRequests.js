@@ -10,6 +10,11 @@ export const fetchQuoteRequests = (params) =>
 export const fetchQuoteRequestDetail = (oaNo) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}`)
 
+export const updateQuoteItemOem = (oaNo, itemId, oem, expectedOem) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/oem`, {
+    method: 'PUT', body: { oem, expectedOem },
+  })
+
 export const fetchQuoteCostingGapDetails = (oaNo, category) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}/costing-gaps`, { params: { category }, suppressErrorToast: true })
 

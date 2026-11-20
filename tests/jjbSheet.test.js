@@ -32,6 +32,13 @@ test('A through P retain D=price E=quantity F=unit G=amount without arithmetic',
   assert.equal(rowBasis(row), 'H=8.5%；S=25%')
   assert.equal(ratePercent('0.000000123456789012'), '0.0000123456789012%')
 })
+test('saved OEM sales rate is annotated and normal rates remain numeric text', () => {
+  const rate = { kind: 'COST', code: 'SALES_EXP', rate: '0.12', remark: '（OEM）' }
+  assert.equal(rowBasis(rate), '12%（OEM）')
+  assert.equal(rowBasis({ ...rate, rate: '0' }), '0%（OEM）')
+  assert.equal(rowBasis({ ...rate, remark: null }), '12%')
+  assert.equal(rowBasis({ ...rate, code: 'MGMT_EXP' }), '12%')
+})
 test('actual stored rows alone create household section and preserve fixed fees', () => {
   const fees = ['模具费', '认证费', '折旧费', '工装夹具费'].map(name => ({ section: 'PRODUCT_FEES', name, kind: 'FEE', amount: null }))
   assert.deepEqual(sheetGroups({ rows: fees }).map(g => g.code), ['PRODUCT_FEES'])
