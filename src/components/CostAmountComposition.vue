@@ -1,20 +1,23 @@
 <template>
   <section class="amount-composition" aria-label="金额来源及计算明细">
-    <div class="composition-title"><h4>金额来源及计算明细</h4><button type="button" :disabled="!view || loading" @click="downloadComposition(view)">下载核对明细</button></div>
+    <div class="composition-title"><h4>金额来源及计算明细</h4><button type="button" :disabled="!view || loading" @click="downloadComposition(view)">{{ periodPreview ? '下载已保存明细' : '下载核对明细' }}</button></div>
     <p v-if="loading" role="status">正在读取来源明细…</p>
     <p v-else-if="error" role="alert">{{ error }} <button type="button" @click="load">重试</button></p>
     <template v-else-if="view">
-      <p v-if="view.composition.origin === 'CURRENT_REFERENCE'" class="reference-note">当前来源核对资料：此旧版本未保存当时的 CMS 分项，原保存金额保持不变。</p>
+      <CmsCostPeriodEditor v-if="allowLaborPeriod && canChooseCmsPeriod(view)"
+        :cost-run-no="costRunNo" :cost-code="view.costCode" :cost-name="view.costName" @preview="periodPreview = $event" @cost-saved="emit('cost-saved', $event)" />
+      <p v-if="periodPreview">试算来源明细 · {{ periodPreview.period }}</p>
+      <p v-else-if="view.composition.origin === 'CURRENT_REFERENCE'" class="reference-note">当前来源核对资料：此旧版本未保存当时的 CMS 分项，原保存金额保持不变。</p>
       <p v-else>以下为本次核算保存的来源依据。</p>
       <dl><dt>保存金额</dt><dd>{{ view.amount || '未记录' }} 元</dd>
         <template v-if="view.baseAmount !== ''"><dt>采用基数</dt><dd>{{ view.baseAmount }}</dd></template>
         <template v-if="view.rate !== ''"><dt>系数／有效费率</dt><dd>{{ view.rate }}</dd></template>
-        <dt>来源合计</dt><dd>{{ view.composition.sourceAmount || '未记录' }} 元</dd>
-        <template v-if="view.composition.excludedAmount"><dt>剔除金额</dt><dd>{{ view.composition.excludedAmount }} 元</dd></template>
-        <template v-if="view.referenceAmount !== ''"><dt>按来源核对金额</dt><dd>{{ view.referenceAmount }} 元；与保存金额差额 {{ view.difference }} 元</dd></template>
+        <dt>来源合计</dt><dd>{{ displayed.composition.sourceAmount || '未记录' }} 元</dd>
+        <template v-if="displayed.composition.excludedAmount"><dt>剔除金额</dt><dd>{{ displayed.composition.excludedAmount }} 元</dd></template>
+        <template v-if="!periodPreview && view.referenceAmount !== ''"><dt>按来源核对金额</dt><dd>{{ view.referenceAmount }} 元；与保存金额差额 {{ view.difference }} 元</dd></template>
       </dl>
-      <p class="formula">{{ view.composition.formula }}</p>
-      <template v-if="view.calculation"><p>{{ calculationLabel }}</p><ol class="calculation-steps"><li v-for="(step,index) in view.calculation.split('；').filter(Boolean)" :key="index">{{ step }}</li></ol></template>
+      <p class="formula">{{ displayed.composition.formula }}</p>
+      <template v-if="!periodPreview && view.calculation"><p>{{ calculationLabel }}</p><ol class="calculation-steps"><li v-for="(step,index) in view.calculation.split('；').filter(Boolean)" :key="index">{{ step }}</li></ol></template>
       <article v-for="parameter in departmentParameters" :key="parameter.sourceId" class="department-parameters">
         <h5>{{ view.composition.origin === 'CURRENT_REFERENCE' ? '当前部门费率配置（供核对）' : '本次采用的部门费率参数' }}</h5>
         <dl><dt>取数年度／事业部</dt><dd>{{ parameter.period }} ／ {{ parameter.division }}</dd>
@@ -27,12 +30,12 @@
         </dl>
         <p v-if="parameter.note">{{ parameter.note }}</p>
       </article>
-      <p v-if="view.composition.note" class="composition-note">{{ view.composition.note }}</p>
+      <p v-if="displayed.composition.note" class="composition-note">{{ displayed.composition.note }}</p>
       <p v-for="total in packageTotals" :key="total.kind"><strong>{{ total.coefficientBasis }}：{{ total.coefficient }}</strong>；包装费 {{ total.amountYuan }} 元</p>
       <div v-if="displayRows.length" class="composition-table"><table><thead><tr><th v-for="column in columns" :key="column.key">{{ column.label }}</th></tr></thead>
         <tbody><tr v-for="(row, index) in displayRows" :key="index"><td v-for="column in columns" :key="column.key" :class="{ 'path-cell': column.key === 'path' }">{{ row[column.key] ?? '' }}</td></tr></tbody></table></div>
       <p v-else>未记录可展开的原始分项，核对说明及已保存依据可下载。</p>
-      <template v-if="exclusionRows.length"><h5>本单工资剔除明细</h5><p>以下剔除额已从上方来源原金额扣除，不再重复扣减。完整路径及来源记录随明细一起下载。</p>
+      <template v-if="exclusionRows.length"><h5>本单工资剔除明细</h5><p v-if="!periodPreview">以下剔除额已从上方来源原金额扣除，不再重复扣减。完整路径及来源记录随明细一起下载。</p>
         <div class="composition-table"><table aria-label="本单工资剔除明细"><thead><tr><th v-for="column in exclusionColumns" :key="column.key">{{ column.label }}</th></tr></thead>
           <tbody><tr v-for="(row,index) in exclusionRows" :key="index"><td v-for="column in exclusionColumns" :key="column.key" :class="{ 'path-cell': column.key === 'path' }">{{ row[column.key] ?? '' }}</td></tr></tbody></table></div>
       </template>
@@ -44,12 +47,15 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { fetchCostAmountComposition } from '../api/costRunDetail'
 import { compositionDetailRows, compositionExclusionRows, compositionPaths, downloadComposition, visibleCompositionColumns } from '../utils/costAmountComposition'
-const props = defineProps({ costRunNo: { type: String, required: true }, costItemId: { type: [Number,String], default: null }, partItemId: { type: [Number,String], default: null } })
+import CmsCostPeriodEditor from './CmsCostPeriodEditor.vue'
+const props = defineProps({ costRunNo: { type: String, required: true }, costItemId: { type: [Number,String], default: null }, partItemId: { type: [Number,String], default: null }, allowLaborPeriod: Boolean })
+const emit = defineEmits(['cost-saved'])
 const view = ref(null), loading = ref(false), error = ref('')
+const periodPreview = ref(null)
 let requestId = 0
 async function load() {
   const id = ++requestId
-  view.value = null; error.value = ''; loading.value = true
+  view.value = null; periodPreview.value = null; error.value = ''; loading.value = true
   try {
     const result = await fetchCostAmountComposition(props.costRunNo, { costItemId: props.costItemId, partItemId: props.partItemId })
     if (id === requestId) view.value = result
@@ -59,12 +65,20 @@ async function load() {
 }
 watch(() => [props.costRunNo, props.costItemId, props.partItemId], load, { immediate: true })
 onBeforeUnmount(() => { requestId++ })
-const displayRows = computed(() => compositionDetailRows(view.value))
-const exclusionRows = computed(() => compositionExclusionRows(view.value))
-const exclusionColumns = computed(() => view.value ? visibleCompositionColumns({ ...view.value, composition: { ...view.value.composition, rows: exclusionRows.value } }) : [])
+function canChooseCmsPeriod(item) {
+  if (['DIRECT_LABOR', 'INDIRECT_LABOR'].includes(item.costCode)) return true
+  return item.costCode?.startsWith('AUX_') && item.composition?.origin !== 'CURRENT_REFERENCE'
+    && item.composition?.sources?.some(source => source.table === 'cms_product_subject_cost_raw')
+}
+
+const displayed = computed(() => periodPreview.value && view.value
+  ? { ...view.value, composition: periodPreview.value.composition } : view.value)
+const displayRows = computed(() => compositionDetailRows(displayed.value))
+const exclusionRows = computed(() => compositionExclusionRows(displayed.value))
+const exclusionColumns = computed(() => displayed.value ? visibleCompositionColumns({ ...displayed.value, composition: { ...displayed.value.composition, rows: exclusionRows.value } }) : [])
 const packageTotals = computed(() => view.value?.composition.rows.filter(row => row.kind === 'PACKAGE_TOTAL') || [])
-const columns = computed(() => view.value ? visibleCompositionColumns({ ...view.value, composition: { ...view.value.composition, rows: displayRows.value } }) : [])
-const paths = computed(() => view.value ? compositionPaths(view.value) : [])
+const columns = computed(() => displayed.value ? visibleCompositionColumns({ ...displayed.value, composition: { ...displayed.value.composition, rows: displayRows.value } }) : [])
+const paths = computed(() => displayed.value ? compositionPaths(displayed.value) : [])
 const departmentParameters = computed(() => view.value?.composition.rows.filter(row => row.sourceTable === 'lp_department_fund_rate') || [])
 const calculationLabel = computed(() => ['OVERHAUL','TOOLING_REPAIR','WATER_POWER','DEPT_OTHER'].includes(view.value?.costCode)
   ? '保存金额的计算过程：' : view.value?.composition.origin === 'CURRENT_REFERENCE' ? '按当前来源核对：' : '代入计算：')

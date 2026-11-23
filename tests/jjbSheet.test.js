@@ -2,6 +2,15 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { savedMoney, rowBasis, ratePercent, sheetGroups, sheetTotals, jjbColumns, sheetHeaderRows, sheetRowCells, manufacturingGrossWeightSource, grossWeightWithSource } from '../src/utils/jjbSheet.js'
 
+test('the CMS column shows the saved source month and leaves calculated fees blank', () => {
+  const group = { code: 'MATERIAL_DETAIL', rows: [] }
+  const cell = (row) => sheetRowCells(row, group, 0).find(value => value.key === 'basis').value
+  const auxiliary = { kind: 'COST', code: 'AUX_0201', rate: '1.05', cmsSourceNote: 'CMS 2026-07' }
+  assert.equal(cell(auxiliary), 'CMS 2026-07')
+  assert.equal(rowBasis(auxiliary), '105%')
+  assert.equal(cell({ kind: 'COST', code: 'WATER_POWER', rate: '0.014015' }), '')
+})
+
 test('包装费用在原金额行显示包装料号与保存规格，业务费用标识保持', () => {
   const row = { kind: 'CONTRIBUTION', code: 'OTHER_EXP_PACKAGE', name: '包装费用', displayCode: '001\n002', drawingNo: '箱规格\n托规格', amount: '0.324345' }
   const cells = sheetRowCells(row, { code: 'MATERIAL_DETAIL' }, 0)

@@ -17,6 +17,7 @@
       :version-no="displayCostRunNo"
       :initial-trace="selectedTrace"
       :saved-sheet="sheet"
+      @cost-saved="showSavedCost"
     />
   </div>
 </template>
@@ -41,9 +42,20 @@ const selectedTrace = ref(null)
 const effectiveCostRunNo = computed(() => sheet.value?.identity.costRunNo || '')
 const displayCostRunNo = computed(() => sheet.value?.identity.versionNo || effectiveCostRunNo.value)
 let detailRequest = 0
+let pendingSavedSheet = null
 
 async function loadDetail() {
   const request = ++detailRequest
+  const saved = pendingSavedSheet
+  pendingSavedSheet = null
+  if (saved?.identity?.oaNo === route.params.oaNo && String(saved.identity.oaFormItemId) === String(route.params.itemId)
+      && String(saved.identity.versionId) === String(route.query.versionId)) {
+    sheet.value = saved
+    traceDrawerVisible.value = false
+    loadError.value = ''
+    loading.value = false
+    return
+  }
   sheet.value = null
   traceDrawerVisible.value = false
   loading.value = true
@@ -76,6 +88,12 @@ function openTraceDrawer(trace = null) {
   if (!effectiveCostRunNo.value) return
   selectedTrace.value = trace
   traceDrawerVisible.value = true
+}
+function showSavedCost(costing) {
+  if (costing.oaNo !== route.params.oaNo || String(costing.oaFormItemId) !== String(route.params.itemId)) return
+  pendingSavedSheet = costing.savedCostRun?.sheet || null
+  router.replace({ query: { ...route.query, productCode: costing.productCode,
+    versionId: costing.costVersionId, costRunNo: costing.costRunNo, versionNo: costing.versionNo } })
 }
 function goBack() { router.back() }
 async function exportSheet() {

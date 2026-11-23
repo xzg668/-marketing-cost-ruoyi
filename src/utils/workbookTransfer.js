@@ -46,6 +46,33 @@ export function excelCell(value, column = {}) {
   return { t: 's', v: String(value), z: '@' }
 }
 
+function appendTemplateExamples(XLSX, book, definition, columns) {
+  const examples = definition.templateExamples
+  const fields = [...columns, ...(definition.templateExampleColumns || [])]
+    .map(column => ({ column, values: examples.map(example =>
+      typeof column.field === 'function' ? column.field(example) : example[column.field]) }))
+    .filter(({ values }) => values.some(value => value != null && value !== ''))
+  // A vertical layout avoids introducing a second detectable import header into the workbook.
+  const sheet = XLSX.utils.aoa_to_sheet([
+    ['填写示例（仅供参考）'],
+    ['请在对应填写表使用实际数据。'],
+    ['字段', ...examples.map((example, index) => example.title || `示例${index + 1}`)],
+    ...fields.map(({ column }) => [column.label]),
+  ])
+  fields.forEach(({ column, values }, index) => values.forEach((value, position) => {
+    const cell = excelCell(value, column)
+    if (cell.t === 'n') {
+      if (column.type === 'percent') cell.z = Number.isInteger(cell.v * 100) ? '0%' : '0.0#####%'
+      else if (Number.isInteger(cell.v)) cell.z = '0'
+    }
+    sheet[XLSX.utils.encode_cell({ r: index + 3, c: position + 1 })] = cell
+  }))
+  sheet['!ref'] = XLSX.utils.encode_range({ r: 0, c: 0 }, { r: fields.length + 2, c: examples.length })
+  const labelWidth = Math.min(64, Math.max(32, ...fields.map(({ column }) => column.label.length * 2 + 2)))
+  sheet['!cols'] = [{ wch: labelWidth }, ...examples.map(() => ({ wch: 26 }))]
+  XLSX.utils.book_append_sheet(book, sheet, '填写示例')
+}
+
 export function createWorkbook(XLSX, definition, rows, template = false) {
   const book = XLSX.utils.book_new()
   const columns = template ? definition.templateColumns || definition.columns : definition.columns
@@ -61,11 +88,12 @@ export function createWorkbook(XLSX, definition, rows, template = false) {
   if (!template) sheet['!autofilter'] = { ref: XLSX.utils.encode_range({ r: leading.length, c: 0 }, { r: offset + data.length - 1, c: columns.length - 1 }) }
   XLSX.utils.book_append_sheet(book, sheet, definition.sheet || '数据')
   if (template && definition.customizeTemplate) definition.customizeTemplate(book, XLSX)
+  if (template && definition.templateExamples?.length) appendTemplateExamples(XLSX, book, definition, columns)
   const instructions = [
     ['说明', definition.title],
     ['用途', definition.purpose || (template ? '在第一个工作表填写实际数据后保存，再通过对应页面导入。' : '本文件包含当前筛选范围的系统数据；导入仍按原业务规则校验。')],
     ['编码', '料号、型号、供应商编码按文本保存，请保留前导零。'],
-    ...(definition.notes || []).map(note => ['填写要求', note]),
+    ...((template ? definition.templateNotes ?? definition.notes : definition.notes) || []).map(note => ['填写要求', note]),
     ['字段', '填写说明', '示例（仅供参考）'],
     ...columns.map(column => [column.label, column.help || '', column.example == null ? '' : String(column.example)]),
   ]

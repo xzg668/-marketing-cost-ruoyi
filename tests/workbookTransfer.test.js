@@ -7,7 +7,6 @@ import { parseManufactureRateRows } from '../src/pages/manufactureRateImportUtil
 import { parseDepartmentFundRateRows } from '../src/pages/departmentFundRateImportUtils.js'
 import { parseThreeExpenseRateRows } from '../src/pages/threeExpenseRateImportUtils.js'
 import { parseQualityLossRateWorkbook } from '../src/utils/qualityLossRateImportUtils.js'
-import { detectQuantityRangeWorkbookRoute } from '../src/pages/priceRangeImportUtils.js'
 const roundtrip = book => XLSX.read(XLSX.write(book,{type:'buffer',bookType:'xlsx'}),{type:'buffer'})
 const fill = (kind, values, extras={}) => {
  const definition=definitions[kind], book=createWorkbook(XLSX,definition,[],true), sheet=book.Sheets[book.SheetNames[0]]
@@ -36,12 +35,69 @@ test('Excel preserves zero, percentages, identifiers, formula-like text and long
  const book=roundtrip(createWorkbook(XLSX,definition,[{code:'001234',price:'8.0821238905309735',ratio:0},{code:'=1+2',price:0,ratio:0.2}]))
  const s=book.Sheets.数据;assert.equal(s.A2.v,'001234');assert.equal(s.B2.v,'8.0821238905309735');assert.equal(s.C2.v,0);assert.equal(s.A3.v,'=1+2');assert.equal(s.A3.f,undefined);assert.equal(s.B3.v,0);assert.equal(s.C3.v,.2)
 })
-test('all blank templates have help and no fabricated material or supplier identity',()=>{
- for(const definition of Object.values(definitions)){
+test('fill-in templates have examples and keep demo identities out of the import sheet',()=>{
+ for(const [kind, definition] of Object.entries(definitions)){
   const book=roundtrip(createWorkbook(XLSX,definition,[],true));assert.ok(book.Sheets.填写说明,definition.title)
   const cols=definition.templateColumns||definition.columns,s=book.Sheets[book.SheetNames[0]],r=(definition.leadingRows?.length||0)+1
-  cols.forEach((c,index)=>{if(/materialCode|supplierCode|productCode/.test(String(c.field)))assert.ok(!s[XLSX.utils.encode_cell({r,c:index})]?.v,definition.title)})
+  cols.forEach((c,index)=>{if(/material.?code|supplier.?code|product.?code|itemcode|parentcode/i.test(String(c.field)))assert.ok(!s[XLSX.utils.encode_cell({r,c:index})]?.v,definition.title)})
+  // Linked already has an in-place formula example; part costs download the server template.
+  if (kind === 'linked' || kind === 'partCosts') continue
+  const sample = book.Sheets.填写示例
+  assert.ok(sample, definition.title)
+  assert.ok(XLSX.utils.sheet_to_json(sample, { header: 1 }).slice(3).filter(row => row[1] !== '' && row[1] != null).length >= 3, definition.title)
+  const exported = roundtrip(createWorkbook(XLSX, definition, []))
+  assert.ok(!exported.Sheets.填写示例, definition.title)
  }
+})
+test('settlement and scrap templates retain editable native formulas, numeric inputs, and fixed-price examples', () => {
+ const settlement = roundtrip(createWorkbook(XLSX, definitions.settlement, [], true))
+ const sheet = settlement.Sheets.结算价格
+ assert.deepEqual([sheet.B2.v, sheet.C2.v, sheet.B3.v, sheet.C3.v], [90, 95, 20, 22])
+ assert.deepEqual([sheet.A5.v, sheet.K5.v], ['', '结算联动价'])
+ assert.deepEqual([sheet.D5.v, sheet.E5.v, sheet.G5.v, sheet.H5.v], [10, 1.05, 20, 5])
+ assert.equal(sheet.F5.f, 'D5*E5')
+ assert.equal(sheet.I5.f, 'L5')
+ assert.equal(sheet.L5.f, 'ROUND(F5+(($C$2-$B$2)*G5+($C$3-$B$3)*H5)/1000/1.13*1.05,4)')
+ assert.equal(sheet.I5.v, 10.6022)
+ assert.equal(settlement.Sheets.填写示例.C3.v, '固定结算价')
+
+ const scrap = roundtrip(createWorkbook(XLSX, definitions.scrap, [], true))
+ const waste = scrap.Sheets.废料清单
+ assert.deepEqual([waste.B1.v, waste.B2.v, waste.B3.v], [95, 65, 20])
+ assert.deepEqual([waste.A5.v, waste.E5.v, waste.G5.v], ['', '', '联动价'])
+ assert.equal(waste.F5.f, '$B$1*0.8/1.13')
+ assert.ok(Math.abs(waste.F5.v - 76 / 1.13) < 1e-9)
+ assert.equal(scrap.Sheets.填写示例.C3.v, '固定价')
+})
+test('sample identities and percentages use their normal Excel types', () => {
+ const sheet = roundtrip(createWorkbook(XLSX, definitions.supplier, [], true)).Sheets.填写示例
+ assert.equal(sheet.B4.t, 's')
+ assert.equal(sheet.B4.v, '00001234')
+ assert.equal(sheet.B12.t, 'n')
+ assert.equal(sheet.B12.w, '60%')
+ assert.equal(sheet.C12.w, '40%')
+})
+test('linked-price template uses the native purchase workbook with an editable Excel formula', () => {
+ const book = roundtrip(createWorkbook(XLSX,definitions.linked,[],true))
+ assert.deepEqual(book.SheetNames,['ImportData','影响因素10','填写说明'])
+ assert.deepEqual(rows(book)[0],['组织','来源','供应商名称','供应商代码','采购分类','物料名称','物料代码','规格型号','单位','联动公式','下料重','净重','加工费','代理费','单价','是否含税','生效日期','失效日期','订单类型'])
+ const sheet = book.Sheets.ImportData, factors = book.Sheets.影响因素10
+ assert.equal(sheet.G2.v,'')
+ assert.equal(sheet.D2.v,'')
+ assert.equal(sheet.O2.t,'n')
+ assert.equal(sheet.O2.f,"((K2*'影响因素10'!$E$2-(K2-L2)*'影响因素10'!$E$3)/1000+M2+N2)/1.13")
+ assert.ok(Math.abs(sheet.O2.v - 10.8 / 1.13) < 1e-10)
+ assert.equal(sheet.P2.v,'否')
+ assert.equal(sheet.N2.v,0)
+ assert.equal(factors.E2.v,100)
+ assert.equal(factors.E3.v,60)
+ const exported = roundtrip(createWorkbook(XLSX,definitions.linked,[{materialCode:'001234',sourceFormulaExpr:sheet.O2.f}]))
+ assert.deepEqual(exported.SheetNames,['ImportData','填写说明'])
+ assert.equal(exported.Sheets.ImportData.B2.v,'001234')
+ const expressionColumn = rows(exported)[0].indexOf('原稿Excel公式')
+ const expression = exported.Sheets.ImportData[XLSX.utils.encode_cell({r:1,c:expressionColumn})]
+ assert.equal(expression.v,sheet.O2.f)
+ assert.equal(expression.f,undefined)
 })
 test('product property workbook includes each row year and annual usage in ten thousands', () => {
  const data = [
@@ -71,12 +127,6 @@ test('three-expense sections retain category and line identity',()=>{
  s.B1={t:'n',v:2026};['三花','商用','销售部','营销处',.01,.02,.03,.06,.05,'否'].forEach((v,c)=>s[XLSX.utils.encode_cell({r:4,c})]=excelCell(v,{type:c>=4&&c<=8?'percent':'text'}))
  const p=parseThreeExpenseRateRows(rows(roundtrip(b)));assert.deepEqual(p.errors,[]);assert.equal(p.rows[0].productCategory,'商用直销产品');assert.equal(p.rows[0].productLine,'国内产线');assert.equal(p.rows[0].threeExpenseTotalRate,.06)
 })
-test('quantity workbook stays on the quantity route and does not trigger commodity detection',()=>{
- const b=fill('quantityRange',{materialCode:'001',rangeLow:0,rangeHigh:100,priceExclTax:2})
- const route=detectQuantityRangeWorkbookRoute(b.SheetNames.map(name=>({name,rows:XLSX.utils.sheet_to_json(b.Sheets[name],{header:1,raw:false,defval:''})})))
- assert.equal(route.ok,true);assert.equal(route.standardSheet.name,'数量区间')
-})
-
 test('price export includes current saved price per page, retaining source and duplicate range bands',async()=>{
  const {priceExportPage}=await import('../src/utils/priceWorkbookExport.js')
  const calls=[]

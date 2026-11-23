@@ -2,8 +2,9 @@ export { netLossPercent } from './netLossRate.js'
 
 export function netLossPayload(mode, reference, percent, expectedVersion) {
   if (mode === 'REFERENCE') {
-    const rate = Number(reference?.source?.rate)
-    if (reference?.source?.status !== 'AVAILABLE' || !Number.isFinite(rate) || rate <= 0 || rate >= 1 || !reference.fingerprint) {
+    const rateText = String(reference?.source?.rate ?? '').trim()
+    const rate = Number(rateText)
+    if (reference?.source?.status !== 'AVAILABLE' || !rateText || !Number.isFinite(rate) || rate < 0 || rate >= 1 || !reference.fingerprint) {
       throw new Error('请选择有净损失率的参考成品')
     }
     return { expectedVersion, entryMode: mode, referenceMaterialNo: reference.source.materialNo,

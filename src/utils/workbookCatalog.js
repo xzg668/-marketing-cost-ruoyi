@@ -1,8 +1,9 @@
 import { sourceColumns } from './workbookSourceColumns.js'
+import { scrapExample, scrapLinkedPrice, settlementBasePrice, settlementExample, settlementLinkedPrice, workbookExamples } from './workbookExamples.js'
 const c = (field, label, type = 'text', help = '', example = '') => ({ field, label, type, help, example })
 const columns = entries => entries.map(entry => c(...entry))
 const define = (title, sheet, entries, notes = [], purpose = '') => ({ title, sheet, columns: columns(entries), notes, purpose })
-const formula = (sheet, address, expression) => { sheet[address] = { t: 'n', f: expression, v: 0, z: '0.############' } }
+const formula = (sheet, address, expression, value = 0) => { sheet[address] = { t: 'n', f: expression, v: value, z: '0.############' } }
 
 export const workbookDefinitions = {
   materials: define('物料资料', '物料资料', [
@@ -28,7 +29,7 @@ export const workbookDefinitions = {
   ]),
   quality: define('质量损失率', '报价系统展示', [
     ['bareProductCode','料号'],['productName','品名'],['materialSpec','规格'],['productModel','型号'],
-    ['businessDivision','事业部'],['productCategory','大类'],['productSubcategory','小类'],['categorySpec','规格'],['fourthLevel','四级'],['lossRate','净损失率','percent','例如0.475%','0.475%'],
+    ['businessDivision','事业部'],['productCategory','大类'],['productSubcategory','小类'],['categorySpec','规格'],['fourthLevel','四级'],['lossRate','净损失率','percent','可填写0%或小于100%的正数百分比，留空跳过','0.475%'],
   ], ['年度在页面选择。填写实际裸品料号，保留表头和列顺序。']),
   property: define('产品属性', '产品属性', [
     ['productCode','料号'],['productName','品名'],['productSpec','规格'],['productModel','型号'],
@@ -91,21 +92,35 @@ workbookDefinitions.household.leadingRows = [['', '明细表2']]
 workbookDefinitions.settlement.leadingRows = [
   ['结算价格填写表'], ['铜（元/公斤）', '', '', 'B列填写预算价；C列填写原稿参考价'], ['锌（元/公斤）', '', ''],
 ]
-workbookDefinitions.settlement.customizeTemplate = book => {
+workbookDefinitions.settlement.templateNotes = [...workbookDefinitions.settlement.notes,
+  '第5行的计划价、重量及B2:C3为演示值。填写实际料号后，请替换演示值。固定价填写I列实际给定价并清除该行L列联动公式。']
+workbookDefinitions.settlement.customizeTemplate = (book, XLSX) => {
   const sheet = book.Sheets['结算价格']
-  sheet.E5 = { t: 'n', v: 1.05 }
-  formula(sheet, 'F5', 'D5*E5')
-  formula(sheet, 'L5', 'ROUND(F5+(($C$2-$B$2)*G5+($C$3-$B$3)*H5)/1000/1.13*1.05,4)')
-  formula(sheet, 'I5', 'L5')
+  const { budgetCu, referenceCu, budgetZn, referenceZn, plannedPrice, markupRatio, copperWeightG, zincWeightG } = settlementExample
+  XLSX.utils.sheet_add_aoa(sheet, [[budgetCu, referenceCu], [budgetZn, referenceZn]], { origin: 'B2' })
+  XLSX.utils.sheet_add_aoa(sheet, [[plannedPrice, markupRatio]], { origin: 'D5' })
+  XLSX.utils.sheet_add_aoa(sheet, [[copperWeightG, zincWeightG]], { origin: 'G5' })
+  XLSX.utils.sheet_add_aoa(sheet, [['结算联动价']], { origin: 'K5' })
+  formula(sheet, 'F5', 'D5*E5', settlementBasePrice)
+  formula(sheet, 'L5', `ROUND(F5+(($C$2-$B$2)*G5+($C$3-$B$3)*H5)/1000/1.13*${markupRatio},4)`, settlementLinkedPrice)
+  formula(sheet, 'I5', 'L5', settlementLinkedPrice)
 }
 workbookDefinitions.linked.customizeTemplate = (book, XLSX) => {
+  const blankWeight = 100, netWeight = 80, processFee = 2, agentFee = 0
+  const copperPrice = 100, scrapPrice = 60
   const factors = XLSX.utils.aoa_to_sheet([
     ['序号','价表影响因素名称','简称','取价来源','价格','单位'],
-    ['','电解铜','Cu','平均价','','元/公斤'],['','美国柜装黄铜','Brass','平均价','','元/公斤'],
+    [1,'电解铜','Cu','平均价',copperPrice,'元/公斤'],[2,'美国柜装黄铜','Brass','平均价',scrapPrice,'元/公斤'],
   ])
   factors['!cols'] = [{wch:10},{wch:26},{wch:16},{wch:16},{wch:20},{wch:12}]
   XLSX.utils.book_append_sheet(book, factors, '影响因素10')
-  formula(book.Sheets.ImportData, 'L2', "((I2*'影响因素10'!E2-J2*'影响因素10'!E3)/1000+K2)/1.13")
+  const items = book.Sheets.ImportData
+  XLSX.utils.sheet_add_aoa(items, [[blankWeight, netWeight, processFee, agentFee]], { origin: 'K2' })
+  items.A2 = { t: 's', v: '210', z: '@' }
+  items.P2 = { t: 's', v: '否', z: '@' }
+  items.S2 = { t: 's', v: '联动', z: '@' }
+  formula(items, 'O2', "((K2*'影响因素10'!$E$2-(K2-L2)*'影响因素10'!$E$3)/1000+M2+N2)/1.13")
+  items.O2.v = ((blankWeight * copperPrice - (blankWeight - netWeight) * scrapPrice) / 1000 + processFee + agentFee) / 1.13
 }
 
 for (const [kind, title, sheet] of [
@@ -170,19 +185,29 @@ workbookDefinitions.scrap.columns = [...workbookDefinitions.scrap.templateColumn
   ...columns([['unitPrice','当前不含税单价','number'],['expression','计算表达式'],['calcStatus','取价状态'],['priceMonth','月份']])]
 workbookDefinitions.scrap.leadingRows = [['1#电解铜价',''],['美国柜装黄铜',''],['长江现货A00','']]
 workbookDefinitions.scrap.notes.push('联动时在B1/B2/B3填原稿铜、黄铜、铝参考价（元/公斤），公式按实际业务填写并绝对引用，例如=$B$1*0.8/1.13。固定价不需要填写这些因素。')
+workbookDefinitions.scrap.templateNotes = [...workbookDefinitions.scrap.notes,
+  'F5为可编辑的联动示例，B1:B3为相应演示基价。填入实际料号及供应商后，请换成实际基价与公式；填固定价时直接以实际数值替换F5，并将G5改填固定价。']
+workbookDefinitions.scrap.customizeTemplate = (book, XLSX) => {
+  const sheet = book.Sheets.废料清单
+  const { copperPrice, brassPrice, aluminumPrice, copperRatio } = scrapExample
+  XLSX.utils.sheet_add_aoa(sheet, [[copperPrice], [brassPrice], [aluminumPrice]], { origin: 'B1' })
+  XLSX.utils.sheet_add_aoa(sheet, [['联动价']], { origin: 'G5' })
+  formula(sheet, 'F5', `$B$1*${copperRatio}/1.13`, scrapLinkedPrice)
+}
 
-workbookDefinitions.quantityRange = define('数量区间价','数量区间',[
+const rangeExportColumns = columns([
   ['orgCode','组织'],['materialCode','物料代码'],['materialName','物料名称'],['supplierCode','供应商代码'],['supplierName','供应商名称'],['specModel','规格型号'],['unit','单位'],
   ['rangeLow','区间下限','number'],['rangeHigh','区间上限','number'],['priceExclTax','不含税价','number'],['priceInclTax','含税价','number'],['taxIncluded','是否含税','boolean'],
   ['effectiveFrom','生效日期'],['effectiveTo','失效日期'],['blankWeight','下料重','number'],['netWeight','净重','number'],['processFee','加工费','number'],['agentFee','代理费','number'],
   ['sourceName','来源'],['purchaseClass','采购分类'],['orderType','订单类型'],['quota','配额','number'],
-],['区间上下限表示采购数量，不填写原材料行情。每个档位填写一行，日期使用YYYY-MM-DD。'])
+])
 workbookDefinitions.range = {
   title: '区间价格', sheet: 'ImportData',
   templateColumns: columns([['orgCode','组织'],['materialCode','物料代码'],['supplierName','供应商名称'],['supplierCode','供应商代码'],['specModel','规格型号'],['unit','单位'],['priceExclTax','单价','number'],['taxIncluded','是否含税','boolean']]),
-  columns: [...workbookDefinitions.quantityRange.columns, ...columns([['rangeBasis','区间依据'],['factorCode','行情因素'],['factorUnit','行情单位'],['formulaExpr','公式'],['currentFlag','当前标记']])],
-  notes: ['行情区间请同时填写ImportData物料主表和“铜价区间表”，保留同一料号、规格和供应商名称。',
-    '矩阵表头90000-94999和95000-99999为铜价档位示范（元/吨），请按实际报价改写并向右添加成对列。每档填写未税及含13%税价格。数量区间请使用页面的“数量区间模板”。'],
+  columns: [...rangeExportColumns, ...columns([['rangeBasis','区间依据'],['factorCode','行情因素'],['factorUnit','行情单位'],['formulaExpr','公式'],['currentFlag','当前标记']])],
+  notes: ['维护已有行情档位时，请在区间价列表使用“下载模板数据”。'],
+  templateNotes: ['新料号请同时填写ImportData物料主表和“铜价区间表”，保留同一料号、规格和供应商名称。已有料号请在列表选择“下载模板数据”。',
+    '矩阵表头90000-94999和95000-99999为铜价档位示范（元/吨），请按实际报价改写并向右添加成对列。每档填写未税及含13%税价格。'],
   customizeTemplate(book, XLSX) {
     const sheet = XLSX.utils.aoa_to_sheet([['铜价区间表'],['U9代码','图号','供应商名称','90000-94999','','95000-99999',''],['','','','不含税元/米','含13%税价','不含税元/米','含13%税价'],['','','','','','','']])
     sheet['!cols'] = Array.from({length:7}, () => ({wch:24}))
@@ -213,7 +238,23 @@ workbookDefinitions.cmsScrap.columns = workbookDefinitions.cmsScrap.columns.filt
 workbookDefinitions.u9material.columns = workbookDefinitions.u9material.columns.map(column => ({ ...column, field: column.field.replace(/_(?=\d)/g, '') }))
 workbookDefinitions.plate.notes.push('产品应用材质只允许：水氟SUS304、水氟316L、氟氟SUS304、氟氟316L、水水SUS304、水水316L。')
 
-workbookDefinitions.linked.templateColumns = workbookDefinitions.linked.columns
+workbookDefinitions.linked.templateColumns = columns([
+  ['priceOrgCode','组织','text','210商用；220板换','210'],['sourceName','来源'],['supplierName','供应商名称'],
+  ['supplierCode','供应商代码'],['purchaseClass','采购分类'],['materialName','物料名称'],
+  ['materialCode','物料代码','text','按实际料号填写，保留前导零'],['specModel','规格型号'],['unit','单位'],
+  ['formulaExpr','联动公式','text','可填写公式说明，实际公式编辑在O列“单价”'],
+  ['blankWeight','下料重','number','克'],['netWeight','净重','number','克'],
+  ['processFee','加工费','number','元'],['agentFee','代理费','number','元'],
+  ['sourceTaxExcludedPrice','单价','number','在公式栏输入真实Excel公式，O2为可编辑范例'],
+  ['taxIncluded','是否含税','boolean','与单价格结果一致；范例已除以1.13，填否','否'],
+  ['effectiveFrom','生效日期'],['effectiveTo','失效日期'],['orderType','订单类型','text','联动','联动'],
+])
+workbookDefinitions.linked.templateNotes = [
+  '按原采购价导入格式填写 ImportData，保留工作表、表头和列顺序。第二行是公式范例，料号及供应商留空。',
+  '在O列“单价”的公式栏直接修改公式。可引用本行K至N列及“影响因素10”的价格格。示例中的$E$2、$E$3为固定引用，向下复制时行情位置保持。',
+  '替换范例用量、费用和因素参考价，按原稿口径填写实际值。不适用的费用填0，公式税口径与P列“是否含税”一致。',
+  '在Excel中完成计算并保存整份工作簿，再通过“导入联动原稿”预检。财务有效价按现有基价规则生成。',
+]
 workbookDefinitions.linked.columns = workbookDefinitions.linked.columns.filter(column => column.field !== 'scrapWeight').map(column =>
   column.field === 'priceOrgCode' ? { ...column, field: 'orgCode' } : column)
 for (const kind of ['linked','range']) workbookDefinitions[kind].columns.push(...columns([
@@ -235,3 +276,19 @@ for (const [kind, entries] of [
   definition.templateColumns ||= definition.columns
   definition.columns=[...definition.columns,...columns(entries)]
 }
+
+for (const [kind, examples] of Object.entries(workbookExamples)) {
+  workbookDefinitions[kind].templateExamples = examples
+}
+workbookDefinitions.settlement.templateExampleColumns = columns([
+  ['budgetCu', '铜预算价 B2（元/公斤）', 'number'], ['referenceCu', '铜参考价 C2（元/公斤）', 'number'],
+  ['budgetZn', '锌预算价 B3（元/公斤）', 'number'], ['referenceZn', '锌参考价 C3（元/公斤）', 'number'],
+])
+workbookDefinitions.scrap.templateExampleColumns = columns([
+  ['copperPrice', '电解铜参考价 B1（元/公斤）', 'number'], ['brassPrice', '黄铜参考价 B2（元/公斤）', 'number'],
+  ['aluminumPrice', '铝参考价 B3（元/公斤）', 'number'],
+])
+workbookDefinitions.range.templateExampleColumns = columns([
+  ['band', '铜价区间表：铜价档位（元/吨）'], ['bandNet', '铜价区间表：不含税元/米', 'number'],
+  ['bandGross', '铜价区间表：含13%税价', 'number'],
+])

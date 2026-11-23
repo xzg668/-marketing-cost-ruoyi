@@ -1237,6 +1237,7 @@
       :saved-sheet="costRun.sheet"
       :initial-trace="traceVersion?.initialTrace || null"
       :version-no="traceVersion?.displayVersionNo || traceVersion?.versionNo || ''"
+      @cost-saved="showSavedLaborCost"
     />
 
     <BomNodeDetailDrawer v-model="bomNodeDrawerVisible" :node="selectedBomNode" />
@@ -2316,6 +2317,7 @@ async function loadPricePrepare(showError = true) {
 }
 
 let costRunReadRequest = 0
+let pendingSavedCostRun = null
 async function loadCostRun(showError = true, periodMonth = workbench.value.periodMonth) {
   const request = ++costRunReadRequest
   if (!oaNo.value || !itemId.value) return
@@ -3060,6 +3062,29 @@ function openSheetTrace(row) {
   traceDrawerVisible.value = true
 }
 
+async function showSavedLaborCost(costing) {
+  if (costing.oaNo !== oaNo.value || String(costing.oaFormItemId) !== itemId.value) return
+  const saved = costing.savedCostRun
+  const matchesVersion = String(saved?.sheet?.identity?.versionId) === String(costing.costVersionId)
+    && String(saved?.currentDisplayVersion?.id) === String(costing.costVersionId)
+  if (historyViewMode.value) {
+    if (matchesVersion) pendingSavedCostRun = saved
+    await router.replace({ query: { ...route.query, tab: 'COST_RUN', versionId: costing.costVersionId,
+      historyResultKind: 'recalculation' } })
+    return
+  }
+  activeTab.value = 'COST_RUN'
+  if (matchesVersion) {
+    ++costRunReadRequest
+    inputTabsNeedRefresh.value = true
+    applyCostRunResponse(saved)
+    costRunLoading.value = false
+    traceDrawerVisible.value = false
+    return
+  }
+  await loadWorkbench({ costResultOnly: true })
+}
+
 async function openCostRunTrace(row) {
   if (!row?.costRunNo) {
     ElMessage.error('当前成本版本缺少核算单号')
@@ -3516,6 +3541,16 @@ async function initializeWorkbench() {
 
 watch([oaNo, itemId, historyVersionId], () => {
   ++costRunReadRequest
+  const saved = pendingSavedCostRun
+  pendingSavedCostRun = null
+  const identity = saved?.sheet?.identity
+  if (identity?.oaNo === oaNo.value && String(identity.oaFormItemId) === itemId.value
+      && String(identity.versionId) === String(historyVersionId.value)) {
+    applyCostRunResponse(saved)
+    costRunLoading.value = false
+    traceDrawerVisible.value = false
+    return
+  }
   inputTabsNeedRefresh.value = false
   resetCostRunResult()
   initializeWorkbench()

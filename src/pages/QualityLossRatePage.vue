@@ -89,7 +89,7 @@
           <el-form-item label="小类"><el-input v-model="formModel.productSubcategory" /></el-form-item>
           <el-form-item label="分类规格"><el-input v-model="formModel.categorySpec" /></el-form-item>
           <el-form-item label="四级"><el-input v-model="formModel.fourthLevel" /></el-form-item>
-          <el-form-item label="净损失率" required><el-input v-model="formModel.lossRate" placeholder="例如 0.475% 或 0.00475" /></el-form-item>
+          <el-form-item label="净损失率" required><el-input v-model="formModel.lossRate" placeholder="例如 0% 或 0.475%" /></el-form-item>
           <el-form-item label="备注"><el-input v-model="formModel.remark" /></el-form-item>
         </div>
       </el-form>
@@ -236,8 +236,8 @@ const submitRow = async () => {
     ElMessage.warning('年度、裸品料号必填')
     return
   }
-  if (!Number.isFinite(lossRate) || lossRate <= 0 || lossRate >= 1) {
-    ElMessage.warning('公共净损失率必须大于0且小于100%')
+  if (!Number.isFinite(lossRate) || lossRate < 0 || lossRate >= 1) {
+    ElMessage.warning('请填写大于等于0%且小于100%的净损失率')
     return
   }
   const payload = { ...formModel.value, rateYear, lossRate }

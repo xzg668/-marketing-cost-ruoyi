@@ -113,7 +113,7 @@
     </el-card>
 
     <OriginalLinkedImportDialog v-model="originalImportVisible" :pricing-month="filters.pricingMonth"
-      :business-unit-type="filters.businessUnitType" @imported="onOriginalImported" />
+      :business-unit-type="filters.businessUnitType" @imported="onOriginalImported" @voided="fetchList" />
     <OriginalPriceDetailDialog :rule-id="originalDetailId" kind="linked" :pricing-month="filters.pricingMonth"
       @close="originalDetailId = null" />
 

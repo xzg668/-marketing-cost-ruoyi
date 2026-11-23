@@ -79,6 +79,12 @@ const buildLinkedItemsExcelForm = (file, pricingMonth, options = {}) => {
 export const fetchLinkedImportedFiles = (params) =>
   request('/api/v1/price-linked/items/imported-files', { params, suppressErrorToast: true })
 
+export const previewVoidLinkedImportedFile = (id, params) =>
+  request(`/api/v1/price-linked/items/imported-files/${id}/void-preview`, { params, suppressErrorToast: true })
+
+export const voidLinkedImportedFile = (id, params) =>
+  request(`/api/v1/price-linked/items/imported-files/${id}/void`, { method: 'POST', params, suppressErrorToast: true })
+
 /**
  * T19：查询单条联动计算结果的 trace JSON（T16）—— 404 的情况由 errorHandler 统一提示。
  */

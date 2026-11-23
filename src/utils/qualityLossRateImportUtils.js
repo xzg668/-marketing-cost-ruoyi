@@ -25,8 +25,9 @@ export const parseQualityLossRate = (value) => {
     return null
   }
   if (text.endsWith('%')) {
-    const parsed = Number(text.slice(0, -1).trim())
-    return Number.isFinite(parsed) ? parsed / 100 : Number.NaN
+    const percent = text.slice(0, -1).trim()
+    const parsed = Number(percent)
+    return percent && Number.isFinite(parsed) ? parsed / 100 : Number.NaN
   }
   const parsed = Number(text)
   return Number.isFinite(parsed) ? parsed : Number.NaN
@@ -98,8 +99,8 @@ export const parseQualityLossRateWorkbook = (workbook, XLSX) => {
       skippedRows += 1
       continue
     }
-    if (!Number.isFinite(rate) || rate <= 0 || rate >= 1) {
-      throw new Error(`Excel第${rowNo}行公共净损失率必须大于0且小于100%`)
+    if (!Number.isFinite(rate) || rate < 0 || rate >= 1) {
+      throw new Error(`Excel第${rowNo}行公共净损失率必须大于等于0%且小于100%`)
     }
     if (seenCodes.has(bareProductCode)) {
       throw new Error(`Excel第${rowNo}行裸品料号重复：${bareProductCode}`)

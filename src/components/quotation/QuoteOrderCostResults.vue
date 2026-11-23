@@ -7,7 +7,7 @@
     </el-select>
     <p v-if="current">{{ current.materialNo || '新品' }} · {{ current.productName || current.sunlModel || '' }}</p>
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
-    <el-button v-if="error" @click="load">重新读取结果</el-button>
+    <el-button v-if="error" @click="load()">重新读取结果</el-button>
     <div v-loading="loading">
       <template v-if="sheet">
         <el-descriptions :column="2" border>
@@ -20,7 +20,7 @@
         ? `当前产品${current.workflow.currentStatusLabel}，核算成功后在此显示结果` : '核算成功后在此显示结果' }}</p>
     </div>
     <CostRunTraceDrawer v-model="traceVisible" :cost-run-no="sheet?.identity.costRunNo || ''"
-      :version-no="sheet?.identity.versionNo || ''" :saved-sheet="sheet" :initial-trace="trace" />
+      :version-no="sheet?.identity.versionNo || ''" :saved-sheet="sheet" :initial-trace="trace" @cost-saved="showSavedCost" />
   </section>
 </template>
 
@@ -44,10 +44,14 @@ watch(() => [props.oaNo, props.items], (_, previous) => {
     selectedId.value = String((props.items.find(item => currentVersion(item)) || props.items[0])?.id || '')
   }
 }, { immediate: true, flush: 'sync' })
-async function load() {
-  const request = ++generation, oaNo = props.oaNo, item = current.value, versionId = currentVersion(item)
+async function load(versionId = currentVersion(current.value), savedSheet) {
+  const request = ++generation, oaNo = props.oaNo, item = current.value
   sheet.value = null; error.value = ''; loading.value = false; traceVisible.value = false
   if (!props.active || !oaNo || !item || !versionId) return
+  if (String(savedSheet?.identity?.versionId) === String(versionId)) {
+    sheet.value = savedSheet
+    return
+  }
   loading.value = true
   try {
     const result = await fetchQuoteCostRun(oaNo, item.id, { versionId })
@@ -57,11 +61,16 @@ async function load() {
   } catch (failure) { if (request === generation) error.value = failure?.message || '核算结果读取失败' }
   finally { if (request === generation) loading.value = false }
 }
+function showSavedCost(costing) {
+  if (costing.oaNo === props.oaNo && String(costing.oaFormItemId) === selectedId.value) {
+    return load(costing.costVersionId, costing.savedCostRun?.sheet)
+  }
+}
 function openTrace(row) {
   trace.value = { rowKey: row.key, partItemId: row.partItemIds?.[0], costItemId: row.costItemIds?.[0], costCode: row.code }
   traceVisible.value = true
 }
-watch(() => [props.oaNo, props.active, current.value?.id, currentVersion(current.value)], load, { immediate: true, flush: 'sync' })
+watch(() => [props.oaNo, props.active, current.value?.id, currentVersion(current.value)], () => load(), { immediate: true, flush: 'sync' })
 onScopeDispose(() => { generation++ })
 </script>
 

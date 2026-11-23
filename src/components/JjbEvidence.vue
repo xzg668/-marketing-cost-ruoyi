@@ -18,7 +18,8 @@
         <template v-if="selected.paths?.length"><dt>实际计价路径</dt><dd>{{ selected.paths.join('；') }}</dd></template>
         <dt>说明</dt><dd>{{ selected.remark || '' }}</dd>
       </dl>
-      <CostAmountComposition v-if="compositionSelector" :cost-run-no="sheet.identity.costRunNo" v-bind="compositionSelector" />
+      <CostAmountComposition v-if="compositionSelector" :cost-run-no="sheet.identity.costRunNo"
+        :allow-labor-period="allowLaborPeriod" v-bind="compositionSelector" @cost-saved="emit('cost-saved', $event)" />
       <article v-for="(line, index) in selected.manufacturing || []" :key="index" class="monthly-evidence" aria-label="制造件计算明细">
         <h4>{{ line.processType || '历史未记录加工方式' }} · {{ line.childMaterialNo }} {{ line.childMaterialName }}</h4>
         <dl>
@@ -61,9 +62,15 @@
 import { computed, ref, watch } from 'vue'
 import { savedMoney, rowBasis, sheetTotals, grossWeightWithSource } from '../utils/jjbSheet'
 import { selectEvidenceRow, selectAmountComposition } from '../utils/jjbEvidence'
+import { useUserStore } from '../store/modules/user'
 import CostAmountComposition from './CostAmountComposition.vue'
 import JjbTotalExplanation from './JjbTotalExplanation.vue'
 const props = defineProps({ sheet: { type: Object, required: true }, initialTrace: { type: Object, default: null } })
+const emit = defineEmits(['cost-saved'])
+const user = useUserStore()
+const allowLaborPeriod = computed(() => ['SUCCESS', 'CONFIRMED'].includes(props.sheet.identity.status)
+  && (user.roles.some(role => ['admin', 'finance_reviewer'].includes(role))
+    || user.permissions.some(permission => ['*:*:*', 'cms:cost:effective:refresh'].includes(permission))))
 const sourceFields = [
   ['financialScenarioPrice','基准口径单价 P0'], ['customerScenarioPrice','客户口径单价 P1'],
   ['customerCuBand','客户Cu选中档位'], ['factorSubstitution','材料因素代入依据'],

@@ -2,7 +2,9 @@
   <section class="quote-page" v-loading="loading">
     <div class="page-head">
       <div class="quote-heading">
-        <div class="quote-title-line"><h1>报价单详情</h1><span class="product-count">{{ detail.items?.length || 0 }} 个产品</span></div>
+        <div class="quote-title-line"><h1>报价单详情</h1><span class="product-count">{{ detail.items?.length || 0 }} 个产品</span>
+          <el-tag v-if="closedCount" type="success">{{ detail.monthClose.periodMonth }} {{ allClosed ? '已结账' : '部分已结账' }}</el-tag>
+        </div>
         <p class="quote-identity"><span class="quote-number">{{ oaNo }}</span><span v-if="detail.customer" class="quote-customer">{{ detail.customer }}</span></p>
       </div>
       <div class="page-actions">
@@ -12,7 +14,7 @@
         <el-button
           type="primary"
           :loading="batchSubmitting"
-          :disabled="batchRun?.active || materialDisabled || detail.oaWorkflow?.canCost === false || oemSavingId !== ''"
+          :disabled="allClosed || batchRun?.active || materialDisabled || detail.oaWorkflow?.canCost === false || oemSavingId !== ''"
           @click="submitWholeQuoteCosting"
         >
           {{ batchRun?.active ? '整单核算中' : wholeLabel }}
@@ -192,7 +194,8 @@
           </el-table-column>
           <el-table-column label="当前状态" min-width="160">
             <template #default="{ row }">
-              <el-tag :type="workflowStatusTagType(displayCostStatus(row).code)" effect="plain">
+              <el-tag v-if="closedVersion(row)" type="success" effect="plain">已结账</el-tag>
+              <el-tag v-else :type="workflowStatusTagType(displayCostStatus(row).code)" effect="plain">
                 {{ displayCostStatus(row).label }}
               </el-tag>
             </template>
@@ -217,7 +220,11 @@
           <el-table-column label="操作" width="180" fixed="right">
             <template #default="{ row }">
               <div class="row-actions">
-                <el-button v-if="needsCostRecalculation(row) || canRegenerateCost(row)" link type="primary"
+                <el-button v-if="closedVersion(row)" link type="primary"
+                  @click="openCostingWorkbench(row, { tab: 'COST_RUN', versionId: closedVersion(row), historyResult: 'quote' })">
+                  查看结账成本
+                </el-button>
+                <el-button v-else-if="needsCostRecalculation(row) || canRegenerateCost(row)" link type="primary"
                   :disabled="detail.oaWorkflow?.canCost === false"
                   :loading="actionLoadingId === rowActionKey(row)" @click="submitSingleProductCosting(row, 'INPUT_CHANGED')">
                   {{ '重新核算本产品' }}
@@ -232,11 +239,11 @@
                 >
                   {{ row.workflow?.nextActionLabel }}
                 </el-button>
-                <el-button v-if="hasQuoteItemCostingGap(row)" link type="warning" @click="openCostingGap(row)">
+                <el-button v-if="!closedVersion(row) && hasQuoteItemCostingGap(row)" link type="warning" @click="openCostingGap(row)">
                   查看缺口
                 </el-button>
                 <el-button
-                  v-if="hasHistoricalCostResult(row) && (needsCostRecalculation(row) || canRegenerateCost(row) || row.workflow?.nextAction !== 'VIEW_COSTING_RESULT')"
+                  v-if="!closedVersion(row) && hasHistoricalCostResult(row) && (needsCostRecalculation(row) || canRegenerateCost(row) || row.workflow?.nextAction !== 'VIEW_COSTING_RESULT')"
                   link
                   type="primary"
                   :loading="costResultDialog.loading && costResultDialog.itemId === row.id"
@@ -495,6 +502,9 @@ watch(activeTab, value => {
   if (value !== (route.query.tab || 'items')) router.replace({ query: { ...route.query, tab: value === 'items' ? undefined : value } })
 })
 const detail = ref({})
+const closedCount = computed(() => (detail.value.items || []).filter(closedVersion).length)
+const allClosed = computed(() => closedCount.value > 0 && closedCount.value === detail.value.items.length)
+function closedVersion(row) { return detail.value.monthClose?.lockedVersions?.[row.id] }
 const oemSavingId = ref('')
 const canUseOemConfig = computed(() => user.roles.some(role => ['admin', 'bu_director', 'bu_staff']
   .includes(String(role).toLowerCase())))
@@ -692,7 +702,7 @@ const { batchRun, batchSubmitting, loadBatchProgress, submitWholeQuoteCosting, c
       if (!scope.isCurrent()) return
       detail.value = withQuoteItemWorkflow(base)
     },
-    onSubmitted: (next) => ElMessage.success(`整单核算已提交，共 ${next?.totalCount || 0} 个产品`),
+    onSubmitted: (next) => ElMessage.success(next?.message || `整单核算已提交，共 ${next?.totalCount || 0} 个产品`),
     onError: (error) => ElMessage.error(error?.message || '整单核算提交失败'),
     onFinished: (next) => {
       if (next?.businessOutcome === 'WAITING_INPUT') {
@@ -877,6 +887,7 @@ async function restartCosting(row) {
   return submitSingleProductCosting(row, 'INPUT_CHANGED')
 }
 async function submitSingleProductCosting(row, reason, periodMonth) {
+  if (closedVersion(row)) return ElMessage.warning('本产品当月成本已结账')
   if (oemSavingId.value) return
   if (actionLoadingId.value) return
   const scope = captureScope()

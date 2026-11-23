@@ -51,12 +51,12 @@ export function sheetRowCells(row, group, index) {
   if (row.settlementCopperWeightG != null) cells[8].value =
     [row.netWeight, `${row.settlementCopperWeightG} g`, '（家用结算Cu重）'].filter(value => value != null && value !== '').join('\n')
   if (row.kind === 'HOUSEHOLD') cells[13].value = row.priceSource || '询价（家用部件）'
-  if (['LOSS', 'MANUFACTURE'].includes(row.code)) {
-    cells[3].value = ratePercent(row.rate); cells[3].key = 'rate'
+  if (['LOSS', 'MANUFACTURE'].includes(row.code) ||
+      (row.code === 'SALES_EXP' && row.rate != null && row.remark?.includes('（OEM）'))) {
+    cells[3].value = rowBasis(row); cells[3].key = 'rate'
   }
   cells[14].value = row.code === 'SALES_EXP' && row.rate != null && row.remark === '（OEM）' ? '' : row.remark || ''
-  // Detailed source identities remain available through the existing trace action and tooltips.
-  cells[15].value = (row.rate != null && !['LOSS', 'MANUFACTURE'].includes(row.code)) || ['HOUSEHOLD', 'FEE'].includes(row.kind) ? rowBasis(row) : ''
+  cells[15].value = row.cmsSourceNote || ''
   return cells.filter(c => !c.omit)
 }
 export const sectionLabels = Object.freeze({

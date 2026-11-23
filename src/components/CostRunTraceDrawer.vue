@@ -20,7 +20,7 @@
         title="该版本未生成底稿快照"
       />
 
-      <JjbEvidence v-if="sheet" :sheet="sheet" :initial-trace="initialTrace" />
+      <JjbEvidence v-if="sheet" :sheet="sheet" :initial-trace="initialTrace" @cost-saved="showSavedCost" />
 
       <div v-if="!sheet?.identity.monthly" class="trace-body">
         <aside class="trace-list">
@@ -242,12 +242,17 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits(['update:modelValue', 'cost-saved'])
 
 const visible = computed({
   get: () => props.modelValue,
   set: (value) => emit('update:modelValue', value),
 })
+
+function showSavedCost(costing) {
+  visible.value = false
+  emit('cost-saved', costing)
+}
 
 const loading = ref(false)
 const detailLoading = ref(false)

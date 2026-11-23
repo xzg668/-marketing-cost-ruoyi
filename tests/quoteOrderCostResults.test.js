@@ -24,6 +24,20 @@ test('reads the precise current version inline, without navigating or choosing f
   assert.deepEqual(calls, [['OA', 174, { versionId: 185 }]])
   assert.equal(h.sheet.value, sheet)
 })
+test('shows the new saved salary cost while the order still has the previous version', async () => {
+  const calls = [], sheet = { identity: { versionId: 186 } }
+  const h = harness(async (...args) => { calls.push(args); return { sheet } })
+  await h.load(186)
+  assert.deepEqual(calls, [['OA', 174, { versionId: 186 }]])
+  assert.equal(h.sheet.value, sheet)
+})
+test('uses the sheet returned by saving a CMS period without requesting it again', async () => {
+  const sheet = { identity: { versionId: 186 } }
+  const h = harness(() => assert.fail('a sheet from the same saved version should not be fetched again'))
+  await h.load(186, sheet)
+  assert.equal(h.sheet.value, sheet)
+  assert.equal(h.loading.value, false)
+})
 test('an older result cannot replace a completed newer version, and new loads clear the old sheet', async () => {
   const pending = []; const h = harness(() => new Promise(resolve => pending.push(resolve)))
   const old = h.load(); h.current.value = item(186); const next = h.load()

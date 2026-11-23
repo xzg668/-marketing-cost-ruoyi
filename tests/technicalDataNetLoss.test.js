@@ -8,12 +8,14 @@ test('净损失率百分数展示保留来源精度，零与未填分开', () =>
     assert.equal(netLossPercent(value), expected)
   }
 })
-test('参考只传所选成品及指纹，不能带前端费率，公共零值不可参考', () => {
-  const reference = { source: { status: 'AVAILABLE', rate: 0.003, materialNo: 'A' }, fingerprint: 'hash' }
-  assert.deepEqual(netLossPayload('REFERENCE', reference, '9.9', 3), {
-    expectedVersion: 3, entryMode: 'REFERENCE', referenceMaterialNo: 'A', referenceFingerprint: 'hash' })
+test('零值和正数净损失率均可参考，提交所选成品及指纹', () => {
+  const reference = { source: { status: 'AVAILABLE', rate: 0, materialNo: 'A' }, fingerprint: 'hash' }
+  for (const rate of [0, '0.000', 0.003]) {
+    assert.deepEqual(netLossPayload('REFERENCE', { ...reference, source: { ...reference.source, rate } }, '9.9', 3), {
+      expectedVersion: 3, entryMode: 'REFERENCE', referenceMaterialNo: 'A', referenceFingerprint: 'hash' })
+  }
   for (const value of [null, { ...reference, source: { ...reference.source, status: 'MISSING' } },
-    ...[null, 0, -1, 1, 'NaN'].map(rate => ({ ...reference, source: { ...reference.source, rate } }))]) assert.throws(() => netLossPayload('REFERENCE', value, '', 1), /参考成品/)
+    ...[null, '', -1, 1, 'NaN'].map(rate => ({ ...reference, source: { ...reference.source, rate } }))]) assert.throws(() => netLossPayload('REFERENCE', value, '', 1), /参考成品/)
 })
 test('手填保留百分数文本，仅当前方式字段提交，非法范围精度拒绝', () => {
   for (const value of ['0', '0.475', '99.999']) assert.deepEqual(netLossPayload('MANUAL', { fingerprint: 'old' }, value, 5),

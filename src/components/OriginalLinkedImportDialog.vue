@@ -66,10 +66,11 @@
       </template>
       <p v-else-if="!error && !previewing" class="empty-hint">选择供管部原稿，系统会按财务基价复算。</p>
     </div>
-    <LinkedImportedFiles v-if="modelValue" :pricing-month="pricingMonth" :business-unit-type="businessUnitType" />
+    <LinkedImportedFiles v-if="modelValue" :pricing-month="pricingMonth" :business-unit-type="businessUnitType"
+      :disabled="previewing || publishing" @voiding-change="voiding = $event" @voided="onVoided" />
     <template #footer>
       <el-button :disabled="busy" @click="$emit('update:modelValue', false)">取消</el-button>
-      <el-button type="primary" :disabled="!preview?.canConfirm || previewing" :loading="publishing" @click="publish">{{ publishing ? '正在保存并生成有效价' : '确认导入' }}</el-button>
+      <el-button type="primary" :disabled="!preview?.canConfirm || busy" :loading="publishing" @click="publish">{{ publishing ? '正在保存并生成有效价' : '确认导入' }}</el-button>
     </template>
   </el-dialog>
 </template>
@@ -82,11 +83,11 @@ import LinkedImportedFiles from './LinkedImportedFiles.vue'
 import { previewLinkedItemsExcel, importLinkedItemsExcel } from '../api/priceLinkedItems'
 import { originalPublicationMessage, businessUnitLabel, originalActionLabel, originalSummary, financeCopperPerTon, priceText } from './originalPriceDisplay'
 const props = defineProps({ modelValue: Boolean, pricingMonth: String, businessUnitType: String })
-const emit = defineEmits(['update:modelValue', 'imported'])
+const emit = defineEmits(['update:modelValue', 'imported', 'voided'])
 const upload = ref(null), file = ref(null), preview = ref(null), error = ref('')
 const priceOrgCode = ref('210')
-const previewing = ref(false), publishing = ref(false), tab = ref('prices')
-const busy = computed(() => previewing.value || publishing.value)
+const previewing = ref(false), publishing = ref(false), voiding = ref(false), tab = ref('prices')
+const busy = computed(() => previewing.value || publishing.value || voiding.value)
 const summary = computed(() => originalSummary(preview.value?.rows, preview.value?.errors))
 const unitLabel = (unit) => ({ CNY_KG: '元/公斤', CNY_TON: '元/吨', CNY_G: '元/克' })[unit] || unit
 let generation = 0
@@ -112,6 +113,11 @@ const replaceFile = (files) => {
   if (busy.value) return
   upload.value.clearFiles()
   const next = files[0]; next.uid = genFileId(); upload.value.handleStart(next)
+}
+const onVoided = () => {
+  invalidate()
+  if (file.value) previewFile()
+  emit('voided')
 }
 const publish = async () => {
   if (!preview.value?.canConfirm || busy.value) return

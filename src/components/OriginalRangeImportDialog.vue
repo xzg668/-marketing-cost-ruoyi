@@ -1,22 +1,32 @@
 <template>
-  <el-dialog :model-value="modelValue" title="导入区间原稿" width="1100px" destroy-on-close
+  <el-dialog :model-value="modelValue" title="导入区间价" width="1100px" destroy-on-close
     :close-on-click-modal="false" :close-on-press-escape="!busy" :show-close="!busy"
     @update:model-value="$emit('update:modelValue', $event)">
-    <WorkbookActions kind="range" />
     <el-form :inline="true" label-width="80px">
       <el-form-item label="导入范围"><span>{{ businessUnitLabel(user.businessUnitType) }} · {{ month }}</span></el-form-item>
+      <el-form-item v-if="supplementRuleId != null" label="导入方式">
+        <el-select v-model="onlySelected" :disabled="busy" style="width: 170px">
+          <el-option :value="true" label="仅补所下载料号" />
+          <el-option :value="false" label="导入整份原稿" />
+        </el-select>
+      </el-form-item>
       <el-form-item label="原稿文件">
         <el-upload ref="upload" :auto-upload="false" :limit="1" accept=".xlsx,.xls"
-          :disabled="busy" :on-change="changed" :on-remove="removed" :on-exceed="replaceFile">
-          <el-button :disabled="busy">选择原稿</el-button>
+          :disabled="busy || !sourceReady" :on-change="changed" :on-remove="removed" :on-exceed="replaceFile">
+          <el-button :disabled="busy || !sourceReady">选择原稿</el-button>
         </el-upload>
       </el-form-item>
       <el-form-item>
-        <el-button type="primary" :disabled="!file || !month || publishing" :loading="previewing" @click="previewFile">
+        <el-button type="primary" :disabled="!file || !month || busy" :loading="previewing" @click="previewFile">
           重新复算
         </el-button>
       </el-form-item>
     </el-form>
+    <p v-if="supplementSource">
+      {{ supplementSource.identity.materialCode }} · {{ supplementSource.identity.supplierName }}
+      （{{ supplementSource.identity.supplierCode || '原稿未填代码' }}） · {{ supplementSource.identity.specification }}
+      · 「{{ supplementSource.matrixSheet }}」第 {{ supplementSource.matrixRow }} 行
+    </p>
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
     <template v-if="preview">
       <el-alert v-if="preview.notices?.length" type="info" :closable="false" title="识别提示：以下行未丢失，按说明跳过或纠正。" />
@@ -72,7 +82,7 @@
     </template>
     <template #footer>
       <el-button :disabled="busy" @click="$emit('update:modelValue', false)">关闭</el-button>
-      <el-button type="primary" :disabled="!preview?.canConfirm || previewing" :loading="publishing" @click="publish">
+      <el-button type="primary" :disabled="!preview?.canConfirm || busy" :loading="publishing" @click="publish">
         {{ publishing ? '正在保存并生成有效价' : '确认导入' }}
       </el-button>
     </template>
@@ -80,14 +90,17 @@
 </template>
 
 <script setup>
-import WorkbookActions from './WorkbookActions.vue'
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { ElMessage, genFileId } from 'element-plus'
 import { useUserStore } from '../store/modules/user'
-import { previewRangeOriginal, publishRangeOriginal } from '../api/priceRangeItems'
+import { fetchRangeOriginal, previewRangeOriginal, publishRangeOriginal } from '../api/priceRangeItems'
 import { originalPublicationMessage, businessUnitLabel, originalActionLabel, originalSummary, priceText, financeCopperPerTon, rangeText } from './originalPriceDisplay'
 
-const props = defineProps({ modelValue: Boolean, initialMonth: { type: String, required: true } })
+const props = defineProps({
+  modelValue: Boolean,
+  initialMonth: { type: String, required: true },
+  supplementRuleId: { type: Number, default: null },
+})
 const emit = defineEmits(['update:modelValue', 'imported'])
 const user = useUserStore()
 const month = computed(() => props.initialMonth)
@@ -97,12 +110,32 @@ const preview = ref(null)
 const error = ref('')
 const previewing = ref(false)
 const publishing = ref(false)
+const onlySelected = ref(true)
+const activeRuleId = computed(() => onlySelected.value ? props.supplementRuleId : null)
+const sourceDetail = ref(null)
+const supplementSource = computed(() => sourceDetail.value?.saved?.sources?.[0])
+const sourceReady = computed(() => activeRuleId.value == null || Boolean(supplementSource.value))
 const busy = computed(() => previewing.value || publishing.value)
 const tab = ref('prices')
 let generation = 0
+const scope = computed(() => JSON.stringify([props.modelValue, props.initialMonth, activeRuleId.value, user.userId, user.businessUnitType]))
 const invalidate = () => { generation += 1; preview.value = null; error.value = '' }
-watch(() => [props.modelValue, props.initialMonth, user.businessUnitType], () => {
-  invalidate(); file.value = null; upload.value?.clearFiles(); previewing.value = false
+onBeforeUnmount(() => { generation += 1 })
+watch(() => props.modelValue, (open) => { if (open) onlySelected.value = true })
+watch(scope, async (owner) => {
+  invalidate()
+  file.value = null
+  upload.value?.clearFiles()
+  previewing.value = false
+  sourceDetail.value = null
+  if (!props.modelValue || activeRuleId.value == null) return
+  const current = generation
+  try {
+    const detail = await fetchRangeOriginal(activeRuleId.value)
+    if (owner === scope.value && generation === current) sourceDetail.value = detail
+  } catch (failure) {
+    if (owner === scope.value && generation === current) error.value = failure.message || '原稿读取失败'
+  }
 })
 const changed = (item) => { file.value = item.raw; invalidate(); previewFile() }
 const removed = () => { file.value = null; invalidate() }
@@ -119,22 +152,23 @@ const warnings = computed(() => (preview.value?.rows || []).flatMap(({ rule }) =
     source: `${band.address.sheet}!${band.address.cell}`, range: band.header.rawValue, message: band.problem }))))
 
 const previewFile = async () => {
+  if (busy.value) return
   invalidate()
   if (!file.value || !month.value) { error.value = '请先选择导入月份和原稿'; return }
   const current = generation
   previewing.value = true
   try {
-    const result = await previewRangeOriginal(file.value, month.value, user.businessUnitType)
+    const result = await previewRangeOriginal(file.value, month.value, user.businessUnitType, activeRuleId.value)
     if (generation === current) { preview.value = result; tab.value = result.canConfirm ? 'prices' : 'errors' }
   } catch (failure) { if (generation === current) error.value = failure.message || '原稿预检失败' }
   finally { if (generation === current) previewing.value = false }
 }
 const publish = async () => {
-  if (!preview.value?.canConfirm) return
+  if (busy.value || !preview.value?.canConfirm) return
   publishing.value = true
   const current = generation
   try {
-    const result = await publishRangeOriginal(file.value, month.value, user.businessUnitType, preview.value)
+    const result = await publishRangeOriginal(file.value, month.value, user.businessUnitType, preview.value, activeRuleId.value)
     if (generation !== current) return
     ElMessage.success(originalPublicationMessage(result, '区间'))
     emit('imported', result)

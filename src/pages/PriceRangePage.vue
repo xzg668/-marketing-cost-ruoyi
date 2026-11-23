@@ -2,24 +2,14 @@
   <div class="range-page price-source-page">
     <el-card shadow="never" class="filter-card">
       <div class="filter-header">
-        <div class="filter-title">区间价</div>
+        <div class="filter-title">
+          区间价
+          <el-button v-if="returnToWorkbenchVisible" link @click="returnToWorkbench">返回核算工作台</el-button>
+        </div>
         <div class="filter-actions">
-          <WorkbookActions kind="range" :fetch-page="exportPricePage" :query="buildParams()" import-permission="price:range:import" />
-          <WorkbookActions kind="quantityRange" template-label="数量区间模板" import-permission="price:range:import" />
-          <el-button v-hasPermi="['price:range:import']" type="primary" @click="originalImportVisible = true">导入区间原稿</el-button>
-          <el-button v-if="returnToWorkbenchVisible" @click="returnToWorkbench">
-            返回核算工作台
-          </el-button>
-          <el-upload
-            class="upload-btn"
-            :show-file-list="false"
-            :auto-upload="false"
-            accept=".xlsx,.xls,.csv"
-            :on-change="handleFileChange"
-          >
-            <el-button :loading="importing" v-hasPermi="['price:range:import']">导入数量区间</el-button>
-          </el-upload>
-          <el-button v-hasPermi="['price:range:add']" @click="openCreate">新增数量区间</el-button>
+          <el-button v-hasPermi="['price:range:import']" @click="openMaintenance('template')">下载模板数据</el-button>
+          <el-button v-hasPermi="['price:range:import']" @click="openOriginalImport">导入</el-button>
+          <el-button v-hasPermi="['price:range:add']" type="primary" @click="openMaintenance('add')">新增</el-button>
         </div>
       </div>
       <el-form :inline="true" label-width="auto" class="price-search-form" @submit.prevent="applyFilters">
@@ -105,9 +95,13 @@
       />
     </el-card>
 
-    <OriginalRangeImportDialog v-model="originalImportVisible" :initial-month="filters.effectiveFrom" @imported="fetchList" />
+    <OriginalRangeImportDialog v-model="originalImportVisible" :initial-month="importMonth"
+      :supplement-rule-id="supplementRuleId" @imported="refreshAfterImport" />
+    <RangeBandDialog v-if="maintenanceMode" :mode="maintenanceMode" :month="maintenanceMonth"
+      :initial-material-code="filters.materialCode" @close="maintenanceMode = null"
+      @added="finishAddition" @downloaded="rememberTemplate" />
     <OriginalPriceDetailDialog kind="range" :pricing-month="filters.effectiveFrom" :rule-id="originalRuleId" @close="originalRuleId = null" />
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="680px">
+    <el-dialog v-model="dialogVisible" title="编辑区间价" width="680px">
       <el-form :model="formModel" label-width="100px">
         <el-row :gutter="12">
           <el-col :span="12">
@@ -129,14 +123,14 @@
           </el-col>
           <el-col :span="12">
             <el-form-item label="区间下限">
-              <el-input v-model="formModel.rangeLow" placeholder="采购数量" />
+              <el-input v-model="formModel.rangeLow" />
             </el-form-item>
           </el-col>
         </el-row>
         <el-row :gutter="12">
           <el-col :span="12">
             <el-form-item label="区间上限">
-              <el-input v-model="formModel.rangeHigh" placeholder="采购数量" />
+              <el-input v-model="formModel.rangeHigh" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -174,8 +168,6 @@
 
 <script setup>
 import '../styles/priceSources.css'
-import { priceExportPage } from '../utils/priceWorkbookExport'
-import WorkbookActions from '../components/WorkbookActions.vue'
 import { fetchRangeEffectivePrices } from '../api/originalPriceTrials'
 import { effectivePriceStatusLabel, priceText, rangeText } from '../components/originalPriceDisplay'
 import { computed, onMounted, ref, watch } from 'vue'
@@ -184,21 +176,24 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import BasePagination from '../components/BasePagination.vue'
 import OriginalRangeImportDialog from '../components/OriginalRangeImportDialog.vue'
 import OriginalPriceDetailDialog from '../components/OriginalPriceDetailDialog.vue'
+import RangeBandDialog from '../components/RangeBandDialog.vue'
 import {
   fetchRangeItems,
-  importRangeItems,
-  createRangeItem,
   updateRangeItem,
   deleteRangeItem,
 } from '../api/priceRangeItems'
-import { detectQuantityRangeWorkbookRoute, formatCurrentStatus, formatRangeType, formatRange, findQuantityColumn as findColumn } from './priceRangeImportUtils'
+import { formatCurrentStatus, formatRangeType, formatRange } from './priceRangeImportUtils'
 
 const route = useRoute()
 const router = useRouter()
 const loading = ref(false)
 const originalImportVisible = ref(false)
 const originalRuleId = ref(null)
-const importing = ref(false)
+const supplementRuleId = ref(null)
+const importMonth = ref('')
+const maintenanceMode = ref(null)
+const maintenanceMonth = ref('')
+const lastTemplate = ref(null)
 const dialogVisible = ref(false)
 const editingId = ref(null)
 
@@ -223,27 +218,12 @@ const applyRouteContext = () => {
   if (pricingMonth) filters.value.effectiveFrom = pricingMonth
 }
 
-const emptyForm = () => ({
-  materialName: '',
-  materialCode: '',
-  specModel: '',
-  rangeLow: '',
-  rangeHigh: '',
-  priceExclTax: '',
-  priceInclTax: '',
-  effectiveFrom: '',
-})
-
-const formModel = ref(emptyForm())
+const formModel = ref({})
 
 const tableRows = ref([])
 const total = ref(0)
 const currentPage = ref(1)
 const pageSize = ref(20)
-
-const dialogTitle = computed(() => (
-  editingId.value ? '编辑区间价' : '新增区间价'
-))
 
 const buildParams = () => ({
   specModel: filters.value.model?.trim(),
@@ -260,23 +240,6 @@ const parseNumber = (value) => {
   }
   const parsed = Number(text)
   return Number.isNaN(parsed) ? null : parsed
-}
-
-const parseBoolean = (value) => {
-  if (value === true || value === false) {
-    return value
-  }
-  const text = String(value ?? '').trim().toLowerCase()
-  if (!text) {
-    return null
-  }
-  if (['1', 'true', 'y', 'yes', '是', '含税', '含'].includes(text)) {
-    return true
-  }
-  if (['0', 'false', 'n', 'no', '否', '未税', '不含税', '未含税'].includes(text)) {
-    return false
-  }
-  return null
 }
 
 const normalizeDate = (value) => {
@@ -306,19 +269,6 @@ const normalizeDate = (value) => {
     return `${yearMatch[1]}-01-01`
   }
   return text.replace(/\//g, '-')
-}
-
-const normalizeTaxValue = (value) => {
-  if (value === true || value === false) {
-    return value
-  }
-  if (value === 1 || value === '1') {
-    return true
-  }
-  if (value === 0 || value === '0') {
-    return false
-  }
-  return null
 }
 
 const effectivePrices = ref({})
@@ -380,10 +330,31 @@ const resetFilters = () => {
   applyFilters()
 }
 
-const openCreate = () => {
-  editingId.value = null
-  formModel.value = emptyForm()
-  dialogVisible.value = true
+const openOriginalImport = () => {
+  importMonth.value = filters.value.effectiveFrom
+  supplementRuleId.value = lastTemplate.value?.month === importMonth.value ? lastTemplate.value.id : null
+  originalImportVisible.value = true
+}
+
+const openMaintenance = (mode) => {
+  maintenanceMonth.value = filters.value.effectiveFrom
+  maintenanceMode.value = mode
+}
+
+const rememberTemplate = (option) => {
+  lastTemplate.value = option ? { id: option.id, month: maintenanceMonth.value } : null
+  maintenanceMode.value = null
+}
+
+const finishAddition = () => {
+  maintenanceMode.value = null
+  refreshAfterImport()
+}
+
+const refreshAfterImport = () => {
+  lastTemplate.value = null
+  if (currentPage.value === 1) fetchList()
+  else currentPage.value = 1
 }
 
 const openEdit = (row) => {
@@ -427,13 +398,8 @@ const submitRow = async () => {
   }
 
   try {
-    if (editingId.value) {
-      await updateRangeItem(editingId.value, payload)
-      ElMessage.success('已更新')
-    } else {
-      await createRangeItem(payload)
-      ElMessage.success('已新增')
-    }
+    await updateRangeItem(editingId.value, payload)
+    ElMessage.success('已更新')
     dialogVisible.value = false
     fetchList()
   } catch (error) {
@@ -457,277 +423,11 @@ const removeRow = async (row) => {
   }
 }
 
-const normalizeHeader = (value) => String(value ?? '').replace(/[\s\u3000]+/g, '')
-
-const readString = (row, index) => {
-  if (!Array.isArray(row) || index < 0) {
-    return ''
-  }
-  return String(row[index] ?? '').trim()
-}
-
-const readNumber = (row, index) => {
-  if (!Array.isArray(row) || index < 0) {
-    return null
-  }
-  return parseNumber(row[index])
-}
-
-const readDate = (row, index) => {
-  if (!Array.isArray(row) || index < 0) {
-    return ''
-  }
-  return normalizeDate(row[index])
-}
-
-const isExclTaxHeader = (text) =>
-  text.includes('不含税')
-
-const isInclTaxHeader = (text) =>
-  !text.includes('不含税') && (text.includes('含税') || /含\d*%?税/.test(text) || text.includes('税价'))
-
-const detectRangeColumns = (headerRow1, headerRow2) => {
-  const rangeRegex = /(\d+)\s*(?:元\/吨|元每吨)?\s*[—\-~～至到]+\s*(\d+)\s*(?:元\/吨|元每吨)?/
-  const groups = []
-
-  headerRow1.forEach((cell, index) => {
-    const title = normalizeHeader(cell)
-    const match = title.match(rangeRegex)
-    if (!match) {
-      return
-    }
-    const rangeLow = Number(match[1])
-    const rangeHigh = Number(match[2])
-    const sub = normalizeHeader(headerRow2[index])
-    const nextSub = normalizeHeader(headerRow2[index + 1])
-    const group = {
-      rangeLow,
-      rangeHigh,
-      priceCol: null,
-      exclCol: null,
-      inclCol: null,
-    }
-
-    if (isExclTaxHeader(sub)) {
-      group.exclCol = index
-      if (isInclTaxHeader(nextSub)) {
-        group.inclCol = index + 1
-      }
-    } else if (isInclTaxHeader(sub)) {
-      group.inclCol = index
-      if (isExclTaxHeader(nextSub)) {
-        group.exclCol = index + 1
-      }
-    } else if (isInclTaxHeader(nextSub)) {
-      group.exclCol = index
-      group.inclCol = index + 1
-    } else {
-      group.priceCol = index
-    }
-    groups.push(group)
-  })
-
-  return groups
-}
-
-const parseFixedColumns = (headerRow) => ({
-  orgCode: findColumn(headerRow, ['组织']),
-  sourceName: findColumn(headerRow, ['来源']),
-  supplierName: findColumn(headerRow, ['供应商名称']),
-  supplierCode: findColumn(headerRow, ['供应商代码']),
-  purchaseClass: findColumn(headerRow, ['采购分类']),
-  materialName: findColumn(headerRow, ['物料名称', '名称']),
-  materialCode: findColumn(headerRow, ['物料代码', 'U9代码']),
-  specModel: findColumn(headerRow, ['规格型号', '图号']),
-  unit: findColumn(headerRow, ['单位']),
-  formulaExpr: findColumn(headerRow, ['联动公式', '公式']),
-  blankWeight: findColumn(headerRow, ['下料重']),
-  netWeight: findColumn(headerRow, ['净重']),
-  processFee: findColumn(headerRow, ['加工费']),
-  agentFee: findColumn(headerRow, ['代理费']),
-  taxIncluded: findColumn(headerRow, ['是否含税']),
-  effectiveFrom: findColumn(headerRow, ['生效日期', '帐期', '账期']),
-  effectiveTo: findColumn(headerRow, ['失效日期']),
-  orderType: findColumn(headerRow, ['订单类型']),
-  quota: findColumn(headerRow, ['配额']),
-  rangeLow: findColumn(headerRow, ['区间下限', '区间开始']),
-  rangeHigh: findColumn(headerRow, ['区间上限', '区间结束']),
-  priceExclTax: findColumn(headerRow, ['不含税价', '未税价']),
-  priceInclTax: findColumn(headerRow, ['含税价']),
-  singlePrice: findColumn(headerRow, ['单价']),
-})
-
-const buildImportBase = (row, columns) => ({
-  orgCode: readString(row, columns.orgCode),
-  sourceName: readString(row, columns.sourceName),
-  supplierName: readString(row, columns.supplierName),
-  supplierCode: readString(row, columns.supplierCode),
-  purchaseClass: readString(row, columns.purchaseClass),
-  materialName: readString(row, columns.materialName),
-  materialCode: readString(row, columns.materialCode),
-  specModel: readString(row, columns.specModel),
-  unit: readString(row, columns.unit),
-  formulaExpr: readString(row, columns.formulaExpr),
-  blankWeight: readNumber(row, columns.blankWeight),
-  netWeight: readNumber(row, columns.netWeight),
-  processFee: readNumber(row, columns.processFee),
-  agentFee: readNumber(row, columns.agentFee),
-  taxIncluded: parseBoolean(readString(row, columns.taxIncluded)),
-  effectiveFrom: readDate(row, columns.effectiveFrom),
-  effectiveTo: readDate(row, columns.effectiveTo),
-  orderType: readString(row, columns.orderType),
-  quota: readNumber(row, columns.quota),
-})
-
-const handleFileChange = async (uploadFile) => {
-  const rawFile = uploadFile.raw
-  if (!rawFile) {
-    return
-  }
-
-  importing.value = true
-  try {
-    let XLSX = null
-    try {
-      const module = await import('xlsx')
-      XLSX = module
-    } catch {
-      ElMessage.error('未安装xlsx，请先运行 npm install xlsx')
-      return
-    }
-
-    const buffer = await rawFile.arrayBuffer()
-    const workbook = XLSX.read(buffer, { type: 'array' })
-    const workbookSheets = workbook.SheetNames.map((name) => ({
-      name,
-      rows: XLSX.utils.sheet_to_json(workbook.Sheets[name], {
-        header: 1,
-        defval: '',
-        raw: false,
-      }),
-    }))
-    const workbookRoute = detectQuantityRangeWorkbookRoute(workbookSheets)
-    if (!workbookRoute.ok) {
-      ElMessage.error(workbookRoute.message)
-      return
-    }
-
-    const routedSheet = workbookRoute.standardSheet
-    const rows = routedSheet.rows
-    const headerRowIndex = routedSheet.headerRowIndex
-
-    if (rows.length < 2) {
-      ElMessage.warning('Excel无有效数据')
-      return
-    }
-
-    const headerRow1 = rows[headerRowIndex] || []
-    const headerRow2 = routedSheet.subHeaderRowIndex == null
-      ? []
-      : rows[routedSheet.subHeaderRowIndex] || []
-    const columns = parseFixedColumns(headerRow1)
-    const rangeGroups = detectRangeColumns(headerRow1, headerRow2)
-    const hasSubHeader = headerRow2.some((cell) => {
-      const text = normalizeHeader(cell)
-      return isExclTaxHeader(text) || isInclTaxHeader(text)
-    })
-    const dataStartRow = hasSubHeader
-      ? routedSheet.subHeaderRowIndex + 1
-      : headerRowIndex + 1
-    const importRows = []
-
-    for (let rowIndex = dataStartRow; rowIndex < rows.length; rowIndex += 1) {
-      const row = rows[rowIndex]
-      const base = buildImportBase(row, columns)
-      if (!base.materialCode) {
-        continue
-      }
-
-      if (rangeGroups.length > 0) {
-        rangeGroups.forEach((range) => {
-          let priceExclTax = range.exclCol == null ? null : readNumber(row, range.exclCol)
-          let priceInclTax = range.inclCol == null ? null : readNumber(row, range.inclCol)
-
-          if (range.priceCol != null) {
-            const singlePrice = readNumber(row, range.priceCol)
-            if (singlePrice !== null) {
-              if (base.taxIncluded === true) {
-                priceInclTax = singlePrice
-              } else {
-                priceExclTax = singlePrice
-              }
-            }
-          }
-
-          if (priceExclTax === null && priceInclTax === null) {
-            return
-          }
-
-          importRows.push({
-            ...base,
-            rangeLow: range.rangeLow,
-            rangeHigh: range.rangeHigh,
-            priceExclTax,
-            priceInclTax,
-          })
-        })
-      } else {
-        const rangeLow = readNumber(row, columns.rangeLow)
-        const rangeHigh = readNumber(row, columns.rangeHigh)
-        let priceExclTax = readNumber(row, columns.priceExclTax)
-        let priceInclTax = readNumber(row, columns.priceInclTax)
-        const singlePrice = readNumber(row, columns.singlePrice)
-
-        if (singlePrice !== null && priceExclTax === null && priceInclTax === null) {
-          if (base.taxIncluded === true) {
-            priceInclTax = singlePrice
-          } else {
-            priceExclTax = singlePrice
-          }
-        }
-
-        if (rangeLow === null || rangeHigh === null) {
-          continue
-        }
-        if (priceExclTax === null && priceInclTax === null) {
-          continue
-        }
-
-        importRows.push({
-          ...base,
-          rangeLow,
-          rangeHigh,
-          priceExclTax,
-          priceInclTax,
-        })
-      }
-    }
-
-    if (importRows.length === 0) {
-      ElMessage.warning('未解析到有效区间价数据')
-      return
-    }
-
-    await importRangeItems({ rangeBasis: 'QTY', rows: importRows })
-    ElMessage.success(`已导入${importRows.length}条数量区间价`)
-    if (currentPage.value === 1) {
-      fetchList()
-    } else {
-      currentPage.value = 1
-    }
-  } catch (error) {
-    ElMessage.error(error?.message || '导入失败')
-  } finally {
-    importing.value = false
-  }
-}
-
 onMounted(() => {
   applyRouteContext()
   fetchList()
 })
 
-function exportPricePage(query) { return priceExportPage(query, { kind: 'range', fetchPage: fetchRangeItems, fetchEffective: fetchRangeEffectivePrices }) }
 </script>
 
 <style scoped>

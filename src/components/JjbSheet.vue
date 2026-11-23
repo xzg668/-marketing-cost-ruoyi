@@ -13,7 +13,7 @@
         </thead>
         <tbody v-for="group in groups" :key="group.code" :data-section="group.code">
           <tr v-for="(row, index) in group.rows" :key="row.key" :data-row-key="row.key" :data-row-code="row.code" :data-kind="row.kind" :class="[`kind-${row.kind.toLowerCase()}`, { 'summary-row': row.code === 'MANUFACTURE_COST', 'multi-price-material': row.multiPriceSource }]">
-            <td v-for="cell in sheetRowCells(row, group, index)" :key="cell.column" :colspan="cell.colspan" :rowspan="cell.rowspan" :data-column="cell.key" :class="{ numeric: numericColumns.has(cell.key), 'side-label': cell.label }" :title="cell.key === 'basis' ? rowBasis(row) : cell.value">
+            <td v-for="cell in sheetRowCells(row, group, index)" :key="cell.column" :colspan="cell.colspan" :rowspan="cell.rowspan" :data-column="cell.key" :class="{ numeric: numericColumns.has(cell.key), 'side-label': cell.label }" :title="cell.key === 'amount' ? rowBasis(row) || cell.value : cell.value">
               <button v-if="cell.key === 'code' && row.code && ['PART', 'HOUSEHOLD', 'EXPLANATION'].includes(row.kind)" class="jjb-trace-link" type="button" :aria-label="`查看 ${row.code} 的核算底稿`" @click="$emit('trace', row)">{{ cell.value }}</button>
               <button v-else-if="cell.key === 'amount' && row.amount != null" class="jjb-trace-link" type="button" @click="$emit('trace', row)">{{ savedMoney(row.amount) }}</button>
               <button v-else-if="cell.key === 'name' && row.multiPriceSource && canEditShape" class="jjb-trace-link" type="button"

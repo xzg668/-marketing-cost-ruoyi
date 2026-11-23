@@ -8,8 +8,8 @@ const target=process.argv[2]
 if(!target)throw Error('Provide an output directory')
 fs.mkdirSync(target,{recursive:true})
 const cases={
- settlement:{'rule.materialCode':'001234','rule.materialName':'测试阀','rule.specModel':'TEST-001','rule.plannedPrice':10,'rule.copperWeightG':20,'rule.zincWeightG':5,'rule.priceType':'结算联动价'},
- linked:{priceOrgCode:'210',materialCode:'001234',materialName:'测试阀',supplierCode:'S001',supplierName:'测试供应商',specModel:'SPEC',unit:'公斤',taxIncluded:false,blankWeight:100,scrapWeight:10,processFee:2},
+ settlement:{'rule.materialCode':'001234','rule.materialName':'测试阀','rule.specModel':'TEST-001'},
+ linked:{materialCode:'001234',materialName:'测试阀',supplierCode:'S001',supplierName:'测试供应商',specModel:'SPEC',unit:'公斤'},
  range:{orgCode:'210',materialCode:'001234',supplierName:'测试供应商',supplierCode:'S001',specModel:'SPEC',unit:'米',priceExclTax:5,taxIncluded:false},
  household:{materialCode:'001234',materialName:'测试阀',specification:'SPEC','priceContext.unit':'只',unitPrice:10,copperWeight:20,zincWeight:5,householdRate:.085},
  invoice:{document_no:'INV001',supplier_code:'S001',supplier_name:'测试供应商',material_code:'001234',material_name:'测试阀',specification:'SPEC',pricing_unit:'只',unit_price:2.25,currency:'CNY'},
@@ -31,11 +31,18 @@ for(const [kind,definition] of Object.entries(definitions)) {
  if(!cases[kind])continue
  const columns=definition.templateColumns||definition.columns,s=book.Sheets[book.SheetNames[0]],r=(definition.leadingRows?.length||0)+1
  columns.forEach((c,index)=>{if(c.field in cases[kind])s[XLSX.utils.encode_cell({r,c:index})]=excelCell(cases[kind][c.field],c)})
- if(kind==='settlement')for(const [address,v] of Object.entries({B2:90,C2:95,B3:20,C3:22}))s[address]={t:'n',v}
- if(kind==='linked'){book.Sheets.影响因素10.E2={t:'n',v:95};book.Sheets.影响因素10.E3={t:'n',v:70}}
  if(kind==='range')['001234','SPEC','测试供应商',1,1.13,2,2.26].forEach((v,c)=>book.Sheets.铜价区间表[XLSX.utils.encode_cell({r:3,c})]=excelCell(v,{type:c>2?'number':'text'}))
  XLSX.writeFile(book,path.join(target,kind+'-filled.xlsx'))
 }
+const linkedScrap = createWorkbook(XLSX, definitions.scrap, [], true)
+const scrapSheet = linkedScrap.Sheets.废料清单
+scrapSheet.A5 = excelCell('001234')
+scrapSheet.B5 = excelCell('测试铜屑')
+scrapSheet.D5 = excelCell('测试供应商')
+scrapSheet.E5 = excelCell('S001')
+XLSX.writeFile(linkedScrap, path.join(target, 'scrap-linked-filled.xlsx'))
+scrapSheet.F5 = { ...scrapSheet.F5, f: '$B$2*0.7/1.13' }
+XLSX.writeFile(linkedScrap, path.join(target, 'scrap-edited-filled.xlsx'))
 console.log('Generated blank templates and '+Object.keys(cases).length+' filled fixtures in '+target)
 XLSX.writeFile(createWorkbook(XLSX, definitions.supplier, [
  {...cases.supplier, supplyRatio:0},

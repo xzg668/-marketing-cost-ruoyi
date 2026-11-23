@@ -14,10 +14,24 @@ const workbookWith = (sheets) => {
 }
 
 describe('qualityLossRateImportUtils', () => {
-  it('公共费率为零或超出范围时明确拒绝，不当作空值跳过', () => {
-    for (const value of [0, '0%', -0.001, '100%']) {
+  it('导入数值零、文本0%和正数，只有空白跳过', () => {
+    const workbook = workbookWith([['报价系统展示', [
+      header,
+      ['A', '', '', '', '', '', '', '', '', 0],
+      ['B', '', '', '', '', '', '', '', '', '0%'],
+      ['C', '', '', '', '', '', '', '', '', '0.475%'],
+      ['D', '', '', '', '', '', '', '', '', ''],
+    ]]])
+    workbook.Sheets['报价系统展示'].J2.z = '0.000%'
+    const reloaded = XLSX.read(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }))
+    const result = parseQualityLossRateWorkbook(reloaded, XLSX)
+    assert.deepEqual(result.rows.map((row) => row.lossRate), [0, 0, 0.00475])
+    assert.equal(result.skippedRows, 1)
+  })
+  it('拒绝负数、100%和缺少数字的百分比', () => {
+    for (const value of [-0.001, '100%', '%']) {
       const workbook = workbookWith([['报价系统展示', [header, ['BARE', '', '', '', '', '', '', '', '', value]]]])
-      assert.throws(() => parseQualityLossRateWorkbook(workbook, XLSX), /公共净损失率必须大于0且小于100%/)
+      assert.throws(() => parseQualityLossRateWorkbook(workbook, XLSX), /公共净损失率必须大于等于0%且小于100%/)
     }
   })
   it('完整多表文件只选择“报价系统展示”，不会误读第一张物料主档', () => {
