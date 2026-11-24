@@ -169,7 +169,7 @@
             type="month"
             format="YYYY-MM"
             value-format="YYYY-MM"
-            placeholder="选择同年度月份"
+            placeholder="选择上年12月至本年12月"
             style="width: 180px"
           />
         </el-form-item>
@@ -286,7 +286,7 @@ import {
   refreshCmsCostEffectiveSource,
   toCmsCostPageParams,
 } from '../api/cmsCost'
-import { displayNullable } from '../utils/cmsCostSourceDisplay'
+import { cmsSourcePeriods, displayNullable } from '../utils/cmsCostSourceDisplay'
 
 const router = useRouter()
 const currentYear = new Date().getFullYear()
@@ -480,8 +480,8 @@ async function submitRefresh() {
     ElMessage.warning('请选择新来源期间')
     return
   }
-  if (!refreshForm.newPeriod.startsWith(`${refreshForm.costYear}-`)) {
-    ElMessage.warning('新来源期间必须属于成本年度')
+  if (!cmsSourcePeriods(refreshForm.costYear).includes(refreshForm.newPeriod)) {
+    ElMessage.warning('新来源期间必须在上年12月至本年12月之间')
     return
   }
   if (!refreshForm.refreshReason.trim()) {
@@ -522,17 +522,18 @@ async function submitRefresh() {
 }
 
 function openSourceRows(row) {
+  const sourceYear = row.period ? Number(row.period.slice(0, 4)) : row.costYear
   if (row.sourceType === 'SALARY_DIRECT') {
     router.push({
       path: '/base/cms-cost/workshop-rows',
-      query: { costYear: row.costYear, parentCode: row.parentCode, period: row.period },
+      query: { costYear: sourceYear, parentCode: row.parentCode, period: row.period },
     })
     return
   }
   router.push({
     path: '/base/cms-cost/subject-rows',
     query: {
-      costYear: row.costYear,
+      costYear: sourceYear,
       parentCode: row.parentCode,
       period: row.period,
       subjectCode: row.subjectCode || '',

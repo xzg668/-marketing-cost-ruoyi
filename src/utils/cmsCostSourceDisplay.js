@@ -45,3 +45,12 @@ export function displayNullable(value) {
   const text = String(value ?? '').trim()
   return text || '-'
 }
+
+export function cmsSourcePeriods(costYear, latestMonth = 12) {
+  return [
+    `${costYear - 1}-12`,
+    ...Array.from({ length: latestMonth }, (_, index) =>
+      `${costYear}-${String(index + 1).padStart(2, '0')}`,
+    ),
+  ]
+}

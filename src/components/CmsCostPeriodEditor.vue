@@ -27,6 +27,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { fetchCmsCostPeriod, saveCmsCostPeriod } from '../api/costRunDetail'
+import { cmsSourcePeriods } from '../utils/cmsCostSourceDisplay'
 
 const props = defineProps({
   costRunNo: { type: String, required: true },
@@ -45,8 +46,9 @@ const status = ref('')
 let requestId = 0
 
 const title = computed(() => `${props.costCode === 'DIRECT_LABOR' ? '直接人工' : (source.value?.expenseName || props.costName)}采用期间`)
-const months = computed(() => source.value ? Array.from({ length: source.value.latestMonth || 12 }, (_, index) =>
-  `${source.value.costYear}-${String(index + 1).padStart(2, '0')}`) : [])
+const months = computed(() => source.value
+  ? cmsSourcePeriods(source.value.costYear, source.value.latestMonth ?? 12)
+  : [])
 const canSave = computed(() => Boolean(period.value && !loading.value && !saving.value && !error.value &&
   (period.value === source.value?.currentPeriod || preview.value?.period === period.value)))
 

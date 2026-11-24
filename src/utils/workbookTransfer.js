@@ -14,12 +14,12 @@ export function normalizeExportPage(result) {
 
 export async function collectExportRows(fetchPage, query = {}, options = {}) {
   const snapshot = structuredClone(query)
-  const { pageKey = 'page', sizeKey = 'pageSize', normalize = normalizeExportPage, isCurrent = () => true, progress = () => {} } = options
+  const { pageKey = 'page', sizeKey = 'pageSize', pageSize = 200, normalize = normalizeExportPage, isCurrent = () => true, progress = () => {} } = options
   const all = [], signatures = new Set()
   let expected = null
   for (let page = 1; ; page++) {
     if (!isCurrent()) throw new Error('查询范围已变化，已取消本次导出')
-    const result = normalize(await fetchPage({ ...snapshot, [pageKey]: page, [sizeKey]: 200 }))
+    const result = normalize(await fetchPage({ ...snapshot, [pageKey]: page, [sizeKey]: pageSize }))
     if (!isCurrent()) throw new Error('查询范围已变化，已取消本次导出')
     if (expected != null && result.total !== expected) throw new Error('导出期间记录数量发生变化，请重新导出')
     expected = result.total

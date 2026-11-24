@@ -16,6 +16,7 @@ const props = defineProps({
   kind: { type: String, required: true }, query: { type: Object, default: () => ({}) },
   fetchPage: Function, normalize: Function, transformRows: Function, definition: Object,
   pageKey: { type: String, default: 'page' }, sizeKey: { type: String, default: 'pageSize' },
+  exportPageSize: { type: Number, default: 200 },
   importPermission: String, exportPermission: String, showTemplate: { type: Boolean, default: true },
   templateLabel: { type: String, default: '下载填写模板' },
 })
@@ -37,7 +38,7 @@ async function download(template) {
     if (!definition) throw new Error('未找到对应填写模板')
     const XLSX = await import('xlsx')
     let rows = template ? [] : await collectExportRows(props.fetchPage, props.query, {
-      pageKey: props.pageKey, sizeKey: props.sizeKey, normalize: props.normalize, isCurrent,
+      pageKey: props.pageKey, sizeKey: props.sizeKey, pageSize: props.exportPageSize, normalize: props.normalize, isCurrent,
       progress: (count, total) => { progressText.value = `${count} / ${total} 条` },
     })
     if (!template && props.transformRows) rows = await props.transformRows(rows)

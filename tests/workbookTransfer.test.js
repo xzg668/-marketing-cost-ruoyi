@@ -22,6 +22,19 @@ test('exports every filtered page with a fixed query, including server page-size
  const result=await collectExportRows(async params=>{calls.push(params);query.materialCode='changed';const start=(params.current-1)*2;return{records:[0,1,2,3,4].slice(start,start+2),total:5}},query,{pageKey:'current',sizeKey:'size'})
  assert.deepEqual(result,[0,1,2,3,4]);assert.equal(calls.length,3);assert.ok(calls.every(c=>c.materialCode==='001'&&c.orgCode==='210'&&c.size===200))
 })
+test('inquiry exports honor the 100-row HTTP limit and keep all filtered rows', async () => {
+ const records = Array.from({ length: 205 }, (_, index) => ({ source: { id: index + 1 } }))
+ const pages = []
+ const query = { priceMonth: '2026-11', model: 'MODEL', search: 'ball' }
+ const exported = await collectExportRows(async ({ page, size, ...filters }) => {
+  assert.deepEqual(filters, query)
+  if (size > 100) throw new Error('分页参数无效')
+  pages.push({ page, size })
+  return { records: records.slice((page - 1) * size, page * size), total: records.length }
+ }, query, { sizeKey: 'size', pageSize: 100 })
+ assert.deepEqual(pages, [{ page: 1, size: 100 }, { page: 2, size: 100 }, { page: 3, size: 100 }])
+ assert.deepEqual(exported, records)
+})
 test('empty and unpaged full arrays export successfully',async()=>{
  assert.deepEqual(await collectExportRows(async()=>({list:[],total:0})),[])
  assert.deepEqual(await collectExportRows(async()=>[{id:'001'}]),[{id:'001'}])

@@ -1,7 +1,7 @@
 <template>
   <div class="household-inquiry-page price-source-page">
     <el-card>
-      <template #header><div class="page-heading"><div><h2>家用部件询价</h2><p>按月份查询适用的部件询价。当月导入优先，未重新导入的询价沿用最近以前月份；已保存的核算结果保留。</p></div><WorkbookActions kind="household" :fetch-page="canList ? fetchHouseholdInquiries : undefined" :query="{ materialCode, model, sourceMonth: sourceMonth || undefined }" size-key="size" import-permission="price:household-inquiry:import" /><el-button v-if="canImport" type="primary" @click="importOpen = true">导入询价原件</el-button></div></template>
+      <template #header><div class="page-heading"><div><h2>家用部件询价</h2><p>按月份查询适用的部件询价。当月导入优先，未重新导入的询价沿用最近以前月份；已保存的核算结果保留。</p></div><WorkbookActions kind="household" :fetch-page="canList ? fetchHouseholdInquiries : undefined" :query="{ materialCode, model, sourceMonth: sourceMonth || undefined }" size-key="size" :export-page-size="100" import-permission="price:household-inquiry:import" /><el-button v-if="canImport" type="primary" @click="importOpen = true">导入询价原件</el-button></div></template>
       <el-form inline @submit.prevent="search">
         <el-form-item label="适用月份"><el-date-picker v-model="sourceMonth" type="month" value-format="YYYY-MM" placeholder="全部当前来源" clearable @change="search" /></el-form-item>
         <el-form-item label="料号"><el-input v-model="materialCode" placeholder="填写完整料号" clearable style="width:290px" @keyup.enter="search" /></el-form-item>

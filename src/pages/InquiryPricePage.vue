@@ -2,7 +2,7 @@
   <div class="inquiry-page price-source-page">
     <el-card>
       <template #header><div class="heading"><div><h2>询价</h2><p>固定价取批量价总价；联动价按原公式和所选月份的商用基价自动刷新。</p></div>
-        <WorkbookActions kind="inquiry" :fetch-page="mode === 'current' && allowed('list') ? fetchInquiryPrices : undefined" :query="{ priceMonth, search: keyword || undefined, model: model || undefined, view: mode }" size-key="size" import-permission="price:inquiry:import" />
+        <WorkbookActions kind="inquiry" :fetch-page="mode === 'current' && allowed('list') ? fetchInquiryPrices : undefined" :query="{ priceMonth, search: keyword || undefined, model: model || undefined, view: mode }" size-key="size" :export-page-size="100" import-permission="price:inquiry:import" />
         <el-button v-if="allowed('import')" type="primary" :disabled="!priceMonth" @click="openImport">导入询价</el-button></div></template>
       <el-form inline @submit.prevent="search">
         <el-form-item label="价格月份"><el-date-picker v-model="priceMonth" type="month" value-format="YYYY-MM" format="YYYY-MM" :clearable="false" :disabled="session.state.busy" aria-label="价格月份" /></el-form-item>
