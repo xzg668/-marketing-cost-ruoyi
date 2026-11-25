@@ -8,7 +8,7 @@
       <div class="toolbar-actions">
         <WorkbookActions kind="supplier" :fetch-page="fetchSupplierSupplyRatios" :query="{ ...filters }" import-permission="base:supplier-supply-ratio:import" />
           <el-button v-hasPermi="['base:supplier-supply-ratio:import']" :icon="Upload" @click="openImportDialog">导入 Excel</el-button>
-        <el-button @click="openChanges()">变更记录</el-button>
+        <el-button @click="importBatchesVisible = true">导入记录</el-button>
         <el-button type="primary" :icon="RefreshRight" @click="fetchRows">刷新</el-button>
       </div>
     </section>
@@ -29,7 +29,7 @@
           <el-input v-model="filters.supplierName" clearable placeholder="供应商名称" />
         </el-form-item>
         <el-form-item label="供应商代码"><el-input v-model="filters.supplierCode" clearable placeholder="供应商代码" /></el-form-item>
-        <el-form-item label="变更批次"><el-input v-model="filters.sourceBatchNo" clearable placeholder="批次号" /></el-form-item>
+        <el-form-item label="导入批次"><el-input v-model="filters.sourceBatchNo" clearable placeholder="批次号" /></el-form-item>
         <el-form-item label="来源">
           <el-select v-model="filters.sourceType" clearable placeholder="全部" style="width: 120px">
             <el-option
@@ -49,6 +49,8 @@
         <el-form-item class="query-actions">
           <el-button type="primary" :icon="Search" @click="applyFilters">查询</el-button>
           <el-button :icon="RefreshLeft" @click="resetFilters">重置</el-button>
+          <el-button v-if="filters.isActive === 1 && (filters.materialCode.trim() || filters.specModel.trim())"
+            v-hasPermi="['base:supplier-supply-ratio:import']" type="danger" plain @click="openGroupVoid">整组失效</el-button>
         </el-form-item>
       </el-form>
     </section>
@@ -77,7 +79,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="sourceBatchNo" label="批次" min-width="170" show-overflow-tooltip>
-          <template #default="{ row }"><el-button link type="primary" @click="openChanges(null, row.sourceBatchNo)">{{ row.sourceBatchNo || '—' }}</el-button></template>
+          <template #default="{ row }">{{ row.sourceBatchNo || '—' }}</template>
         </el-table-column>
         <el-table-column prop="importFileName" label="导入文件" min-width="180" show-overflow-tooltip />
         <el-table-column prop="importedAt" label="导入时间" width="170" />
@@ -87,11 +89,10 @@
           </template>
         </el-table-column>
         <el-table-column prop="updatedAt" label="更新时间" width="170" />
-        <el-table-column label="操作" width="160" fixed="right">
+        <el-table-column label="操作" width="90" fixed="right">
           <template #default="{ row }">
             <el-button v-if="row.isActive === 1" v-hasPermi="['base:supplier-supply-ratio:import']"
               type="primary" link @click="openEdit(row)">编辑</el-button>
-            <el-button type="primary" link @click="openChanges(row)">变更记录</el-button>
           </template>
         </el-table-column>
         <template #empty>
@@ -134,11 +135,15 @@
         <el-table-column prop="changedByName" label="操作人" width="130" />
         <el-table-column prop="changedAt" label="变更时间" width="180" />
         <el-table-column prop="importFileName" label="导入文件" min-width="200" />
-        <el-table-column prop="batchNo" label="变更批次" min-width="210" />
+        <el-table-column prop="batchNo" label="导入批次" min-width="210" />
         <template #empty><el-empty description="没有匹配的变更记录；历史版本可在主表切换查看" /></template>
       </el-table>
       <BasePagination v-model:current-page="changePage" v-model:page-size="changePageSize" :total="changeTotal" />
     </el-dialog>
+    <SupplierSupplyRatioImportBatches v-if="importBatchesVisible"
+      @close="importBatchesVisible = false" @voided="fetchRows" />
+    <SupplierRatioGroupVoidDialog v-if="groupVoidFilters" :filters="groupVoidFilters"
+      @close="groupVoidFilters = null" @withdrawn="groupVoidFilters = null; fetchRows()" />
   </div>
 </template>
 
@@ -151,6 +156,8 @@ import { RefreshLeft, RefreshRight, Search, Upload } from '@element-plus/icons-v
 import BasePagination from '../components/BasePagination.vue'
 import SupplierSupplyRatioImportDialog from '../components/SupplierSupplyRatioImportDialog.vue'
 import SupplierSupplyRatioEditDialog from '../components/SupplierSupplyRatioEditDialog.vue'
+import SupplierSupplyRatioImportBatches from '../components/SupplierSupplyRatioImportBatches.vue'
+import SupplierRatioGroupVoidDialog from '../components/SupplierRatioGroupVoidDialog.vue'
 import { formatPercent, normalizeSupplierRatioChange, supplierRatioChangeFields } from '../utils/supplierSupplyRatio'
 import { fetchSupplierSupplyRatios, fetchSupplierSupplyRatioChanges, normalizeSupplierSupplyRatioPage } from '../api/supplierSupplyRatios'
 
@@ -164,6 +171,8 @@ const filters = reactive(initialFilters())
 const tableRows = ref([]), total = ref(0), currentPage = ref(1), pageSize = ref(20), loading = ref(false)
 const importDialogVisible = ref(false), changeDialogVisible = ref(false), changeLoading = ref(false)
 const editDialogVisible = ref(false), editingRow = ref(null)
+const importBatchesVisible = ref(false)
+const groupVoidFilters = ref(null)
 const changeFilters = reactive({ materialCode: '', supplierCode: '', batchNo: '' })
 const changeRows = ref([]), changeTotal = ref(0), changePage = ref(1), changePageSize = ref(20)
 const sourceTagType = (value) => SOURCE_TYPE_OPTIONS.find((option) => option.value === value)?.tag || ''
@@ -177,6 +186,9 @@ async function fetchRows() {
 }
 function applyFilters() { currentPage.value = 1; fetchRows() }
 function resetFilters() { Object.assign(filters, initialFilters()); applyFilters() }
+function openGroupVoid() {
+  groupVoidFilters.value = { materialCode: filters.materialCode.trim(), specModel: filters.specModel.trim() }
+}
 function openImportDialog() { importDialogVisible.value = true }
 function openEdit(row) { editingRow.value = row; editDialogVisible.value = true }
 function onRatioImported() { filters.isActive = 1; applyFilters() }

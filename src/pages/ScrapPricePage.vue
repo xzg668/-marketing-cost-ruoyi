@@ -22,7 +22,8 @@
         <el-form-item label="供应商">
           <el-input v-model="filters.supplier" clearable placeholder="代码或名称" style="width: 150px" @keyup.enter="search" />
         </el-form-item>
-        <el-form-item><el-button @click="search">查询</el-button><el-button @click="reset">重置</el-button></el-form-item>
+        <el-form-item><el-button @click="search">查询</el-button><el-button @click="reset">重置</el-button>
+          <el-button v-if="canManageImports" @click="historyOpen = true">导入记录</el-button></el-form-item>
       </el-form>
       <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
       <el-table v-loading="loading" :data="rows" row-key="id" stripe>
@@ -41,16 +42,22 @@
           <template #default="{ row }"><span v-if="row.calcStatus === 'READY'" class="numeric">{{ displayPrice(row.unitPrice) }}</span><el-tag v-else :type="row.calcStatus === 'WAITING_BASE' ? 'warning' : 'danger'" size="small">{{ calcStatusLabel(row.calcStatus) }}</el-tag></template>
         </el-table-column>
         <el-table-column label="单位" width="60"><template #default>公斤</template></el-table-column>
-        <el-table-column label="操作" width="112" fixed="right">
+        <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
             <el-button v-hasPermi="['price:scrap:edit']" link type="primary" :disabled="opening" @click="openRow(row, 'edit')">编辑</el-button>
             <el-button link type="primary" :disabled="opening" @click="openRow(row, 'detail')">详情</el-button>
+            <PriceRowVoidButton v-if="canManageImports" :path="`/api/v1/scrap-prices/rows/${row.id}/void?version=${row.rowVersion}`"
+              :description="[row.materialCode, row.supplierName, row.ruleSourceMonth || row.priceMonth].filter(Boolean).join(' / ')"
+              @withdrawn="load" />
           </template>
         </el-table-column>
         <template #empty><el-empty :description="error ? '价格加载失败' : '该月份暂无废料价格'" :image-size="70" /></template>
       </el-table>
       <BasePagination :current-page="page" :page-size="size" :total="total" @update:current-page="changePage" @update:page-size="changeSize" />
     </el-card>
+    <PriceImportHistory v-if="canManageImports && historyScope" v-model="historyOpen" :scope="historyScope" row-label="导入行数"
+      :fetch="fetchScrapImports" :download="downloadScrapImport" :withdraw-batch="voidScrapImport"
+      @withdrawn="load" />
     <ScrapPriceImportDialog v-model="importVisible" :price-month="filters.priceMonth" @imported="imported" />
     <ScrapPriceEditDialog v-if="selected" v-model="editVisible" :record="selected" @saved="load" />
     <ScrapPriceDetailDrawer v-if="selected" v-model="detailVisible" :record="selected" />
@@ -58,15 +65,25 @@
 </template>
 
 <script setup>
+import PriceImportHistory from '../components/PriceImportHistory.vue'
+import PriceRowVoidButton from '../components/PriceRowVoidButton.vue'
+import { useUserStore } from '../store/modules/user'
+import { fetchScrapImports, downloadScrapImport, voidScrapImport } from '../api/scrapPrices'
 import '../styles/priceSources.css'
 import WorkbookActions from '../components/WorkbookActions.vue'
-import { onMounted, onBeforeUnmount, reactive, ref } from 'vue'
+import { computed, watch, onMounted, onBeforeUnmount, reactive, ref } from 'vue'
 import { fetchScrapPrices, fetchScrapPrice } from '../api/scrapPrices'
 import BasePagination from '../components/BasePagination.vue'
 import ScrapPriceImportDialog from '../components/scrap/ScrapPriceImportDialog.vue'
 import ScrapPriceEditDialog from '../components/scrap/ScrapPriceEditDialog.vue'
 import ScrapPriceDetailDrawer from '../components/scrap/ScrapPriceDetailDrawer.vue'
 import { calcStatusLabel, currentPriceMonth, displayPrice, typeLabel } from './scrapPriceUtils.js'
+
+const historyUser = useUserStore()
+const historyOpen = ref(false)
+const historyScope = computed(() => historyUser.userId && historyUser.businessUnitType ? `${historyUser.userId}/${historyUser.businessUnitType}` : '')
+const canManageImports = computed(() => historyUser.permissions?.some(value => ['*:*:*', 'price:scrap:import'].includes(value)))
+watch([historyScope, canManageImports], () => { historyOpen.value = false }, { flush: 'sync' })
 
 const filters = reactive({ priceMonth: currentPriceMonth(), keyword: '', model: '', priceType: '', supplier: '' })
 const rows = ref([]), total = ref(0), page = ref(1), size = ref(20), loading = ref(false), error = ref('')

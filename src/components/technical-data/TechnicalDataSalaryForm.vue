@@ -1,6 +1,17 @@
 <template>
   <section v-loading="loading" class="salary-form">
     <template v-if="workspace">
+      <div class="upload-actions"><el-button :loading="downloading" :disabled="busy" @click="download('template')">下载工时模板</el-button></div>
+      <section v-if="!previewData && !versionId" class="salary-card" aria-label="工时PDF附件">
+        <div class="card-heading"><h4>工时PDF附件</h4>
+          <el-button v-if="canEdit" :loading="pdfUploading" :disabled="busy || !!pdfError" @click="pdfInput.click()">{{ pdfDocument ? '重新上传PDF' : '上传工时PDF' }}</el-button>
+          <input ref="pdfInput" type="file" accept=".pdf,application/pdf" hidden @change="uploadPdf" />
+        </div>
+        <p class="hint">上传后自动保存，按本产品料号或型号命名。仅保存文档，不从PDF计算工资，文件不超过10MB。</p>
+        <div v-if="pdfDocument" class="upload-actions"><span>{{ pdfDocument.fileName }}</span><el-button link type="primary" :disabled="busy" @click="downloadPdf">下载PDF</el-button></div>
+        <p v-else-if="!pdfError" class="hint">尚未上传工时PDF</p>
+        <el-alert v-if="pdfError" :title="pdfError" type="error" :closable="false"><el-button link @click="loadPdf(generation)">重新读取</el-button></el-alert>
+      </section>
       <el-alert v-if="workspace.moduleStatus === 'NOT_REQUIRED'" type="info" :closable="false"
         :title="workspace.items.length ? '本产品已有工资来源，无需补录；以下为之前保存的补录记录。' : '本产品已有工资来源，无需补录。'" />
       <template v-if="canEdit || previewData || workspace.items.length">
@@ -15,7 +26,6 @@
           </div>
           <template v-if="type === 'DIRECT' && mode === 'UPLOAD'">
             <div class="upload-actions">
-              <el-button v-if="canEdit || previewData" :disabled="!!previewData || busy" @click="download('template')">下载模板</el-button>
               <el-button v-if="canEdit || previewData" :loading="uploading" :disabled="!canEdit || busy" @click="fileInput.click()">{{ form.upload ? '重新上传' : '选择 Excel' }}</el-button>
               <input ref="fileInputs" type="file" accept=".xlsx" hidden @change="upload" />
               <el-button v-if="savedFile && savedFile.fileSha256 === form.upload?.fileSha256" :disabled="!!previewData || busy" @click="download('file')">导出已保存数据（原表）</el-button>
@@ -70,9 +80,10 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { fetchTechnicalDataSalary, fetchTechnicalDataSalaryReferences, saveTechnicalDataSalary, previewTechnicalDataSalaryUpload, downloadTechnicalDataSalary } from '../../api/technicalDataTasks'
+import { fetchTechnicalDataSalary, fetchTechnicalDataSalaryReferences, saveTechnicalDataSalary, previewTechnicalDataSalaryUpload, downloadTechnicalDataSalary,
+  fetchTechnicalDataSalaryPdf, uploadTechnicalDataSalaryPdf, downloadTechnicalDataSalaryPdf } from '../../api/technicalDataTasks'
 import { salaryAmountText, salaryReferencePayload, salaryUploadPayload, salaryTotal } from '../../utils/technicalDataSalary'
 import { showErrorOnce } from '../../utils/errorHandler'
 
@@ -81,13 +92,14 @@ const emit = defineEmits(['dirty', 'busy', 'saved'])
 const workspace = ref(null), mode = ref('REFERENCE'), originalKey = ref(''), keyword = ref(''), references = ref([])
 const loading = ref(false), saving = ref(false), searching = ref(false), uploading = ref(false), downloading = ref(false)
 const searched = ref(false), picking = ref(true), uploadIssues = ref([]), fileInputs = ref([])
+const pdfDocument = ref(null), pdfInput = ref(null), pdfUploading = ref(false), pdfError = ref('')
 const buffers = reactive({ REFERENCE: { reference: null, upload: null }, UPLOAD: { reference: null, upload: null } })
 const form = computed(() => buffers[mode.value])
 const selected = computed(() => form.value.reference)
 const fileInput = computed(() => fileInputs.value[0])
 let generation = 0
 const canEdit = computed(() => !props.previewData && props.editable && workspace.value?.editable)
-const busy = computed(() => loading.value || saving.value || searching.value || uploading.value || downloading.value)
+const busy = computed(() => loading.value || saving.value || searching.value || uploading.value || downloading.value || pdfUploading.value)
 const complete = computed(() => selected.value && (mode.value === 'REFERENCE' || (form.value.upload && !uploadIssues.value.length)))
 const savedFile = computed(() => workspace.value?.items.find(row => row.laborType === 'DIRECT')?.source?.upload)
 const currentKey = computed(() => JSON.stringify([mode.value, selected.value?.fingerprint, form.value.upload?.fileSha256]))
@@ -115,8 +127,8 @@ function restore(data) {
 }
 watch(() => [props.productId, props.versionId, props.previewData], async () => {
   const request = ++generation
-  loading.value = true; workspace.value = null; references.value = []; keyword.value = ''
-  try { const data = props.previewData || await fetchTechnicalDataSalary(props.productId, props.versionId); if (request === generation) restore(data) }
+  loading.value = true; workspace.value = null; references.value = []; keyword.value = ''; pdfDocument.value = null; pdfError.value = ''
+  try { const data = props.previewData || await fetchTechnicalDataSalary(props.productId, props.versionId); if (request === generation) { restore(data); await nextTick(); await loadPdf(generation) } }
   catch (error) { if (request === generation) showErrorOnce(error, '工资资料加载失败') }
   finally { loading.value = false }
 }, { immediate: true })
@@ -146,11 +158,40 @@ async function upload(event) {
   } finally { uploading.value = false; event.target.value = '' }
 }
 async function download(kind) {
-  if (props.previewData) return
+  if (props.previewData && kind !== 'template') return
   if (busy.value) return
   downloading.value = true
   try { await downloadTechnicalDataSalary(props.productId, kind, kind === 'template' ? '工时模板2026第一版.xlsx' : savedFile.value.fileName, kind === 'file' ? workspace.value.draftVersionId : null) }
   catch (error) { showErrorOnce(error, '工时文件下载失败') }
+  finally { downloading.value = false }
+}
+async function loadPdf(request) {
+  if (props.previewData || props.versionId || !props.productId) return
+  try {
+    const document = await fetchTechnicalDataSalaryPdf(props.productId)
+    if (request === generation) { pdfDocument.value = document; pdfError.value = '' }
+  } catch (error) { if (request === generation) pdfError.value = error.message || '工时PDF读取失败，请重试' }
+}
+async function uploadPdf(event) {
+  const file = event.target.files[0]
+  event.target.value = ''
+  if (!file || !canEdit.value || busy.value) return
+  if (!file.name.toLowerCase().endsWith('.pdf') || !file.size || file.size > 10 * 1024 * 1024) return ElMessage.warning('请选择不超过10MB的PDF文件')
+  const request = generation
+  pdfUploading.value = true
+  try {
+    const document = await uploadTechnicalDataSalaryPdf(props.productId, file, workspace.value.expectedVersion, pdfDocument.value?.sha256)
+    if (request !== generation) return
+    pdfDocument.value = document; pdfError.value = ''
+    ElMessage.success(`已保存：${document.fileName}`)
+  } catch (error) { if (request === generation) { showErrorOnce(error, '工时PDF上传失败，原文件已保留'); await loadPdf(request) } }
+  finally { pdfUploading.value = false }
+}
+async function downloadPdf() {
+  if (busy.value || !pdfDocument.value) return
+  downloading.value = true
+  try { await downloadTechnicalDataSalaryPdf(props.productId, pdfDocument.value.fileName) }
+  catch (error) { showErrorOnce(error, '工时PDF下载失败') }
   finally { downloading.value = false }
 }
 async function save(next) {

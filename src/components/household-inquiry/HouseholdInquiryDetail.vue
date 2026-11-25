@@ -20,7 +20,7 @@
     <h3>询价版本历史</h3>
     <el-table v-loading="loading" :data="history.rows" border row-key="id" aria-label="询价版本历史">
       <el-table-column label="版本" width="90"><template #default="{ row }">V{{ row.revisionNo }}</template></el-table-column>
-      <el-table-column label="状态" width="110"><template #default="{ row }"><el-tag :type="row.current ? 'success' : 'info'">{{ row.current ? '当前来源' : '历史来源' }}</el-tag></template></el-table-column>
+      <el-table-column label="状态" width="110"><template #default="{ row }"><el-tag :type="row.voided ? 'danger' : row.current ? 'success' : 'info'">{{ row.voided ? '已失效' : row.current ? '当前来源' : '历史来源' }}</el-tag></template></el-table-column>
       <el-table-column prop="sourceMonth" label="来源年月" width="120" />
       <el-table-column label="原报价成本P" min-width="160"><template #default="{ row }">{{ inquiryDecimal(row.unitPrice) }}</template></el-table-column>
       <el-table-column label="两项费用率H" min-width="145"><template #default="{ row }">{{ inquiryPercent(row.householdRate) }}</template></el-table-column>

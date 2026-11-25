@@ -80,6 +80,10 @@ test('settlement and scrap templates retain editable native formulas, numeric in
  assert.deepEqual([waste.A5.v, waste.E5.v, waste.G5.v], ['', '', '联动价'])
  assert.equal(waste.F5.f, '$B$1*0.8/1.13')
  assert.ok(Math.abs(waste.F5.v - 76 / 1.13) < 1e-9)
+ assert.equal(waste.B5.v, '示例紫铜屑')
+ assert.deepEqual([waste.A6.v, waste.B6.v, waste.C6.v, waste.G6.v], ['', '示例铝屑', '公斤', '固定价'])
+ assert.deepEqual([waste.F6.t, waste.F6.v, waste.F6.f], ['n', 15, undefined])
+ assert.match(scrap.Sheets.填写说明.B6.v, /删除未使用的示例行/)
  assert.equal(scrap.Sheets.填写示例.C3.v, '固定价')
 })
 test('sample identities and percentages use their normal Excel types', () => {

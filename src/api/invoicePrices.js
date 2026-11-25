@@ -17,3 +17,5 @@ export const invoiceImportApi = {
   preview: file => request(`${base}/preview`, { ...quiet, method: 'POST', body: form(file) }),
   publish: (file, orgCode, requestId) => request(`${base}/import`, { ...quiet, method: 'POST', body: form(file, { orgCode, requestId }) }),
 }
+
+export const voidInvoiceImport = (id, orgCode) => request(`/api/v1/invoice-prices/imports/${id}/void`, { method: 'POST', params: { orgCode }, suppressErrorToast: true })

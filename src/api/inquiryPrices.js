@@ -17,3 +17,5 @@ export const inquiryImportApi = {
   preview: (file, priceMonth) => request(`${base}/preview`, { ...quiet, method: 'POST', body: form(file, { priceMonth }) }),
   publish: (file, priceMonth, requestId) => request(`${base}/import`, { ...quiet, method: 'POST', body: form(file, { priceMonth, requestId }) }),
 }
+
+export const voidInquiryImport = id => request(`${base}/imports/${id}/void`, { ...quiet, method: 'POST' })

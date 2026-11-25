@@ -31,7 +31,7 @@ function saveHarness(direct, result) {
   const calls = [], validation = ref(null)
   const deps = { dirty: ref(true), load: async () => {}, emit: (...args) => calls.push(args),
     task: ref({ id: 25 }), product: ref({ rowVersion: 3 }), nextModule: ref(null), activeModule: ref('MANUFACTURING'),
-    props: { adminDirect: direct }, validation, confirmationReady: ref(false),
+    props: { adminDirect: direct }, directEntry: ref(direct), adminSalaryEntry: ref(false), validation, confirmationReady: ref(false),
     saveAdminTechnicalDataForQuote: async (...args) => { calls.push(['direct', ...args]); return result },
     validateTechnicalDataTask: async () => { calls.push(['validate-normal']); return result?.validation || { valid: true } },
     ElMessage: { success: text => calls.push(['success', text]) }, showErrorOnce: error => calls.push(['error', error.message]) }
@@ -48,7 +48,7 @@ test('saving the last admin module validates the draft without confirming or pub
 const confirm = functions('../src/components/technical-data/TechnicalDataProductEditor.vue', ['confirmSave'])
 function confirmHarness(overrides = {}) {
   const calls = []
-  const deps = { props: { adminDirect: true }, confirmationReady: ref(true), dirty: ref(false), busy: ref(false),
+  const deps = { props: { adminDirect: true }, directEntry: ref(true), confirmationReady: ref(true), dirty: ref(false), busy: ref(false),
     confirming: ref(false), task: ref({ id: 25 }), product: ref({ rowVersion: 3 }), validation: ref(null),
     saveAdminTechnicalDataForQuote: async (...args) => { calls.push(['confirm', ...args]); return { effectiveVersionId: 99 } },
     ElMessage: { success: text => calls.push(['success', text]) }, emit: (...args) => calls.push(args),
@@ -62,7 +62,7 @@ test('only explicit admin confirmation publishes the current saved version', asy
   assert.equal(h.deps.busy.value, false)
 })
 test('technicians and unsaved or incomplete admin drafts cannot confirm', async () => {
-  for (const override of [{ props: { adminDirect: false } }, { dirty: ref(true) },
+  for (const override of [{ props: { adminDirect: false }, directEntry: ref(false) }, { dirty: ref(true) },
     { confirmationReady: ref(false) }, { busy: ref(true) }, { confirming: ref(true) }]) {
     const h = confirmHarness(override); await h.confirm(); assert.deepEqual(h.calls, [])
   }

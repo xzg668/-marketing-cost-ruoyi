@@ -1,5 +1,5 @@
 <template>
-  <div class="package-page">
+  <div class="package-page price-source-page">
     <section class="page-toolbar">
       <div class="page-title">
         <h1>包装组件价格</h1>
@@ -400,6 +400,7 @@
 </template>
 
 <script setup>
+import '../../../styles/priceSources.css'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Operation, RefreshLeft, RefreshRight, Search } from '@element-plus/icons-vue'

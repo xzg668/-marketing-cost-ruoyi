@@ -1,7 +1,7 @@
 <template>
   <div class="household-inquiry-page price-source-page">
     <el-card>
-      <template #header><div class="page-heading"><div><h2>家用部件询价</h2><p>按月份查询适用的部件询价。当月导入优先，未重新导入的询价沿用最近以前月份；已保存的核算结果保留。</p></div><WorkbookActions kind="household" :fetch-page="canList ? fetchHouseholdInquiries : undefined" :query="{ materialCode, model, sourceMonth: sourceMonth || undefined }" size-key="size" :export-page-size="100" import-permission="price:household-inquiry:import" /><el-button v-if="canImport" type="primary" @click="importOpen = true">导入询价原件</el-button></div></template>
+      <template #header><div class="page-heading"><div><h2>家用部件询价</h2><p>按月份查询适用的部件询价。当月导入优先，未重新导入的询价沿用最近以前月份；已保存的核算结果保留。</p></div><WorkbookActions kind="household" :fetch-page="canList ? fetchHouseholdInquiries : undefined" :query="{ materialCode, model, sourceMonth: sourceMonth || undefined }" size-key="size" :export-page-size="100" import-permission="price:household-inquiry:import" /><el-button v-if="canImport" @click="historyOpen = true">导入记录</el-button><el-button v-if="canImport" type="primary" @click="importOpen = true">导入询价原件</el-button></div></template>
       <el-form inline @submit.prevent="search">
         <el-form-item label="适用月份"><el-date-picker v-model="sourceMonth" type="month" value-format="YYYY-MM" placeholder="全部当前来源" clearable @change="search" /></el-form-item>
         <el-form-item label="料号"><el-input v-model="materialCode" placeholder="填写完整料号" clearable style="width:290px" @keyup.enter="search" /></el-form-item>
@@ -21,10 +21,21 @@
         <el-table-column label="来源价格口径" min-width="175"><template #default="{ row }">{{ row.priceContext.unit }} / {{ row.priceContext.currency }} / {{ inquiryTaxLabel(row.priceContext.taxBasis) }}</template></el-table-column>
         <el-table-column label="来源版本" width="105"><template #default="{ row }">V{{ row.revisionNo }}</template></el-table-column>
         <el-table-column v-if="sourceMonth" label="来源状态" width="130"><template #default="{ row }"><el-tag :type="row.sourceMonth === sourceMonth ? 'success' : 'info'">{{ row.sourceMonth === sourceMonth ? '当月导入' : '沿用历史询价' }}</el-tag></template></el-table-column>
-        <el-table-column v-if="canQuery" label="操作" width="190" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="trial(row)">试算</el-button><el-button link type="primary" @click="detail(row)">来源 / 历史</el-button></template></el-table-column>
+        <el-table-column v-if="canQuery || canImport" label="操作" width="226" fixed="right">
+          <template #default="{ row }">
+            <el-button v-if="canQuery" link type="primary" @click="trial(row)">试算</el-button>
+            <el-button v-if="canQuery" link type="primary" @click="detail(row)">来源 / 历史</el-button>
+            <PriceRowVoidButton v-if="canImport" :path="`/api/v1/household-inquiries/rows/${row.id}/void`"
+              :description="[row.materialCode, row.specification, row.sourceMonth].filter(Boolean).join(' / ')"
+              @withdrawn="withdrawn" />
+          </template>
+        </el-table-column>
       </el-table>
       <el-pagination v-if="total" v-model:current-page="page" v-model:page-size="size" :page-sizes="[20, 50, 100]" :total="total" layout="total, sizes, prev, pager, next" @current-change="paginate" @size-change="resize" />
     </el-card>
+    <PriceImportHistory v-if="canImport && scope" v-model="historyOpen" :scope="scope"
+      :fetch="fetchHouseholdImports" :download="canDownload ? downloadHistoryOriginal : undefined"
+      :withdraw-batch="voidHouseholdImport" @withdrawn="withdrawn" />
     <HouseholdInquiryImportDialog v-if="canImport && scope" v-model="importOpen" :scope="scope" :source-month="sourceMonth" :can-download="canDownload" @imported="imported" />
     <HouseholdInquiryDetail v-if="canQuery && scope" v-model="detailOpen" :entry="selected" :scope="scope" :can-download="canDownload" />
     <HouseholdInquiryTrial v-if="canQuery && scope" v-model="trialOpen" :entry="trialEntry" :scope="scope" :source-month="sourceMonth" />
@@ -42,12 +53,14 @@
   </div>
 </template>
 <script setup>
+import PriceRowVoidButton from '../components/PriceRowVoidButton.vue'
 import '../styles/priceSources.css'
+import PriceImportHistory from '../components/PriceImportHistory.vue'
 import WorkbookActions from '../components/WorkbookActions.vue'
 import { computed, onBeforeUnmount, ref, toRefs, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '../store/modules/user'
-import { fetchHouseholdInquiries, fetchHouseholdImport, downloadHouseholdImportOriginal } from '../api/householdInquiries'
+import { fetchHouseholdInquiries, fetchHouseholdImports, voidHouseholdImport, fetchHouseholdImport, downloadHouseholdImportOriginal } from '../api/householdInquiries'
 import { inquiryDecimal, inquiryPercent, inquiryTaxLabel, inquiryScope, inquiryActionLabel, inquiryMessage } from './householdInquiryUtils'
 import { createInquiryList } from './householdInquiryList'
 import HouseholdInquiryImportDialog from '../components/household-inquiry/HouseholdInquiryImportDialog.vue'
@@ -61,6 +74,7 @@ const scope = computed(() => user.userId && user.username && ['COMMERCIAL', 'HOU
 const list = createInquiryList({ fetch: fetchHouseholdInquiries, scope: () => scope.value, allowed: () => canList.value })
 const { rows, total, loading, error } = toRefs(list.state)
 const page = ref(1), size = ref(20), materialCode = ref(''), model = ref(''), sourceMonth = ref('')
+const historyOpen = ref(false)
 const importOpen = ref(false), detailOpen = ref(false), selected = ref(null), batchOpen = ref(false), batch = ref(null), batchError = ref('')
 const trialOpen = ref(false), trialEntry = ref(null)
 const batchId = computed(() => /^\d+$/.test(String(route.query.batchId || '')) ? String(route.query.batchId) : '')
@@ -85,6 +99,13 @@ function navigate() {
   if (router.resolve(target).fullPath === route.fullPath) load(); else router.replace(target)
 }
 function refresh() { load() }
+function withdrawn() {
+  detailOpen.value = false
+  batchOpen.value = false
+  trialOpen.value = false
+  search()
+}
+function downloadHistoryOriginal(row, options) { return downloadHouseholdImportOriginal(row.id, row.file_name, options) }
 function detail(row) { selected.value = row; detailOpen.value = true }
 function trial(row) { trialEntry.value = row; trialOpen.value = true }
 function imported(result) {

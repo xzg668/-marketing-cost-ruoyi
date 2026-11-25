@@ -89,7 +89,7 @@
         </el-table-column>
         <el-table-column prop="pricingMonth" label="原稿月份" width="110" />
         <el-table-column label="财务来源月" width="110"><template #default="{ row }">{{ rowTraceMap[row.id]?.financeMonth || '—' }}</template></el-table-column>
-        <el-table-column label="操作" width="115" fixed="right">
+        <el-table-column label="操作" width="155" fixed="right">
           <template #default="{ row }">
             <el-button v-hasPermi="['price:linked-item:list']" link type="primary" @click="openImportBasis(row)">详情</el-button>
             <el-popover v-if="row.expressionVersion !== 'ORIGINAL_V1'" placement="bottom" trigger="click" width="210">
@@ -102,6 +102,10 @@
                 <el-button v-hasPermi="['price:linked-item:remove']" link type="danger" @click="removeRow(row)">删除</el-button>
               </div>
             </el-popover>
+            <PriceRowVoidButton v-hasPermi="['price:linked-item:import']"
+              :path="`/api/v1/price-linked/items/rows/${row.id}/void?businessUnitType=${encodeURIComponent(filters.businessUnitType)}`"
+              :description="[row.materialCode, row.supplierName, row.pricingMonth].filter(Boolean).join(' / ')"
+              @withdrawn="fetchList" />
           </template>
         </el-table-column>
       </el-table>
@@ -558,6 +562,7 @@
 </template>
 
 <script setup>
+import PriceRowVoidButton from '../components/PriceRowVoidButton.vue'
 import '../styles/priceSources.css'
 import { priceExportPage } from '../utils/priceWorkbookExport'
 import WorkbookActions from '../components/WorkbookActions.vue'

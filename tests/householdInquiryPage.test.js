@@ -30,8 +30,8 @@ function pageFixture(query) {
   const app = renderer.createApp(component('../src/pages/HouseholdInquiryPage.vue', {
     useRoute: () => route, useRouter: () => router, useUserStore: () => user, createInquiryList,
     fetchHouseholdInquiries: async query => { requests.push({ ...query }); return { rows: [], total: 0 } },
-    fetchHouseholdImport() {}, downloadHouseholdImportOriginal() {},
-    WorkbookActions: {}, HouseholdInquiryImportDialog: {}, HouseholdInquiryDetail: {}, HouseholdInquiryTrial: {},
+    fetchHouseholdImport() {}, fetchHouseholdImports() {}, voidHouseholdImport() {}, downloadHouseholdImportOriginal() {},
+    PriceImportHistory: {}, PriceRowVoidButton: {}, WorkbookActions: {}, HouseholdInquiryImportDialog: {}, HouseholdInquiryDetail: {}, HouseholdInquiryTrial: {},
   }))
   const state = app.mount({}).$.setupState
   return { app, state, route, requests }

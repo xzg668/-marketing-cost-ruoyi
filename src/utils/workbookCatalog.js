@@ -1,3 +1,4 @@
+import { inquiryTemplateRows, writeInquiryWorkbook } from './inquiryWorkbook.js'
 import { sourceColumns } from './workbookSourceColumns.js'
 import { scrapExample, scrapLinkedPrice, settlementBasePrice, settlementExample, settlementLinkedPrice, workbookExamples } from './workbookExamples.js'
 const c = (field, label, type = 'text', help = '', example = '') => ({ field, label, type, help, example })
@@ -58,9 +59,18 @@ export const workbookDefinitions = {
   ], ['单据编号、供应商编码、料号、计量单位、未税单价和币种必填。单价不含税；本表不可填写公式。']),
   inquiry: define('询价', '询价', [
     ['source.rule.materialCode','料号'],['source.rule.materialName','零件名称'],['source.rule.specification','规格型号'],
-    ['source.rule.supplierName','供方名称'],['source.rule.unit','计量单位'],['source.rule.priceType','价格类型','text','固定价或联动价'],
+    ['source.rule.supplierName','供方名称'],['source.rule.unit','计量单位'],['source.rule.priceType','价格类型','text','固定价、联动价或区间价'],
     ['source.rule.originalPrice','批量价总价(元)','number'],['price','不含税价格','number'],['source.rule.formula','备注及联动公式'],
-  ], ['料号和规格型号至少填写一项。固定价填写批量价总价；联动价在“不含税价格”保存实际Excel公式，并保留引用的影响因素工作表。']),
+    ['source.rule.supplierCode','供应商代码'],
+    ['source.rule.range.factorKey','行情因素','text','照抄财务基价里的完整名称，确保能唯一匹配','1#电解铜'],['source.rule.range.marketUnit','行情单位'],
+    ['_lower','区间下限','number'],['_upper','区间上限','number'],['_price','区间单价(元)','number'],
+  ], ['料号和规格型号至少填写一项；没有料号、供方名称和供应商代码时，按实际型号／规格识别，不要补造编码。',
+    '填写表提供无料号、无供方的固定价、联动价和三档区间价示例。按实际报价修改或删除不需要的示例。',
+    '固定价填写批量价总价；联动价在“不含税价格”保留实际Excel公式和影响因素工作表。',
+    '区间价行情因素填写财务基价里的完整名称，例如“1#电解铜”。同一型号和供方的各档分别填一行，型号、供方、行情因素和单位保持一致。没有供方时各档都留空。',
+    '区间含下限、不含上限。连续档位的上一档上限等于下一档下限，例如 92500 接 92500。最后一档上限可留空。档位不得重叠，未覆盖行情时不能核算。',
+    '区间单价为人民币不含税价，行情因素采用财务含税口径。区间上下限与填写的行情单位一致，例如元/吨。',
+    '导出保留原固定价、联动公式和全部区间，可修改后重新导入；导入月份在页面选择。']),
   household: define('家用询价', '明细表2', [
     ['materialCode','料号'],['materialName','名称'],['specification','规格'],['_unit','单位'],['unitPrice','报价总成本（含两项费用、不含运费）','number'],
     ['copperWeight','铜重（克）','number'],['zincWeight','锌重（克）','number'],['householdRate','两项费用比例%','percent','例如8.5%','8.5%'],
@@ -186,12 +196,16 @@ workbookDefinitions.scrap.columns = [...workbookDefinitions.scrap.templateColumn
 workbookDefinitions.scrap.leadingRows = [['1#电解铜价',''],['美国柜装黄铜',''],['长江现货A00','']]
 workbookDefinitions.scrap.notes.push('联动时在B1/B2/B3填原稿铜、黄铜、铝参考价（元/公斤），公式按实际业务填写并绝对引用，例如=$B$1*0.8/1.13。固定价不需要填写这些因素。')
 workbookDefinitions.scrap.templateNotes = [...workbookDefinitions.scrap.notes,
-  'F5为可编辑的联动示例，B1:B3为相应演示基价。填入实际料号及供应商后，请换成实际基价与公式；填固定价时直接以实际数值替换F5，并将G5改填固定价。']
+  '第5行为联动价示例，第6行为固定价示例。将所需示例行替换为实际料号、品名及价格，删除未使用的示例行。联动价请替换B1:B3中的演示基价和F5的公式，固定价在F6填写不含税元/公斤数值。']
 workbookDefinitions.scrap.customizeTemplate = (book, XLSX) => {
   const sheet = book.Sheets.废料清单
   const { copperPrice, brassPrice, aluminumPrice, copperRatio } = scrapExample
+  const [linked, fixed] = workbookExamples.scrap
   XLSX.utils.sheet_add_aoa(sheet, [[copperPrice], [brassPrice], [aluminumPrice]], { origin: 'B1' })
-  XLSX.utils.sheet_add_aoa(sheet, [['联动价']], { origin: 'G5' })
+  XLSX.utils.sheet_add_aoa(sheet, [
+    ['', linked.materialName, '公斤', '', '', null, linked.priceType],
+    ['', fixed.materialName, '公斤', '', '', fixed.fixedPrice, fixed.priceType],
+  ], { origin: 'A5' })
   formula(sheet, 'F5', `$B$1*${copperRatio}/1.13`, scrapLinkedPrice)
 }
 
@@ -292,3 +306,38 @@ workbookDefinitions.range.templateExampleColumns = columns([
   ['band', '铜价区间表：铜价档位（元/吨）'], ['bandNet', '铜价区间表：不含税元/米', 'number'],
   ['bandGross', '铜价区间表：含13%税价', 'number'],
 ])
+
+workbookDefinitions.inquiry.customizeTemplate = (book, XLSX) =>
+  writeInquiryWorkbook(book, XLSX, workbookDefinitions.inquiry, inquiryTemplateRows())
+workbookDefinitions.inquiry.customizeExport = (book, XLSX, rows) =>
+  writeInquiryWorkbook(book, XLSX, workbookDefinitions.inquiry, rows)
+
+workbookDefinitions.inquiry.templateNotes = [
+  ['先填实际数据', '在「询价」表替换为实际报价，删除未使用的示例行。'],
+  ['固定价', '填 G 列「批量价总价」。'],
+  ['联动价', 'H 列「不含税价格」保留 Excel 公式，同时保留「影响因素」工作表。'],
+  ['区间价填 K–O 列', 'K 行情因素，L 行情单位，M 区间下限，N 区间上限，O 未税区间单价。'],
+  ['同一报价的各档', '每档一行。同一料号或型号、同一供方的各档填写相同的行情因素和单位。'],
+  ['没有料号或供方', '无料号时，各档填同一个实际型号，别在型号后加档位编号。无供方时，各档供方名称和代码均留空。'],
+  [],
+  ['K 列常用行情因素', '照抄下列财务基价全称。其他因素可从财务基价目录复制。', 'L 列单位举例'],
+  ['铜价', '1#电解铜', '元/吨'],
+  ['锌价', '1#锌', '元/公斤'],
+  ['铝价', 'A00铝', '元/公斤'],
+  ['H65 黄铜边料价', 'H65黄铜边料', '元/公斤'],
+  ['美国柜装黄铜价', '美国柜装黄铜', '元/公斤'],
+  ['单位跟上下限一致', '报价区间是 90000 到 100000 元/吨时，L 填「元/吨」，M、N 填 90000、100000。'],
+  ['报价用元/公斤时', '同一段也可填 L「元/公斤」，M、N 填 90、100。各档统一用一种单位。'],
+  [],
+  ['铜价三档示例', '三行的 C 列都填「示例-区间」，K 都填「1#电解铜」，L 都填「元/吨」。'],
+  ['铜价第1档', 'M 填 90000，N 填 100000', 'O 填 2'],
+  ['铜价第2档', 'M 填 100000，N 填 110000', 'O 填 2.4'],
+  ['铜价第3档', 'M 填 110000，N 留空', 'O 填 2.8'],
+  ['锌价两档示例', '两行的 C 列都填同一个实际型号，K 都填「1#锌」，L 都填「元/公斤」。'],
+  ['锌价第1档', 'M 填 25，N 填 30', 'O 填 1.40'],
+  ['锌价第2档', 'M 填 30，N 留空', 'O 填 1.65'],
+  ['示例数字按实填写', 'M、N 按供应商约定的行情档位，O 填对应的人民币未税单价。行情采用财务含税基价。'],
+  ['区间如何衔接', '上限不含。要连续衔接，上一档上限与下一档下限填同一个数，例如 92500 接 92500。'],
+  ['分界值取下一档', '铜价正好 100000 元/吨时进入第 2 档，取 2.4 元/件。末档上限留空表示向上不限。'],
+  ['未命中当月行情', '本月财务基价没落入任何一个已填区间，单价留空。点「查看」核对实际基价及档位。'],
+]

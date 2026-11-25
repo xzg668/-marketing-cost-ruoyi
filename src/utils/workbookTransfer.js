@@ -87,13 +87,15 @@ export function createWorkbook(XLSX, definition, rows, template = false) {
   sheet['!cols'] = columns.map(column => ({ wch: column.width || Math.max(16, Math.min(38, column.label.length * 2 + 2)) }))
   if (!template) sheet['!autofilter'] = { ref: XLSX.utils.encode_range({ r: leading.length, c: 0 }, { r: offset + data.length - 1, c: columns.length - 1 }) }
   XLSX.utils.book_append_sheet(book, sheet, definition.sheet || '数据')
+  if (!template && definition.customizeExport) definition.customizeExport(book, XLSX, rows)
   if (template && definition.customizeTemplate) definition.customizeTemplate(book, XLSX)
   if (template && definition.templateExamples?.length) appendTemplateExamples(XLSX, book, definition, columns)
   const instructions = [
     ['说明', definition.title],
     ['用途', definition.purpose || (template ? '在第一个工作表填写实际数据后保存，再通过对应页面导入。' : '本文件包含当前筛选范围的系统数据；导入仍按原业务规则校验。')],
     ['编码', '料号、型号、供应商编码按文本保存，请保留前导零。'],
-    ...((template ? definition.templateNotes ?? definition.notes : definition.notes) || []).map(note => ['填写要求', note]),
+    ...((template ? definition.templateNotes ?? definition.notes : definition.notes) || [])
+      .map(note => Array.isArray(note) ? note : ['填写要求', note]),
     ['字段', '填写说明', '示例（仅供参考）'],
     ...columns.map(column => [column.label, column.help || '', column.example == null ? '' : String(column.example)]),
   ]

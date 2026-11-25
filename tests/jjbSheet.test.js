@@ -2,6 +2,14 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { savedMoney, rowBasis, ratePercent, sheetGroups, sheetTotals, jjbColumns, sheetHeaderRows, sheetRowCells, manufacturingGrossWeightSource, grossWeightWithSource } from '../src/utils/jjbSheet.js'
 
+test('header displays saved band metals separately from the customer copper input', () => {
+  const values = sheetHeaderRows({ header: { quotation: { copperPrice: '100000.000000', zincPrice: '23146.000000',
+    customerCuPrice: '105.000000', brassPrice: '58.470000', brassScrapPrice: '60.996000' } } })
+    .flatMap(row => row.cells.map(cell => cell.value))
+  for (const value of ['100000.000000', '23146.000000', '105.000000', '58.470000', '60.996000']) assert.ok(values.includes(value))
+  assert.ok(values.includes('美国柜装黄铜\n（元/公斤）'))
+})
+
 test('the CMS column shows the saved source month and leaves calculated fees blank', () => {
   const group = { code: 'MATERIAL_DETAIL', rows: [] }
   const cell = (row) => sheetRowCells(row, group, 0).find(value => value.key === 'basis').value

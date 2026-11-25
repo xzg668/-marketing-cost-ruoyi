@@ -43,6 +43,7 @@
       <el-table v-loading="loading" :data="monthlyHistory" size="small" border>
         <el-table-column prop="priceMonth" label="结果月份" width="95" />
         <el-table-column prop="revisionNo" label="版本" width="60" />
+        <el-table-column label="状态" width="95"><template #default="{ row }">{{ row.voidedAt ? '已失效' : '已导入' }}</template></el-table-column>
         <el-table-column label="单价"><template #default="{ row }">{{ displayDecimal(row.unitPrice) }}</template></el-table-column>
         <el-table-column label="原稿月份 / 版本"><template #default="{ row }">{{ row.ruleMonth }} / {{ row.ruleRevision }}</template></el-table-column>
         <el-table-column label="基价月份 / 版本"><template #default="{ row }">{{ row.financeMonth ? `${row.financeMonth} / ${row.financeRevision}` : '未使用' }}</template></el-table-column>

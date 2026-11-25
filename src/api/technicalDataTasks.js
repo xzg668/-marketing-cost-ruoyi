@@ -220,13 +220,25 @@ export const downloadTechnicalDataAuxiliary = (productId, kind, fileName, versio
   downloadTechnicalDataFile(productId, 'auxiliary', kind, fileName, versionId)
 
 export const downloadTechnicalDataSalary = (productId, kind, fileName, versionId) =>
-  downloadTechnicalDataFile(productId, 'salary', kind, fileName, versionId)
+  kind === 'template' ? downloadTechnicalDataPath('/api/v2/technical-data/salary/template', fileName)
+    : downloadTechnicalDataFile(productId, 'salary', kind, fileName, versionId)
+
+export const fetchTechnicalDataSalaryPdf = productId =>
+  request(`/api/v2/technical-data/products/${id(productId)}/salary/pdf`, { suppressErrorToast: true })
+export const uploadTechnicalDataSalaryPdf = (productId, file, expectedVersion, expectedSha256) => {
+  const body = new FormData()
+  body.append('file', file); body.append('expectedVersion', String(expectedVersion))
+  if (expectedSha256) body.append('expectedSha256', expectedSha256)
+  return request(`/api/v2/technical-data/products/${id(productId)}/salary/pdf`, { method: 'POST', body, suppressErrorToast: true })
+}
+export const downloadTechnicalDataSalaryPdf = (productId, fileName) =>
+  downloadTechnicalDataPath(`/api/v2/technical-data/products/${id(productId)}/salary/pdf/file`, fileName)
 
 async function downloadTechnicalDataFile(productId, module, kind, fileName, versionId, extra = {}) {
   if (!['template', 'file'].includes(kind)) throw new Error('补录文件类型无效')
   return downloadTechnicalDataPath(`/api/v2/technical-data/products/${id(productId)}/${module}/${kind}`, fileName, { versionId, ...extra })
 }
-async function downloadTechnicalDataPath(path, fileName, parameters) {
+async function downloadTechnicalDataPath(path, fileName, parameters = {}) {
   const token = requestToken(window.location.pathname)
   const query = new URLSearchParams()
   for (const [key, value] of Object.entries(parameters)) if (value != null) query.set(key, String(value))

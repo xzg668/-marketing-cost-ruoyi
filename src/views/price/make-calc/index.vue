@@ -1,5 +1,5 @@
 <template>
-  <div class="make-calc-page">
+  <div class="make-calc-page price-source-page">
     <section class="page-toolbar">
       <div class="page-title">
         <h1>制造件价格生成</h1>
@@ -286,6 +286,7 @@
 </template>
 
 <script setup>
+import '../../../styles/priceSources.css'
 import { grossWeightWithSource, manufacturingGrossWeightSource } from '../../../utils/jjbSheet'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'

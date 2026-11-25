@@ -4,6 +4,7 @@
       <template #header><div class="heading"><div><h2>结算价格</h2><p>商用与板换共用结算规则；发布商用基价或导入原稿时，生成并保存对应月份的结算价格。</p></div><div>
         <el-button v-if="returnTo" @click="router.push(returnTo)">返回报价核算</el-button>
         <WorkbookActions kind="settlement" :fetch-page="exportSettlementRows" :query="{ priceMonth: month, materialCode, priceType, specModel }" import-permission="price:settlement:import" />
+        <el-button v-if="canImport" @click="historyOpen = true">导入记录</el-button>
         <el-button v-hasPermi="['price:settlement:import']" type="primary" @click="importOpen = true">导入原稿</el-button>
       </div></div></template>
       <el-form inline @submit.prevent="search">
@@ -26,25 +27,40 @@
         <el-table-column label="结果月份 / 版本" width="165"><template #default="{ row }">{{ row.effectivePrice?.priceMonth ? `${row.effectivePrice.priceMonth} / ${row.effectivePrice.revisionNo}` : '待生成' }} <el-tag v-if="row.effectivePrice?.priceMonth < month" size="small">沿用</el-tag></template></el-table-column>
         <el-table-column label="原稿月份 / 版本" width="170"><template #default="{ row }">{{ row.rule.priceMonth }} / {{ row.rule.revisionNo }} <el-tag v-if="row.ruleCarriedForward" size="small">沿用</el-tag></template></el-table-column>
         <el-table-column label="商用基价月份" width="145"><template #default="{ row }">{{ row.base?.priceMonth || '未使用' }} <el-tag v-if="row.baseCarriedForward" size="small">沿用</el-tag></template></el-table-column>
-        <el-table-column label="操作" width="120" fixed="right"><template #default="{ row }">
+        <el-table-column label="操作" width="160" fixed="right"><template #default="{ row }">
           <el-button link type="primary" @click="showDetail(row)">依据 / 版本</el-button>
+          <PriceRowVoidButton v-if="canImport" :path="`/api/v1/settlement-prices/rows/${row.rule.id}/void`"
+            :description="[row.rule.materialCode, row.rule.priceMonth].filter(Boolean).join(' / ')"
+            @withdrawn="withdrawn" />
         </template></el-table-column>
       </el-table>
     </el-card>
+    <PriceImportHistory v-if="canImport && scope" v-model="historyOpen" :scope="scope"
+      :fetch="fetchSettlementImports" :download="downloadSettlementOriginal"
+      :withdraw-batch="voidSettlementImport" @withdrawn="withdrawn" />
     <SettlementImportDialog v-model="importOpen" :price-month="month" @imported="imported" />
     <SettlementPriceDetail v-model="detailOpen" :entry="selected" :price-month="month" />
   </div>
 </template>
 <script setup>
+import PriceRowVoidButton from '../components/PriceRowVoidButton.vue'
 import '../styles/priceSources.css'
+import PriceImportHistory from '../components/PriceImportHistory.vue'
 import WorkbookActions from '../components/WorkbookActions.vue'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import SettlementImportDialog from '../components/settlement/SettlementImportDialog.vue'
 import SettlementPriceDetail from '../components/settlement/SettlementPriceDetail.vue'
-import { fetchSettlementPrices } from '../api/settlementPrices'
+import { useUserStore } from '../store/modules/user'
+import { inquiryScope } from './householdInquiryUtils'
+import { fetchSettlementPrices, fetchSettlementImports, voidSettlementImport, downloadSettlementOriginal } from '../api/settlementPrices'
 import { displayDecimal, modeLabel, typeLabel, settlementMonth, settlementReturnTo } from './settlementPriceUtils'
 const route = useRoute(), router = useRouter()
+const user = useUserStore()
+const scope = computed(() => user.userId && user.username && ['COMMERCIAL', 'HOUSEHOLD'].includes(user.businessUnitType) ? inquiryScope(user) : '')
+const canImport = computed(() => user.permissions?.some(value => ['*:*:*', 'price:settlement:import'].includes(value)))
+const historyOpen = ref(false)
+watch([scope, canImport], () => { historyOpen.value = false }, { flush: 'sync' })
 const month = ref(settlementMonth(route.query)), materialCode = ref(route.query.materialCode || ''), priceType = ref(route.query.priceType || '')
 const specModel = ref('')
 const rows = ref([]), loading = ref(false), error = ref(''), importOpen = ref(false), detailOpen = ref(false), selected = ref(null)
@@ -75,6 +91,10 @@ watch(() => route.fullPath, () => {
   load()
 }, { immediate: true })
 function showDetail(row) { selected.value = row; detailOpen.value = true }
+function withdrawn() {
+  detailOpen.value = false
+  load()
+}
 function imported(value) { month.value = value; search() }
 async function exportSettlementRows(query) {
   const { specModel: model, ...params } = query

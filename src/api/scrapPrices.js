@@ -1,3 +1,4 @@
+import { downloadAuthenticatedBlob } from '../utils/auxiliaryClassification'
 import { request } from './http'
 
 const base = '/api/v1/scrap-prices'
@@ -20,3 +21,9 @@ export const previewScrapPrices = (file, month) =>
 
 export const importScrapPrices = (file, month, fingerprint) =>
   request(`${base}/import`, { method: 'POST', body: upload(file, month, fingerprint) })
+
+const scrapHistoryBase = '/api/v1/scrap-prices/imports'
+export const fetchScrapImports = params => request(scrapHistoryBase, { params, suppressErrorToast: true })
+export const voidScrapImport = id => request(`${scrapHistoryBase}/${id}/void`, { method: 'POST', suppressErrorToast: true })
+export const downloadScrapImport = (row, options) => downloadAuthenticatedBlob(
+  `${scrapHistoryBase}/${row.id}/original`, row.file_name, options)

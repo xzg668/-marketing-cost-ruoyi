@@ -9,11 +9,11 @@
           <tr v-for="(header, index) in headers" :key="index" class="jjb-header" :style="{ height: `${header.height}px` }">
             <td v-for="cell in header.cells" :key="cell.column" :colspan="cell.colspan" :class="{ 'header-label': cell.label }" :title="cell.value">{{ cell.value }}</td>
           </tr>
-          <tr class="jjb-columns"><th v-for="(column, index) in jjbColumns" :key="column[0]" scope="col" :class="{ 'metal-column': ['grossWeight', 'netWeight', 'rawUnitPrice', 'scrapUnitPrice'].includes(column[0]) }">{{ column[1] }}</th></tr>
+          <tr class="jjb-columns"><th v-for="column in jjbColumns" :key="column[0]" scope="col">{{ column[1] }}</th></tr>
         </thead>
         <tbody v-for="group in groups" :key="group.code" :data-section="group.code">
           <tr v-for="(row, index) in group.rows" :key="row.key" :data-row-key="row.key" :data-row-code="row.code" :data-kind="row.kind" :class="[`kind-${row.kind.toLowerCase()}`, { 'summary-row': row.code === 'MANUFACTURE_COST', 'multi-price-material': row.multiPriceSource }]">
-            <td v-for="cell in sheetRowCells(row, group, index)" :key="cell.column" :colspan="cell.colspan" :rowspan="cell.rowspan" :data-column="cell.key" :class="{ numeric: numericColumns.has(cell.key), 'side-label': cell.label }" :title="cell.key === 'amount' ? rowBasis(row) || cell.value : cell.value">
+            <td v-for="cell in sheetRowCells(row, group, index)" :key="cell.column" :colspan="cell.colspan" :rowspan="cell.rowspan" :data-column="cell.key" :class="{ numeric: numericColumns.has(cell.key), 'side-label': cell.label }" :title="cell.title ?? (cell.key === 'amount' ? rowBasis(row) || cell.value : cell.value)">
               <button v-if="cell.key === 'code' && row.code && ['PART', 'HOUSEHOLD', 'EXPLANATION'].includes(row.kind)" class="jjb-trace-link" type="button" :aria-label="`查看 ${row.code} 的核算底稿`" @click="$emit('trace', row)">{{ cell.value }}</button>
               <button v-else-if="cell.key === 'amount' && row.amount != null" class="jjb-trace-link" type="button" @click="$emit('trace', row)">{{ savedMoney(row.amount) }}</button>
               <button v-else-if="cell.key === 'name' && row.multiPriceSource && canEditShape" class="jjb-trace-link" type="button"
@@ -46,7 +46,7 @@ const headers = computed(() => sheetHeaderRows(props.sheet))
 const groups = computed(() => sheetGroups(props.sheet))
 const totals = computed(() => sheetTotals(props.sheet))
 const totalWidth = jjbColumnWidths.reduce((sum, width) => sum + width, 0)
-const numericColumns = new Set(['unitPrice', 'quantity', 'amount', 'grossWeight', 'netWeight', 'rawUnitPrice', 'scrapUnitPrice', 'coefficient'])
+const numericColumns = new Set(['unitPrice', 'quantity', 'amount', 'grossWeight', 'netWeight', 'rawUnitPrice', 'scrapUnitPrice', 'processingFee', 'coefficient'])
 </script>
 <style scoped>
 .jjb-sheet { background:#fff; color:#000; padding:8px; }
@@ -58,15 +58,13 @@ const numericColumns = new Set(['unitPrice', 'quantity', 'amount', 'grossWeight'
 .jjb-header td { white-space:pre-line; overflow-wrap:anywhere; }
 .header-label { font-weight:700; }
 .jjb-columns th { height:43px; white-space:pre-line; background:#fff; font-weight:700; }
-.jjb-columns .metal-column { background:#f00; }
 .jjb-table .numeric { font-variant-numeric:tabular-nums; }
 .jjb-table td[data-column="grossWeight"] { white-space:normal; overflow-wrap:anywhere; }
 .jjb-table td[data-column="netWeight"] { white-space:pre-line; overflow-wrap:anywhere; text-overflow:clip; line-height:16px; }
+.jjb-table td[data-column="processingFee"] { white-space:normal; overflow-wrap:anywhere; line-height:16px; }
 .jjb-table td[data-column="drawingNo"] { white-space:pre-wrap; overflow-wrap:anywhere; text-overflow:clip; line-height:18px; }
 .jjb-table .side-label { font-weight:700; white-space:normal; }
 .kind-subtotal td,.kind-property td,.summary-row td { font-weight:700; }
-.kind-subtotal td,.kind-property td,.summary-row td { background:#ef939e; }
-.kind-property td:first-child { background:#fff; }
 tr[data-row-code="MATERIAL"] td[data-column="amount"] { font-weight:700; }
 .kind-explanation td { height:40px; }
 .jjb-table td[data-column="code"],.jjb-table td[data-column="name"] { white-space:pre-line; line-height:16px; }

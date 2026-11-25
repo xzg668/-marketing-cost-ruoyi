@@ -12,7 +12,7 @@
         <el-form-item v-if="mode === 'current'" label="型号"><el-input v-model="model" placeholder="输入型号，支持部分匹配" clearable @keyup.enter="search" @clear="search" /></el-form-item>
         <el-button @click="search">查询</el-button><el-button @click="load">刷新</el-button>
       </el-form>
-      <el-tabs v-model="mode" @tab-change="search"><el-tab-pane label="当前发票记录" name="current" /><el-tab-pane v-if="allowed('query')" label="导入历史" name="history" /></el-tabs>
+      <el-tabs v-model="mode" @tab-change="search"><el-tab-pane label="当前发票记录" name="current" /><el-tab-pane v-if="canReadHistory()" label="导入历史" name="history" /></el-tabs>
       <el-alert v-if="error" :title="error" type="error" :closable="false" />
       <template v-if="mode === 'current'">
         <p class="hint">显示各料件最新批次的发票记录。取价顺序：SRM固定价 → 阶梯价 → 发票价 → 订单价 → 询价。</p>
@@ -22,14 +22,22 @@
           <el-table-column prop="supplier_name" label="供应商" min-width="180" show-overflow-tooltip /><el-table-column prop="unit_price" label="未税单价" min-width="180" :formatter="formatPrice" />
           <el-table-column prop="pricing_unit" label="单位" width="80" /><el-table-column prop="currency" label="币种" width="80" />
           <el-table-column prop="batch_id" label="导入批次" width="100" /><el-table-column prop="imported_at" label="导入时间" min-width="185" />
-          <el-table-column v-if="allowed('query')" label="操作" width="100" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="showBatch(row.batch_id)">批次明细</el-button></template></el-table-column>
+          <el-table-column v-if="allowed('query') || allowed('import')" label="操作" width="146" fixed="right">
+            <template #default="{ row }">
+              <el-button v-if="allowed('query')" link type="primary" @click="showBatch(row.batch_id)">批次明细</el-button>
+              <PriceRowVoidButton v-if="allowed('import')" :path="`/api/v1/invoice-prices/rows/${row.id}/void?orgCode=${orgCode}&batchId=${row.batch_id}`"
+                :description="[row.material_code, row.supplier_name, row.document_no].filter(Boolean).join(' / ')"
+                @withdrawn="load" />
+            </template>
+          </el-table-column>
         </el-table>
       </template>
       <el-table v-else :data="rows" v-loading="loading" border row-key="id" empty-text="暂无导入记录" aria-label="发票导入历史">
         <el-table-column prop="id" label="批次" width="95" /><el-table-column prop="file_name" label="原文件" min-width="220" />
         <el-table-column prop="row_count" label="保存记录数" width="115" /><el-table-column prop="duplicate_count" label="批内合并数" width="115" />
         <el-table-column prop="created_by" label="导入人" min-width="115" /><el-table-column prop="created_at" label="导入时间" min-width="185" />
-        <el-table-column label="操作" width="185"><template #default="{ row }"><el-button link type="primary" @click="showBatch(row.id)">明细</el-button><el-button v-if="allowed('download')" link @click="download(row)">下载原件</el-button></template></el-table-column>
+        <el-table-column label="状态" width="105"><template #default="{ row }">{{ row.voided_at ? '已失效' : '已导入' }}</template></el-table-column>
+        <el-table-column label="操作" width="220"><template #default="{ row }"><el-button v-if="allowed('query')" link type="primary" @click="showBatch(row.id)">明细</el-button><el-button v-if="allowed('download')" link @click="download(row)">下载原件</el-button><el-button v-if="allowed('import') && !row.voided_at" :disabled="voiding" link type="danger" @click="withdraw(row)">失效</el-button></template></el-table-column>
       </el-table>
       <el-pagination v-if="total" v-model:current-page="page" :page-size="20" :total="total" layout="total, prev, pager, next" @current-change="load" />
     </el-card>
@@ -63,15 +71,18 @@
   </div>
 </template>
 <script setup>
+import PriceRowVoidButton from '../components/PriceRowVoidButton.vue'
 import '../styles/priceSources.css'
 import WorkbookActions from '../components/WorkbookActions.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '../store/modules/user'
-import { fetchInvoicePrices, fetchInvoiceHistory, fetchInvoiceBatch, downloadInvoiceOriginal, invoiceImportApi } from '../api/invoicePrices'
+import { fetchInvoicePrices, fetchInvoiceHistory, fetchInvoiceBatch, downloadInvoiceOriginal, invoiceImportApi, voidInvoiceImport } from '../api/invoicePrices'
 import { createInvoiceImport } from './invoicePriceImport'
 const user = useUserStore()
 const allowed = permission => user.permissions.includes('*:*:*') || user.permissions.includes(`price:invoice:${permission}`)
+const canReadHistory = () => allowed('query') || allowed('import')
+const voiding = ref(false)
 const orgCode = ref('210'), materialCode = ref(''), mode = ref('current'), page = ref(1)
 const model = ref('')
 const rows = ref([]), total = ref(0), error = ref(''), loading = ref(false)
@@ -87,13 +98,13 @@ const session = createInvoiceImport({ api: invoiceImportApi, scope: () => scope.
 watch([scope, () => user.permissions.join(',')], () => {
   listSequence++; detailSequence++; session.reset(); importOpen.value = false; detailOpen.value = false
   rows.value = []; total.value = 0; details.value = []; page.value = 1
-  if (!allowed('query')) mode.value = 'current'
+  if (!canReadHistory()) mode.value = 'current'
   load()
 }, { immediate: true })
 onBeforeUnmount(() => { alive = false; listSequence++; detailSequence++; session.reset() })
 async function load() {
   const ticket = ++listSequence, owner = scope.value
-  if (!allowed('list') || mode.value === 'history' && !allowed('query')) return
+  if (!allowed('list') || mode.value === 'history' && !canReadHistory()) return
   loading.value = true; error.value = ''; rows.value = []
   try {
     const fetch = mode.value === 'history' ? fetchInvoiceHistory : fetchInvoicePrices
@@ -116,6 +127,22 @@ async function showBatch(id) {
   try { const result = await fetchInvoiceBatch(id); if (alive && ticket === detailSequence && owner === scope.value) details.value = result }
   catch (failure) { if (alive && ticket === detailSequence) detailError.value = failure.message || '历史明细读取失败' }
   finally { if (alive && ticket === detailSequence) detailLoading.value = false }
+}
+async function withdraw(row) {
+  const owner = scope.value
+  const org = orgCode.value
+  if (voiding.value) return
+  voiding.value = true
+  try {
+    await ElMessageBox.confirm(`失效“${row.file_name}”整批发票价格？失效后可以重新导入正确文件。`,
+      '失效本次导入', { type: 'warning', confirmButtonText: '确认失效', cancelButtonText: '取消' })
+    if (!alive || owner !== scope.value || !allowed('import')) return
+    await voidInvoiceImport(row.id, org)
+    if (alive && owner === scope.value) { ElMessage.success('本次导入已失效'); await load() }
+  } catch (failure) {
+    if (alive && owner === scope.value && failure !== 'cancel' && failure !== 'close')
+      error.value = failure.message || '失效失败'
+  } finally { voiding.value = false }
 }
 async function download(row) {
   const owner = scope.value

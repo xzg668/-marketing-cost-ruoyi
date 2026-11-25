@@ -65,7 +65,7 @@
             {{ row.taxIncluded ? '含税' : '未税' }}
           </template>
         </el-table-column>
-        <el-table-column prop="externalRowId" label="id" width="100" />
+        <el-table-column prop="externalRowId" label="id" width="180" show-overflow-tooltip />
         <el-table-column prop="srmDocNo" label="SRM单据编号" width="160" />
         <el-table-column prop="processStatus" label="流程状态" width="100" />
         <!-- 采购件专属：供应商 + 流程编号 -->

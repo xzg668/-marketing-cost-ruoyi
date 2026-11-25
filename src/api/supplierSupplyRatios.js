@@ -33,5 +33,26 @@ export const importSupplierSupplyRatioExcel = (payload) =>
 export const fetchSupplierSupplyRatioChanges = (params) =>
   request(`${BASE_URL}/changes`, { params })
 
+export const fetchSupplierRatioImportBatches = (params) =>
+  request(`${BASE_URL}/import-batches`, { params })
+
+export const voidSupplierRatioBatch = (batchNo, payload) =>
+  request(`${BASE_URL}/import-batches/${encodeURIComponent(batchNo)}/void`, {
+    method: 'POST', body: payload, suppressErrorToast: true,
+  })
+
 export const updateSupplierSupplyRatio = (id, payload) =>
   request(`${BASE_URL}/${id}`, { method: 'PUT', body: payload, suppressErrorToast: true })
+
+const materialGroups = `${BASE_URL}/material-groups`
+
+export const fetchRatioGroups = params =>
+  request(materialGroups, { params, suppressErrorToast: true })
+
+export const fetchRatioGroup = code =>
+  request(`${materialGroups}/${encodeURIComponent(code)}`, { suppressErrorToast: true })
+
+export const voidRatioGroup = (code, expectedIds) =>
+  request(`${materialGroups}/${encodeURIComponent(code)}/void`, {
+    method: 'POST', body: { expectedIds }, suppressErrorToast: true,
+  })

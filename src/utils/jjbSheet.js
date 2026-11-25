@@ -3,7 +3,7 @@ export const jjbColumns = Object.freeze([
   ['code', '子件编码'], ['name', '部品名'], ['drawingNo', '部品图号／规格'], ['unitPrice', '部品单价'],
   ['quantity', '部品用量'], ['unit', '计量单位'], ['amount', '部品价格'], ['grossWeight', '毛重'], ['netWeight', '净重'],
   ['rawUnitPrice', '原材料\n单价'], ['scrapUnitPrice', '废料\n单价'], ['material', '材质'],
-  ['shape', '形态属性'], ['priceSource', '价格来源'], ['remark', '备注\n（手填）'], ['basis', '备注-CMS\n来源信息'],
+  ['shape', '形态属性'], ['priceSource', '价格来源'], ['processingFee', '加工费'], ['basis', '备注-CMS\n来源信息'],
 ])
 // Reference widths with a measurement-unit column beside the saved quantity, A:P.
 export const jjbColumnWidths = Object.freeze([15.9166666667, 19, 32, 14.5, 17.5, 10, 15.75, 17.8333333333, 13.5833333333, 13.25, 18.4166666667, 19.0833333333, 14.8333333333, 21.25, 13.4166666667, 13.5833333333])
@@ -13,7 +13,7 @@ export function sheetHeaderRows(sheet) {
   const values = [
     ['OA单号', id.oaNo, null, '报价员', q.quoterName, '申请部门', q.applicantDept, '申请处室', q.applicantOffice, '不锈钢-316L\n（元/吨）', savedMoney(q.sus316lPrice), '电解铜\n（元/吨）', savedMoney(q.copperPrice), '电解铝\n（元/吨）', savedMoney(q.aluminumPrice)],
     ['客户名称', h.customerName, null, '客户编号', h.customerCode, '是否通过海外\n仓库发终端客户', q.overseasSalesMode, '销售价格\n是否联动', q.priceLinkMode, '不锈钢-304\n（元/吨）', savedMoney(q.sus304Price), '电解锌\n（元/吨）', savedMoney(q.zincPrice), '/', ''],
-    ['父件名称', h.productName, null, '父件型号', h.productModel, '业务类型', q.businessType, '事业部', q.division, '美国柜装黄铜', '', 'H65黄铜边料', '', '/', ''],
+    ['父件名称', h.productName, null, '父件型号', h.productModel, '业务类型', q.businessType, '事业部', q.division, '美国柜装黄铜\n（元/公斤）', savedMoney(q.brassPrice), 'H65黄铜边料\n（元/公斤）', savedMoney(q.brassScrapPrice), '/', ''],
     ['一级编码', id.productCode, null, '父件规格', q.spec, '裸品码', h.bareCode, '客户Cu\n（元/公斤）', savedMoney(q.customerCuPrice), '白银', savedMoney(q.silverPrice), '黄金', savedMoney(q.goldPrice), '/', ''],
   ]
   return values.map((row, index) => ({ height: [48, 64, 57, 60][index], cells: row.flatMap((value, column) => column === 2 ? [] : [{ column: column >= 5 ? column + 1 : column, colspan: [1, 4].includes(column) ? 2 : 1, value: value ?? '', label: [0, 3, 5, 7, 9, 11, 13].includes(column) }]) }))
@@ -55,7 +55,11 @@ export function sheetRowCells(row, group, index) {
       (row.code === 'SALES_EXP' && row.rate != null && row.remark?.includes('（OEM）'))) {
     cells[3].value = rowBasis(row); cells[3].key = 'rate'
   }
-  cells[14].value = row.code === 'SALES_EXP' && row.rate != null && row.remark === '（OEM）' ? '' : row.remark || ''
+  if (row.processingFee) {
+    const { amount, unit, taxBasis } = row.processingFee
+    cells[14].value = `${amount} ${unit}${taxBasis ? `（${taxBasis}）` : ''}`
+  }
+  cells[14].title = [cells[14].value, row.remark].filter(Boolean).join('\n')
   cells[15].value = row.cmsSourceNote || ''
   return cells.filter(c => !c.omit)
 }

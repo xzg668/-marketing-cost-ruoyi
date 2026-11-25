@@ -16,9 +16,6 @@
       <breadcrumb />
     </div>
     <div class="navbar-right">
-      <el-tag v-if="businessUnitLabel" type="info" size="small" class="unit-tag">
-        {{ businessUnitLabel }}
-      </el-tag>
       <el-dropdown trigger="click">
         <span class="user-info">
           <el-avatar :size="28" :icon="UserFilled" />
@@ -54,20 +51,12 @@ import { useAppStore } from '../../store/modules/app'
 import { resetDynamicRoutes } from '../../router'
 import Breadcrumb from './Breadcrumb.vue'
 
-const BUSINESS_UNIT_LABELS = {
-  COMMERCIAL: '商用部品',
-  HOUSEHOLD: '家用部品',
-}
-
 const router = useRouter()
 const userStore = useUserStore()
 const appStore = useAppStore()
 
 const displayName = computed(
   () => userStore.nickName || userStore.username || '未登录用户'
-)
-const businessUnitLabel = computed(
-  () => BUSINESS_UNIT_LABELS[userStore.businessUnitType] || ''
 )
 
 async function onLogout() {
@@ -132,10 +121,6 @@ async function onLogout() {
   display: flex;
   align-items: center;
   gap: 12px;
-}
-
-.unit-tag {
-  font-weight: 500;
 }
 
 .user-info {

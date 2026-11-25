@@ -44,3 +44,9 @@ export const publishRangeOriginal = (file, month, businessUnit, preview, supplem
   request('/api/v1/price-range/items/original-import', {
     method: 'POST', body: originalForm(file, month, businessUnit, supplementRuleId, preview), timeout: 120000,
   })
+
+const rangeHistoryBase = '/api/v1/price-range/items/imports'
+export const fetchRangeImports = params => request(rangeHistoryBase, { params, suppressErrorToast: true })
+export const voidRangeImport = id => request(`${rangeHistoryBase}/${id}/void`, { method: 'POST', suppressErrorToast: true })
+export const downloadRangeImport = (row, options) => downloadAuthenticatedBlob(
+  `${rangeHistoryBase}/${row.id}/original`, row.file_name, options)

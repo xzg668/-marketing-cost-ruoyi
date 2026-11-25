@@ -3,8 +3,10 @@ import { downloadAuthenticatedBlob } from '../utils/auxiliaryClassification'
 const prices = '/api/v1/settlement-prices'
 export const fetchSettlementPrices = (params) => request(`${prices}/pricing`, { params })
 export const fetchSettlementEffectiveHistory = (id, priceMonth) => request(`${prices}/${id}/effective-history`, { params: { priceMonth } })
+export const fetchSettlementImports = params => request(`${prices}/imports`, { params, suppressErrorToast: true })
+export const voidSettlementImport = id => request(`${prices}/imports/${id}/void`, { method: 'POST', suppressErrorToast: true })
 export const fetchSettlementHistory = (id) => request(`${prices}/${id}/history`)
-export const downloadSettlementOriginal = (row) => downloadAuthenticatedBlob(`${prices}/${row.id}/original`, row.sourceFileName)
+export const downloadSettlementOriginal = (row, options) => downloadAuthenticatedBlob(`${prices}/${row.id}/original`, row.sourceFileName || row.file_name, options)
 const upload = (file, month, fingerprint) => {
   const body = new FormData()
   body.append('file', file); body.append('priceMonth', month)

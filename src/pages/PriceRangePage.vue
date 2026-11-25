@@ -30,6 +30,7 @@
         <el-form-item>
           <el-button type="primary" @click="applyFilters">查询</el-button>
           <el-button @click="resetFilters">重置</el-button>
+          <el-button v-if="canManageImports" @click="historyOpen = true">导入记录</el-button>
         </el-form-item>
       </el-form>
     </el-card>
@@ -72,7 +73,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="updatedAt" label="更新时间" width="160" />
-        <el-table-column label="操作" width="140" fixed="right">
+        <el-table-column label="操作" width="178" fixed="right">
           <template #default="{ row }">
             <el-button v-if="row.rangeBasis === 'FACTOR' && row.sourceCellRef" link type="primary" @click="originalRuleId = row.factorRuleId">查看原稿</el-button>
             <span v-else-if="row.rangeBasis === 'FACTOR'">历史行情</span>
@@ -82,6 +83,9 @@
             <el-button v-if="row.rangeBasis !== 'FACTOR'" v-hasPermi="['price:range:remove']" type="danger" link @click="removeRow(row)">
               删除
             </el-button>
+            <PriceRowVoidButton v-if="canManageImports" :path="`/api/v1/price-range/items/rows/${row.id}/void`"
+              :description="[row.materialCode, row.supplierName, formatRange(row)].filter(Boolean).join(' / ')"
+              @withdrawn="fetchList" />
           </template>
         </el-table-column>
         <template #empty>
@@ -95,6 +99,9 @@
       />
     </el-card>
 
+    <PriceImportHistory v-if="canManageImports && historyScope" v-model="historyOpen" :scope="historyScope" row-label="导入行数"
+      :fetch="fetchRangeImports" :download="downloadRangeImport" :withdraw-batch="voidRangeImport"
+      @withdrawn="fetchList" />
     <OriginalRangeImportDialog v-model="originalImportVisible" :initial-month="importMonth"
       :supplement-rule-id="supplementRuleId" @imported="refreshAfterImport" />
     <RangeBandDialog v-if="maintenanceMode" :mode="maintenanceMode" :month="maintenanceMonth"
@@ -167,6 +174,10 @@
 </template>
 
 <script setup>
+import PriceRowVoidButton from '../components/PriceRowVoidButton.vue'
+import PriceImportHistory from '../components/PriceImportHistory.vue'
+import { useUserStore } from '../store/modules/user'
+import { fetchRangeImports, downloadRangeImport, voidRangeImport } from '../api/priceRangeItems'
 import '../styles/priceSources.css'
 import { fetchRangeEffectivePrices } from '../api/originalPriceTrials'
 import { effectivePriceStatusLabel, priceText, rangeText } from '../components/originalPriceDisplay'
@@ -183,6 +194,12 @@ import {
   deleteRangeItem,
 } from '../api/priceRangeItems'
 import { formatCurrentStatus, formatRangeType, formatRange } from './priceRangeImportUtils'
+
+const historyUser = useUserStore()
+const historyOpen = ref(false)
+const historyScope = computed(() => historyUser.userId && historyUser.businessUnitType ? `${historyUser.userId}/${historyUser.businessUnitType}` : '')
+const canManageImports = computed(() => historyUser.permissions?.some(value => ['*:*:*', 'price:range:import'].includes(value)))
+watch([historyScope, canManageImports], () => { historyOpen.value = false }, { flush: 'sync' })
 
 const route = useRoute()
 const router = useRouter()

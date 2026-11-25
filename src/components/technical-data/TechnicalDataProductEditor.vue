@@ -8,7 +8,7 @@
     <el-result v-else-if="!task" icon="warning" title="暂时无法查看补录任务"><template #extra><el-button @click="load">重新加载</el-button></template></el-result>
     <template v-else>
       <el-alert v-if="readOnly" title="已提交资料只读查看；待补录板块可预览填写页，未提交草稿仍由负责技术员查看。" type="info" :closable="false" />
-      <el-alert v-else-if="adminDirect" title="保存后仍可修改；点击“确认保存”后资料直接生效，可用于报价核算，无需 OA 审批。" type="info" :closable="false" />
+      <el-alert v-else-if="directEntry" title="保存后仍可修改；点击“确认保存”后资料直接生效，可用于报价核算，无需 OA 审批。" type="info" :closable="false" />
         <main class="product-editor" v-loading="loading">
           <template v-if="product">
             <div class="product-heading"><h3>当前产品：{{ product.materialNo || product.sourceModel }}</h3><el-button v-if="!readOnly && editableScope.some(code => ['DRAWING_BOM','MANUFACTURING','PACKAGE','SOLDER','PRICE'].includes(code))" link type="primary" :disabled="busy || dirty" :loading="loading" @click="checkPrices">检查价格</el-button><el-button link type="primary" :disabled="busy" @click="refresh">刷新资料</el-button></div>
@@ -33,11 +33,11 @@
             <el-empty v-else :description="readOnly ? '本板块尚未提交，当前为待处理。' : '请选择本人需要补录的板块。'" />
             <details v-if="workflow && !submissionId" class="progress-details"><summary>查看办理进度</summary><TechnicalDataApprovalPanel :task="task" :workflow="workflow" @changed="load" /></details>
             <div v-if="editable" class="product-actions">
-              <span>{{ dirty ? '当前修改尚未保存' : adminDirect ? '已保存的资料在确认前仍可修改' : '草稿仅本人可见' }}</span>
+              <span>{{ dirty ? '当前修改尚未保存' : directEntry ? '已保存的资料在确认前仍可修改' : '草稿已保存' }}</span>
               <el-button v-if="activeStep > 0" :disabled="busy" @click="selectModule(visibleEditableScope[activeStep - 1])">上一步</el-button>
               <el-button v-if="!coveredState" :loading="busy" :disabled="!formRef?.canSave" @click="save(false)">保存草稿</el-button>
-              <el-button :type="adminDirect && confirmationReady ? 'default' : 'primary'" :loading="busy" :disabled="!coveredState && !formRef?.canSave" @click="save(true)">{{ coveredState ? (nextModule ? '下一步' : '检查资料') : nextModule ? '保存并下一步' : adminDirect ? '保存并检查资料' : '保存并返回列表' }}</el-button>
-              <el-button v-if="adminDirect" type="primary" :loading="confirming" :disabled="busy || dirty || !confirmationReady" @click="confirmSave">确认保存</el-button>
+              <el-button :type="directEntry && confirmationReady ? 'default' : 'primary'" :loading="busy" :disabled="!coveredState && !formRef?.canSave" @click="save(true)">{{ coveredState ? (nextModule ? '下一步' : '检查资料') : nextModule ? '保存并下一步' : directEntry ? '保存并检查资料' : '保存并返回列表' }}</el-button>
+              <el-button v-if="directEntry" type="primary" :loading="confirming" :disabled="busy || dirty || !confirmationReady" @click="confirmSave">确认保存</el-button>
             </div>
           </template>
         </main>
@@ -72,8 +72,10 @@ const task = ref(null), workflow = ref(null), loading = ref(false), busy = ref(f
 const activeModule = ref(''), revision = ref(0), formRef = ref(null), validation = ref(null)
 const confirmationReady = ref(false), confirming = ref(false)
 let generation = 0
+const directEntry = computed(() => props.adminDirect && task.value?.taskStatus === 'UNASSIGNED')
+const adminSalaryEntry = computed(() => activeModule.value === 'SALARY' && workflow.value?.canAdminister && workflow.value?.editableModules?.includes('SALARY'))
 const readOnly = computed(() => Boolean(props.submissionId || workflow.value?.canViewSupplementOverview
-  && !(props.adminDirect && task.value?.taskStatus === 'UNASSIGNED' && workflow.value?.editableModules?.length)))
+  && !(directEntry.value && workflow.value?.editableModules?.length) && !adminSalaryEntry.value))
 const product = computed(() => task.value?.products[0])
 const previewModules = ['PROFILE', 'MANUFACTURING', 'PACKAGE', 'AUXILIARY', 'SOLDER', 'SALARY', 'NET_LOSS', 'PRICE']
 const previewRow = computed(() => ({ oaNo: task.value.oaNo, accountingMonth: task.value.accountingMonth, product: product.value }))
@@ -124,7 +126,7 @@ async function load(autoCheck = true) {
     }
     if (current !== generation) return
     task.value = visibleTask; workflow.value = state
-    confirmationReady.value = props.adminDirect && editableScope.value.length > 0
+    confirmationReady.value = directEntry.value && editableScope.value.length > 0
       && editableScope.value.every(code => ['READY', 'RETURNED'].includes(findModule(product.value, code)?.moduleStatus))
     if (!visibleScope.value.includes(activeModule.value)) {
       const requested = isBomModule(route.query.module) ? 'BOM' : route.query.module
@@ -169,10 +171,15 @@ async function afterSave({ next = false } = {}) {
   }
   if (nextModule.value) { activeModule.value = nextModule.value; return }
   try {
-    if (props.adminDirect) {
+    if (directEntry.value) {
       validation.value = await validateTechnicalDataTask(task.value.id)
       confirmationReady.value = validation.value.valid
       if (confirmationReady.value) ElMessage.success('资料已保存，请核对后点击“确认保存”')
+      return
+    }
+    if (adminSalaryEntry.value) {
+      ElMessage.success('工资资料已保存，仍由原任务提交审批')
+      emit('close')
       return
     }
     validation.value = await validateTechnicalDataTask(task.value.id)
@@ -182,7 +189,7 @@ async function afterSave({ next = false } = {}) {
   } catch (cause) { showErrorOnce(cause, '资料已保存，完整性检查失败，请重试') }
 }
 async function confirmSave() {
-  if (!props.adminDirect || !confirmationReady.value || dirty.value || busy.value || confirming.value || !task.value) return
+  if (!directEntry.value || !confirmationReady.value || dirty.value || busy.value || confirming.value || !task.value) return
   confirming.value = true; busy.value = true
   try {
     const result = await saveAdminTechnicalDataForQuote(task.value.id, product.value.rowVersion)

@@ -2,6 +2,19 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import * as layout from '../src/utils/jjbSheet.js'
 
+test('processing fees display their original units and tax basis in the former remark column', () => {
+  const group = { code: 'ORDINARY_PARTS' }
+  const parts = [
+    { kind: 'PART', code: 'VALVE', remark: '原备注', processingFee: { amount: '0', unit: '元/件', taxBasis: '未税' } },
+    { kind: 'EXPLANATION', code: 'PLATE【FOIL】', processingFee: { amount: '8.5', unit: '元/千克', taxBasis: '含税' } },
+    { kind: 'EXPLANATION', code: 'PLATE【STEEL】' },
+  ]
+  const cells = parts.map(row => layout.sheetRowCells(row, group, 0).find(cell => cell.key === 'processingFee'))
+  assert.equal(layout.jjbColumns[14][1], '加工费')
+  assert.deepEqual(cells.map(cell => cell.value), ['0 元/件（未税）', '8.5 元/千克（含税）', ''])
+  assert.match(cells[0].title, /原备注/)
+})
+
 test('reference header uses one A:P grid with merged B:C and the six original header rows', () => {
   const rows = layout.sheetHeaderRows({ identity: { oaNo: 'OA-1', productCode: '000001' }, header: { financeCuPrice: '90.000000', customerCuPrice: '100.000000', quotation: { copperPrice: '101000.000000', customerCuPrice: '101.000000' } } })
   assert.equal(rows.length, 4)

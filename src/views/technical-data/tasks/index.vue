@@ -289,7 +289,7 @@ function moduleAction(row, code) {
   if (canManage.value && code === 'DRAWING_BOM' && ['DRAWING_SOURCE_AVAILABLE', 'DRAWING_SOURCE_PENDING'].includes(findModule(row.product, code)?.requirementReasonCode)) return '查看图库 BOM'
   if (isTechnicalModuleStatusOnly(row.product, code)) return ''
   if (code === 'MANUFACTURING' && !row.editableModules.includes(code)) return '查看明细'
-  if (isUnassigned(row)) return findModule(row.product, code)?.required ? '查看缺口' : '查看来源'
+  if (isUnassigned(row)) return code === 'SALARY' && canAdminDirect.value && findModule(row.product, code)?.required ? '补录工资' : findModule(row.product, code)?.required ? '查看缺口' : '查看来源'
   if (row.editableModules.includes(code)) return findModule(row.product, code)?.moduleStatus === 'READY' ? '查看 / 修改' : ({ DRAWING_BOM: '登记 / 检查', MANUFACTURING: '填写原材料', PACKAGE: '引用 / 新增', AUXILIARY: '参考 / 上传', SOLDER: '参考 / 新增', SALARY: '参考 / 上传', NET_LOSS: '参考 / 填写', PRICE: '补录价格' })[code] || '填写'
   return '查看'
 }
@@ -298,13 +298,13 @@ function productAction(row) {
   if (row.editableModules.length) return '继续补录'
   return '查看资料'
 }
-async function startAdmin(row) {
+async function startAdmin(row, module) {
   if (!canAdminDirect.value || !isUnassigned(row) || adminStarting.value) return
   adminStarting.value = true
   try {
     const task = await startAdminTechnicalDataEntry(row.product.oaFormItemId, row.accountingMonth)
     await load()
-    await openPanel(task.id)
+    await openPanel(task.id, module)
   } catch (cause) { showErrorOnce(cause, '直接补录暂不可用，请刷新产品状态') }
   finally { adminStarting.value = false }
 }
@@ -326,6 +326,7 @@ async function open(row, module) {
     return router.push({ path: `/ingest/quote-requests/${encodeURIComponent(row.oaNo)}/items/${row.product.oaFormItemId}/costing`, query: { tab: 'PRODUCT_DETAIL', drawingBom: '1' } })
   }
   if (isUnassigned(row)) {
+    if (module === 'SALARY' && canAdminDirect.value && findModule(row.product, module)?.required) return startAdmin(row, module)
     if (canViewSupplementOverview.value && findModule(row.product, module)?.required && ['PROFILE', 'DRAWING_BOM', 'MANUFACTURING', 'PACKAGE', 'AUXILIARY', 'SOLDER', 'SALARY', 'NET_LOSS', 'PRICE'].includes(module)) {
       entryPreview.value = { row, module }; return
     }
