@@ -168,6 +168,11 @@ export const fetchTechnicalDataPackageChildren = (productId, keyword) =>
     suppressErrorToast: true,
   })
 
+export const previewPackagePrices = (productId, materialCodes) =>
+  request(`/api/v2/technical-data/products/${id(productId)}/package/price-preview`, {
+    method: 'POST', body: materialCodes, suppressErrorToast: true,
+  })
+
 export const saveTechnicalDataPackage = (productId, body) =>
   request(`/api/v2/technical-data/products/${id(productId)}/package`, {
     method: 'PUT',

@@ -427,7 +427,7 @@
 </template>
 
 <script setup>
-import { fetchQuoteCostingPreparation, prepareQuoteCosting, fetchDrawingVerificationWorkspace } from '../api/quoteRequests'
+import { fetchQuoteCostingWorkbench, fetchQuoteCostingPreparation, prepareQuoteCosting, fetchDrawingVerificationWorkspace } from '../api/quoteRequests'
 import { useDrawingCostingContinuation } from '../composables/useDrawingCostingContinuation'
 import { useUserStore } from '../store/modules/user'
 import { fetchAuxiliaryClassifications } from '../api/auxiliaryClassification'
@@ -893,6 +893,14 @@ async function submitSingleProductCosting(row, reason, periodMonth) {
   const scope = captureScope()
   actionLoadingId.value = rowActionKey(row)
   try {
+    if (!row.materialNo?.trim() && row.sunlModel?.trim() && reason !== 'ELECTRONIC_DRAWING_RESOLVED') {
+      const { modelBomMatch } = await fetchQuoteCostingWorkbench(scope.oaNo, row.id)
+      if (!scope.isCurrent()) return
+      if (modelBomMatch?.candidates?.length > 1 && !modelBomMatch.selected) {
+        openCostingWorkbench(row)
+        return
+      }
+    }
     // 电子图库自动接续沿用已经采用的技术版本，不自动认可新补录内容。
     const options = { itemId: row.id, force: false, ...(periodMonth ? { periodMonth } : {}) }
     const outcome = reason === 'ELECTRONIC_DRAWING_RESOLVED' ? null : await materials.submit(options)

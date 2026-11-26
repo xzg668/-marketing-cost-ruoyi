@@ -39,7 +39,7 @@
       <section v-if="selected.householdCalculation?.calculatedW != null" class="monthly-evidence" aria-label="家用W列计算核对">
         <h4>家用 W 列计算核对</h4>
         <p>{{ selected.householdCalculation.formula }}</p>
-        <p>铜锌价格：元/公斤；重量：克。各因素展示本版本保存的实际代入值。电解铜、锌、期货铜及两项黄铜：销售价固定时用财务基准；联动时客户填写值优先、未填按客户Cu选档；联动情况为空时按客户Cu选档。仅代入原公式引用的项目。</p>
+        <p>铜、锌价格单位为元/公斤，重量单位为克。下表列出本次计算实际采用的价格、重量和差额。</p>
         <dl><template v-for="field in householdFields" :key="field.key"><dt>{{ field.label }}</dt><dd>{{ selected.householdCalculation[field.key] ?? '未记录' }}</dd></template></dl>
       </section>
       <div v-for="source in selected.sources" :key="`${source.table}:${source.id}`" class="source-note">来源：{{ source.table || '历史未记录' }}<span v-if="source.id != null"> #{{ source.id }}</span> {{ source.description || '' }}</div>

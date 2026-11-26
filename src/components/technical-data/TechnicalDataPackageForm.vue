@@ -51,7 +51,7 @@
       </div>
       <div class="table-scroll">
         <table class="package-items">
-          <thead><tr><th>子件料号</th><th>名称 <em>*</em></th><th>型号／图号</th><th>规格</th><th>子件原始用量 <em>*</em></th><th>单位 <em>*</em></th><th>每产品用量</th><th v-if="canEdit">操作</th></tr></thead>
+          <thead><tr><th>子件料号</th><th>名称 <em>*</em></th><th>型号／图号</th><th>规格</th><th>子件原始用量 <em>*</em></th><th>单位 <em>*</em></th><th>每产品用量</th><th v-if="canEdit">本月单价</th><th v-if="canEdit">操作</th></tr></thead>
           <tbody>
             <tr v-for="(row, index) in form.items" :key="row.sourceNodeId ? `source-${row.sourceParentNodeId}-${row.sourceNodeId}` : `manual-${index}`">
               <td>{{ row.sourceNodeId ? row.componentMaterialNo : row.componentModel || '随型号自动填写' }}</td>
@@ -61,12 +61,14 @@
               <td><input v-model="row.quantity" :aria-label="`第${index + 1}行子件用量`" type="number" step="any" min="0" :disabled="!canEdit || busy" /></td>
               <td><input v-if="canEdit && !row.sourceNodeId" v-model="row.unit" :aria-label="`第${index + 1}行单位`" :disabled="!canEdit || busy" maxlength="32" placeholder="如只、张" /><span v-else>{{ row.unit || '未提供' }}</span></td>
               <td>{{ totalQuantity(row) }}</td>
+              <td v-if="canEdit">{{ priceLabel(row) }}</td>
               <td v-if="canEdit"><el-button link type="danger" :disabled="!canEdit || busy" @click="form.items.splice(index, 1)">删除</el-button></td>
             </tr>
-            <tr v-if="!form.items.length"><td :colspan="canEdit ? 8 : 7" class="empty">{{ canEdit ? '请选择包装来源或新增子件' : '暂无已保存包装明细' }}</td></tr>
+            <tr v-if="!form.items.length"><td :colspan="canEdit ? 9 : 7" class="empty">{{ canEdit ? '请选择包装来源或新增子件' : '暂无已保存包装明细' }}</td></tr>
           </tbody>
         </table>
       </div>
+      <el-alert v-if="canEdit && priceIssues.length" type="warning" :closable="false" :title="priceIssues.join('；')" />
       <el-alert v-if="workspace.issues.length" type="warning" :closable="false" :title="workspace.issues.join('；')" />
     </template>
     <el-dialog v-model="childDialog" title="选择已有包装子件" width="980px" append-to-body>
@@ -88,7 +90,7 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { fetchTechnicalDataPackage, fetchTechnicalDataPackageReferences, fetchTechnicalDataPackageChildren, saveTechnicalDataPackage } from '../../api/technicalDataTasks'
+import { fetchTechnicalDataPackage, fetchTechnicalDataPackageReferences, fetchTechnicalDataPackageChildren, previewPackagePrices, saveTechnicalDataPackage } from '../../api/technicalDataTasks'
 import { emptyPackage, packagePayload, packageRow, packageSourceRow, packageQuantityPerProduct } from '../../utils/technicalDataPackage'
 import { showErrorOnce } from '../../utils/errorHandler'
 
@@ -105,6 +107,41 @@ const canEdit = computed(() => !props.previewData && props.editable && workspace
 const busy = computed(() => loading.value || saving.value || searching.value || searchingChildren.value)
 watch(busy, value => emit('busy', value))
 watch(() => JSON.stringify(form.value), value => emit('dirty', value !== originals[mode.value]))
+
+const priceRows = ref(new Map()), priceIssues = ref([]), checkingPrices = ref(false)
+const packageCode = row => String((row.sourceNodeId ? row.componentMaterialNo : row.componentModel) || '').trim()
+const codesKey = computed(() => JSON.stringify([...new Set(form.value.items.map(packageCode).filter(Boolean))].sort()))
+watch([canEdit, () => props.productId, codesKey], ([editable, productId, key], _, onCleanup) => {
+  priceRows.value = new Map()
+  priceIssues.value = []
+  const codes = JSON.parse(key)
+  checkingPrices.value = Boolean(editable && productId && codes.length)
+  if (!checkingPrices.value) return
+  let current = true
+  const timer = setTimeout(async () => {
+    try {
+      const result = await previewPackagePrices(productId, codes)
+      if (!current) return
+      priceRows.value = new Map(result.items.map(item => [item.materialNo, item]))
+      priceIssues.value = result.issues
+    } catch (error) {
+      if (current) priceIssues.value = [error?.message || '包装价格查询失败，请重新检查']
+    } finally {
+      if (current) checkingPrices.value = false
+    }
+  }, 250)
+  onCleanup(() => { current = false; clearTimeout(timer) })
+}, { immediate: true })
+
+function priceLabel(row) {
+  const code = packageCode(row)
+  if (!code) return '待填料号'
+  if (checkingPrices.value) return '查价中'
+  const item = priceRows.value.get(code)
+  if (item?.status === 'AVAILABLE') return `${item.unitPrice} 元/${item.unit}`
+  if (item?.status === 'MISSING') return '缺价格'
+  return item?.message || '待核实'
+}
 
 function restore(data, initial = false) {
   workspace.value = data

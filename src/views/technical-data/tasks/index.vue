@@ -226,6 +226,17 @@ async function load(autoCheck = true) {
     }
     const result = await fetchTechnicalDataProducts({ ...filters, oaNo: scopedOaNo.value || undefined, oaFormItemId: scopedItemId.value || undefined, accountingMonth: scopedItemId.value ? scopedMonth.value : filters.accountingMonth, keyword: filters.keyword.trim(), size: 20 })
     if (request !== generation) return
+    if (autoCheck !== false && result.canViewSupplementOverview && !isEntry.value && scopedItemId.value && scopedMonth.value && !fixedSubmission.value) {
+      const stale = result.records.find(row => String(row.product.oaFormItemId) === String(scopedItemId.value)
+        && row.accountingMonth === scopedMonth.value && row.product.materialNo
+        && row.product.modules.some(module => module.moduleType === 'PROFILE' && module.required
+          && module.requirementReasonCode === 'U9_ORIGINAL_NOT_FOUND'))
+      if (stale) {
+        await checkTechnicalDataSources(stale.product.oaFormItemId, stale.accountingMonth)
+        if (request === generation) return load(false)
+        return
+      }
+    }
     if (autoCheck !== false && !result.canViewSupplementOverview) {
       const pending = result.records.filter(row => needsBomPriceCheck(row.product, row.editableModules))
       for (const row of pending) await checkTechnicalDataBomPrices(row.product.id)

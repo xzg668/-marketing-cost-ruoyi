@@ -69,6 +69,11 @@ export const saveElectronicDrawingBomCorrection = (taskId, body, accountingMonth
     method: 'PUT', params: { accountingMonth }, body, suppressErrorToast: true,
   })
 
+export const prepareQuoteModelProduct = (oaNo, itemId, selection) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/model-bom/prepare`, {
+    method: 'POST', body: selection, suppressErrorToast: true,
+  })
+
 export const fetchQuoteCostingWorkbench = (oaNo, itemId) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/costing-workbench`)
 
@@ -143,6 +148,21 @@ export const confirmSupplierPriceReview = (oaNo, itemId, body) =>
   request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/supplier-price-reviews/confirm`, {
     method: 'POST',
     body,
+  })
+
+export const saveSupplierPriceReviews = (oaNo, itemId, body) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/supplier-price-reviews/save`, {
+    method: 'POST', body, suppressErrorToast: true,
+  })
+
+export const repriceSavedSupplierReviews = (oaNo, itemId, body) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/supplier-price-reviews/reprice-saved`, {
+    method: 'POST', body, suppressErrorToast: true,
+  })
+
+export const fetchPendingSupplierReprice = (oaNo, itemId, periodMonth) =>
+  request(`/api/v1/quote-requests/${encodePath(oaNo)}/items/${encodePath(itemId)}/supplier-price-reviews/pending-reprice`, {
+    params: { periodMonth }, suppressErrorToast: true,
   })
 
 export const supplierRatioExportUrl = (oaNo, itemId, periodMonth) =>

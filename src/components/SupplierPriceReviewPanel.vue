@@ -1,14 +1,20 @@
 <template>
-  <section v-if="reviews.length" class="supplier-review">
+  <section v-if="reviews.length || pendingReviews.length" class="supplier-review">
     <div class="supplier-review__heading">
       <h3>供货比率确认</h3>
+      <span v-if="repricing" role="status">选择已保存，正在重新取价…</span>
       <span v-if="refreshing">导入已完成，正在自动取价…</span>
+      <el-button v-if="canConfirm && !readonly && reviews.length > 1"
+        :disabled="checkedRows.length < 2 || saving || repricing" @click="openBatch">批量确认</el-button>
       <el-button v-hasPermi="['ingest:quote:list']" type="primary" plain
         :loading="exporting" :disabled="readonly" @click="exportRatios">导出供货比率补齐表</el-button>
     </div>
     <p class="supplier-review__help">导出包含各物料的完整供应商集合及已有比率，补齐后可到供货比率表导入；型号未维护时留空。</p>
     <el-alert v-if="confirmationNotice" :title="confirmationNotice" type="warning" show-icon :closable="false" />
-    <el-table :data="tableRows" border>
+    <el-button v-if="pendingReviews.length && !repricing && !readonly && canConfirm"
+      type="primary" link @click="retryReprice">重试取价</el-button>
+    <el-table :data="tableRows" border @selection-change="checkedRows = $event">
+      <el-table-column v-if="canConfirm && !readonly && reviews.length > 1" type="selection" width="45" :selectable="canSelect" />
       <el-table-column label="物料代码" min-width="170">
         <template #default="{ row }">{{ row.scope.materialCode }}</template>
       </el-table-column>
@@ -22,22 +28,22 @@
         <template #default="{ row }">
           <el-tag v-if="row.status === 'FALLBACK_HIGH'" type="warning" effect="plain">已确认按最高价取价</el-tag>
           <template v-else-if="row.status === 'WAIT_IMPORT'">
-          <el-button link type="primary" :disabled="readonly" @click="openReview(row)">查看供应商</el-button>
+          <el-button link type="primary" :disabled="readonly || repricing" @click="openReview(row)">查看供应商</el-button>
           <el-button v-hasPermi="['base:supplier-supply-ratio:import']"
-            link type="primary" :disabled="readonly" @click="importVisible = true">导入供货比率</el-button>
+            link type="primary" :disabled="readonly || repricing" @click="importVisible = true">导入供货比率</el-button>
           </template>
           <el-button v-else v-hasPermi="['ingest:quote:cost-run:execute']" link type="primary"
-            :disabled="readonly" @click="openReview(row)">供货比率新增审核</el-button>
+            :disabled="readonly || repricing" @click="openReview(row)">供货比率新增审核</el-button>
         </template>
       </el-table-column>
     </el-table>
     <p v-if="tableRows.some(row => row.status === 'FALLBACK_HIGH')" class="supplier-review__note">已确认按最高价取价，请关注成本偏高风险。</p>
 
     <el-dialog v-model="confirmVisible" title="供货比率新增审核" width="720px" :close-on-click-modal="false">
-      <template v-if="selected">
-        <p class="supplier-review__material">物料 {{ selected.scope.materialCode }} · {{ selected.scope.pricingDate }}</p>
-        <p class="supplier-review__material">{{ selected.materialName || '名称未维护' }} · 规格：{{ selected.specification || '未维护' }} · 型号：{{ selected.model || '未维护' }}</p>
-        <el-table :data="selected.candidates" border>
+      <div v-for="review in selected" :key="review.scopeKey">
+        <p class="supplier-review__material">物料 {{ review.scope.materialCode }} · {{ review.scope.pricingDate }}</p>
+        <p class="supplier-review__material">{{ review.materialName || '名称未维护' }} · 规格：{{ review.specification || '未维护' }} · 型号：{{ review.model || '未维护' }}</p>
+        <el-table :data="review.candidates" border>
           <el-table-column label="供应商" min-width="210">
             <template #default="{ row }">{{ row.price.supplierName || row.price.supplierCode }}</template>
           </el-table-column>
@@ -48,7 +54,9 @@
             <template #default="{ row }">{{ formatPercent(row.supplyRatio) }}</template>
           </el-table-column>
         </el-table>
-        <p>现有供货比率无法确定取价，是否有新增审核？</p>
+      </div>
+      <template v-if="selected.length">
+        <p>{{ selected.length > 1 ? '对所选物料应用同一选择。是否有新增审核？' : '现有供货比率无法确定取价，是否有新增审核？' }}</p>
         <el-radio-group v-model="choice" class="supplier-review__choices">
           <el-radio :value="true">有，导入供货比率后自动取价</el-radio>
           <el-radio :value="false">无，按以上供应商的最高价取价</el-radio>
@@ -56,7 +64,7 @@
       </template>
       <template #footer>
         <el-button :disabled="saving" @click="confirmVisible = false">取消</el-button>
-        <el-button type="primary" :disabled="choice === null" :loading="saving" @click="confirm">确认</el-button>
+        <el-button type="primary" :disabled="choice === null || !canConfirm" :loading="saving" @click="confirm">确认</el-button>
       </template>
     </el-dialog>
     <SupplierSupplyRatioImportDialog v-model="importVisible" close-on-success @imported="onImported" />
@@ -66,7 +74,7 @@
 <script setup>
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { confirmSupplierPriceReview, exportQuoteSupplierRatios, fetchQuotePricePrepare } from '../api/quoteRequests'
+import { saveSupplierPriceReviews, repriceSavedSupplierReviews, fetchPendingSupplierReprice, exportQuoteSupplierRatios, fetchQuotePricePrepare } from '../api/quoteRequests'
 import { formatPercent } from '../utils/supplierSupplyRatio'
 import SupplierSupplyRatioImportDialog from './SupplierSupplyRatioImportDialog.vue'
 
@@ -77,14 +85,18 @@ const props = defineProps({
   reviews: { type: Array, default: () => [] },
   materials: { type: Array, default: () => [] },
   readonly: Boolean,
+  canConfirm: Boolean,
   prepareNo: { type: String, default: '' },
 })
 const emit = defineEmits(['updated'])
-const selected = ref(null)
+const selected = ref([])
+const checkedRows = ref([])
 const choice = ref(null)
 const confirmVisible = ref(false)
 const importVisible = ref(false)
 const saving = ref(false)
+const repricing = ref(false)
+const pendingReviews = ref([])
 const refreshing = ref(false)
 const exporting = ref(false)
 const confirmedReviews = ref([])
@@ -126,53 +138,121 @@ async function exportRatios() {
   }
 }
 
+function canSelect(row) {
+  return row.status !== 'FALLBACK_HIGH' && !saving.value && !repricing.value
+}
+
 function openReview(row) {
-  if (props.readonly || saving.value) return
-  selected.value = row
+  if (props.readonly || saving.value || repricing.value) return
+  selected.value = [row]
   choice.value = null
   confirmVisible.value = true
 }
 
-async function confirm() {
-  if (props.readonly || saving.value || !selected.value || choice.value === null) return
+function openBatch() {
+  const rows = checkedRows.value.filter(canSelect)
+  if (props.readonly || !props.canConfirm || rows.length < 2) return
+  if (new Set(rows.map(row => row.scope.pricingDate)).size !== 1) {
+    ElMessage.warning('请选择同一取价日期的物料')
+    return
+  }
+  selected.value = rows
+  choice.value = null
+  confirmVisible.value = true
+}
+
+function confirmationContext() {
   const scope = currentScope()
   const generation = confirmationGeneration
-  const review = selected.value
+  return {
+    oaNo: props.oaNo,
+    itemId: props.itemId,
+    periodMonth: props.periodMonth,
+    isCurrent: () => !disposed && generation === confirmationGeneration && scope === currentScope(),
+  }
+}
+
+function showSaved(saved) {
+  const keys = new Set(saved.map(row => row.scopeKey))
+  confirmedReviews.value = [...confirmedReviews.value.filter(row => !keys.has(row.scopeKey)), ...saved]
+}
+
+async function confirm() {
+  if (props.readonly || !props.canConfirm || saving.value || repricing.value
+    || !selected.value.length || choice.value === null) return
+  const context = confirmationContext()
   const hasNewApproval = choice.value
-  const isCurrent = () => !disposed && !props.readonly
-    && generation === confirmationGeneration && scope === currentScope()
   saving.value = true
+  let saved
   try {
-    const result = await confirmSupplierPriceReview(props.oaNo, props.itemId, {
-      periodMonth: props.periodMonth,
+    saved = await saveSupplierPriceReviews(context.oaNo, context.itemId, selected.value.map(review => ({
+      periodMonth: context.periodMonth,
       scopeKey: review.scopeKey,
       fingerprint: review.fingerprint,
       hasNewApproval,
       pricingDate: review.scope.pricingDate,
-    })
-    if (!isCurrent()) return
-    if (!result?.decisionId || !['FALLBACK_HIGH', 'WAIT_IMPORT'].includes(result.decision)) {
+    })))
+    if (!Array.isArray(saved) || !saved.length || saved.some(row => !row.decisionId)) {
       throw new Error('确认结果暂未取得，请刷新后核对已保存的选择')
     }
-    confirmedReviews.value = [
-      ...confirmedReviews.value.filter(saved => saved.scopeKey !== review.scopeKey),
-      { scopeKey: review.scopeKey, fingerprint: review.fingerprint, decision: result.decision },
-    ]
-    confirmVisible.value = false
-    confirmationNotice.value = result.repriceStatus === 'COMPLETED' ? '' : result.message
-    if (result.repriceStatus === 'COMPLETED' && result.workbench) {
-      emit('updated', result.workbench)
-      ElMessage.success(result.message)
-    } else {
-      if (result.workbench) emit('updated', result.workbench, false)
-      ElMessage.warning(result.message)
-    }
-    if (hasNewApproval) importVisible.value = true
   } catch (error) {
-    if (isCurrent() && !error.userNotified) ElMessage.error(error.message || '确认失败，请重试')
+    if (context.isCurrent()) ElMessage.error(error.message || '确认失败，请重试')
+    return
   } finally {
-    if (generation === confirmationGeneration) saving.value = false
+    if (context.isCurrent()) saving.value = false
   }
+  if (context.isCurrent()) {
+    showSaved(saved)
+    checkedRows.value = []
+    confirmVisible.value = false
+  }
+  await reprice(saved, context, hasNewApproval)
+}
+
+async function reprice(saved, context, openImport = false) {
+  if (context.isCurrent()) {
+    pendingReviews.value = saved
+    repricing.value = true
+    confirmationNotice.value = ''
+  }
+  try {
+    const result = await repriceSavedSupplierReviews(context.oaNo, context.itemId, saved.map(row => row.decisionId))
+    if (!context.isCurrent()) return
+    pendingReviews.value = []
+    if (result?.workbench) {
+      if (result.repriceStatus === 'COMPLETED') emit('updated', result.workbench)
+      else emit('updated', result.workbench, false)
+    }
+    if (openImport && !props.readonly) importVisible.value = true
+  } catch (error) {
+    if (context.isCurrent()) {
+      confirmationNotice.value = '选择已保存，重新取价未完成。' + (error.message || '')
+      if (openImport && !props.readonly) importVisible.value = true
+    }
+  } finally {
+    if (context.isCurrent()) repricing.value = false
+  }
+}
+
+function retryReprice() {
+  if (props.readonly || !props.canConfirm || repricing.value || !pendingReviews.value.length) return
+  return reprice(pendingReviews.value, confirmationContext())
+}
+
+async function restorePendingReprice() {
+  const context = confirmationContext()
+  if (props.readonly || !props.canConfirm || saving.value || repricing.value || pendingReviews.value.length
+    || !context.oaNo || !context.itemId || !context.periodMonth) return
+  let saved
+  try {
+    saved = await fetchPendingSupplierReprice(context.oaNo, context.itemId, context.periodMonth)
+  } catch {
+    return
+  }
+  if (!context.isCurrent() || props.readonly || saving.value || repricing.value || pendingReviews.value.length
+    || !saved?.length) return
+  showSaved(saved)
+  await reprice(saved, context)
 }
 
 function onImported() {
@@ -221,11 +301,15 @@ watch(currentScope, () => {
   confirmationGeneration++
   confirmedReviews.value = []
   confirmationNotice.value = ''
-  selected.value = null
+  selected.value = []
+  checkedRows.value = []
+  pendingReviews.value = []
+  repricing.value = false
   confirmVisible.value = false
   importVisible.value = false
   saving.value = false
 })
+watch(() => [currentScope(), props.readonly, props.canConfirm], restorePendingReprice, { immediate: true })
 watch(() => props.reviews, () => schedulePoll(), { immediate: true })
 onUnmounted(() => { disposed = true; clearTimeout(timer); exportController?.abort() })
 </script>

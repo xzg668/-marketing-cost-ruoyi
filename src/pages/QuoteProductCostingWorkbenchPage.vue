@@ -149,7 +149,21 @@
         :resolution-state="drawingResolution" :resolution-loading="drawingResolutionLoading" :resolution-error="drawingResolutionError" />
     </el-drawer>
 
-    <section ref="workspaceRef" class="workspace-band section-block">
+    <section v-if="awaitingModelProduct && !historyViewMode" class="section-block">
+      <h3>选择型号 {{ workbench.modelBomMatch.model }} 对应的料号</h3>
+      <el-table :data="workbench.modelBomMatch.candidates" row-key="materialCode" border>
+        <el-table-column prop="materialCode" label="料号" />
+        <el-table-column prop="name" label="品名" />
+        <el-table-column prop="specification" label="规格" />
+        <el-table-column prop="material" label="材质" />
+        <el-table-column prop="model" label="型号" />
+        <el-table-column v-if="canPrepareModel" width="110"><template #default="{ row }">
+          <el-button link type="primary" :disabled="modelPreparing" @click="selectModelProduct(row.materialCode)">采用此料号</el-button>
+        </template></el-table-column>
+      </el-table>
+    </section>
+
+    <section v-else ref="workspaceRef" class="workspace-band section-block">
       <div v-if="displayedCostVersion.id" class="workspace-meta">
         <span class="workspace-version">
           <small>{{ currentCostingBlockText ? '最近成功版本' : '成本版本' }}</small>
@@ -613,6 +627,7 @@
               :materials="pricePrepare.supplierPriceReviewMaterials || []"
               :prepare-no="pricePrepare.oaScenario?.batch?.prepareNo || ''"
               :readonly="historyViewMode || costRunActionLoading"
+              :can-confirm="userStore.permissions?.some(permission => ['*:*:*', 'ingest:quote:cost-run:execute'].includes(permission))"
               @updated="completePriceSourceMaintenance"
             />
             <section v-if="technicalPriceCorrection?.items?.length" class="technical-price-correction">
@@ -780,7 +795,7 @@
             <div class="status-strip price-compare-summary">
               <div class="metric">
                 <span>财务 Cu 基准（元/公斤）</span>
-                <strong>{{ formatPrice(pricePrepare.financeCuPricePerKg) }}</strong>
+                <strong>{{ financeCuNotSummarized ? '未汇总' : formatPrice(pricePrepare.financeCuPricePerKg) }}</strong>
               </div>
               <div class="metric">
                 <span>OA 锁定 Cu（元/公斤）</span>
@@ -850,7 +865,8 @@
             <el-tabs v-model="pricePrepareScenarioTab" class="price-scenario-tabs">
               <el-tab-pane label="财务基准" name="FINANCE">
                 <div class="scenario-meta">
-                  <span>Cu：{{ formatPrice(pricePrepare.financeCuPricePerKg) }} 元/公斤</span>
+                  <span v-if="financeCuNotSummarized">财务 Cu 按各物料底稿取价，本批次未汇总</span>
+                  <span v-else>Cu：{{ formatPrice(pricePrepare.financeCuPricePerKg) }} 元/公斤</span>
                   <el-popover v-if="financePrepareBatch.prepareNo" placement="bottom-end" trigger="click" :width="340">
                     <template #reference><el-button link type="info" size="small">批次信息</el-button></template>
                     <div class="quote-bom-build-info"><span>价格批次</span><code>{{ financePrepareBatch.prepareNo }}</code></div>
@@ -1245,6 +1261,7 @@
 </template>
 
 <script setup>
+import { checkTechnicalDataSources } from '../api/technicalDataTasks'
 import { fetchQuoteCostingPreparation, prepareQuoteCosting, fetchDrawingVerificationWorkspace, fetchElectronicDrawingMaterialResolution } from '../api/quoteRequests'
 import { drawingPreparationView, hasCurrentDrawingSource } from '../utils/drawingPreparation'
 import { drawingColumns, drawingText } from '../utils/drawingVerification'
@@ -1275,6 +1292,7 @@ import {
   fetchQuoteBomAlternativeHistory,
   fetchQuoteCostRun,
   fetchQuoteCostingWorkbench,
+  prepareQuoteModelProduct,
   fetchQuoteEffectiveBom,
   fetchQuotePricePrepare,
   fetchQuotePriceTypeRecognition,
@@ -1497,7 +1515,7 @@ const alternativeReviewMessage = computed(() => alternativeReviewWarning({
 const quoteBomWorkspaceStatusText = computed(() => {
   const status = String(costingWorkspace.value.workspaceStatus || '').toUpperCase()
   if (status === 'STALE') return '规则或选择已变化，待重算'
-  if (status === 'WAIT_BOM') return '缺 BOM，待技术补录'
+  if (status === 'WAIT_BOM') return effectiveBomCanPrepare(effectiveBom.value) ? '待生成报价物料' : '待准备 BOM'
   if (bomRows.value.length > 0) return '已生成'
   return '待生成'
 })
@@ -1639,6 +1657,7 @@ const priceTypeDisplayRows = computed(() => buildPriceSourceDisplayRows(priceTyp
 const filteredPriceTypeRows = computed(() => filterTreeRows(priceTypeDisplayRows.value))
 const pricePrepareItems = computed(() => Array.isArray(pricePrepare.value.items?.records) ? pricePrepare.value.items.records : [])
 const oaPrepareBatch = computed(() => pricePrepare.value.oaScenario?.batch || {})
+const financeCuNotSummarized = computed(() => !!financePrepareBatch.value.prepareNo && pricePrepare.value.financeCuPricePerKg == null)
 const financePrepareBatch = computed(() => pricePrepare.value.financeScenario?.batch || {})
 const oaPricePrepareItems = computed(() => {
   const rows = pricePrepare.value.oaScenario?.items?.records
@@ -1883,6 +1902,24 @@ const inputGapGuideText = computed(() => {
   return '发起核算未完成，请按工作台当前阻断步骤处理后继续'
 })
 
+const modelPreparing = ref(false)
+const canPrepareModel = computed(() => userStore.permissions?.some(p => ['*:*:*', 'ingest:quote:cost-run:execute'].includes(p))
+  && header.value?.oaWorkflow?.canCost !== false)
+const awaitingModelProduct = computed(() => workbench.value.modelBomMatch?.candidates?.length > 1 && !workbench.value.modelBomMatch.selected)
+async function selectModelProduct(code) {
+  if (modelPreparing.value || !canPrepareModel.value) return
+  const match = workbench.value.modelBomMatch
+  modelPreparing.value = true
+  try {
+    await prepareQuoteModelProduct(oaNo.value, itemId.value, { month: match.month, model: match.model, materialCode: code })
+    await loadWorkbench({ resetTab: true })
+  } catch (error) {
+    ElMessage.error(error?.message || '准备所选料号的 BOM 失败')
+  } finally {
+    modelPreparing.value = false
+  }
+}
+
 async function loadWorkbench(options = {}) {
   const { resetTab = false, loadChildren = true, costResultOnly = false, revealInputsEarly = false } = options
   if (!oaNo.value || !itemId.value) return
@@ -1920,10 +1957,30 @@ async function loadWorkbench(options = {}) {
       await Promise.allSettled([loadCostRun(false), loadActiveRepriceLock()])
       return
     }
+    if (nextWorkbench.modelBomMatch && awaitingModelProduct.value) {
+      resetCurrentInputTabs()
+      return
+    }
+    const match = nextWorkbench.modelBomMatch
+    if (match?.selected && canPrepareModel.value && (!match.saved || !nextWorkbench.buildBatchId)) {
+      const no = oaNo.value, id = itemId.value
+      await prepareQuoteModelProduct(no, id, { month: match.month, model: match.model, materialCode: match.selected })
+      if (no !== oaNo.value || id !== itemId.value) return
+      workbench.value = await fetchQuoteCostingWorkbench(no, id)
+    }
     if (resetTab || !activeTab.value) {
       activeTab.value = 'PRODUCT_DETAIL'
     }
     await loadEffectiveBom()
+    const scope = { no: oaNo.value, id: itemId.value, month: nextWorkbench.periodMonth }
+    if (isWaitingForBom() && nextWorkbench.costingWorkspace?.workspaceStatus === 'WAIT_BOM'
+        && !nextWorkbench.costingWorkspace.currentBomBuildBatchId && !nextWorkbench.costingWorkspace.currentCostVersionId
+        && effectiveBomCanPrepare(effectiveBom.value) && effectiveBom.value.nodes[0]?.sourceBomType === 'U9'
+        && userStore.permissions?.some(p => ['*:*:*', 'ingest:quote:cost-run:execute'].includes(p))) {
+      await checkTechnicalDataSources(scope.id, scope.month)
+      if (scope.no !== oaNo.value || scope.id !== itemId.value) return
+      workbench.value = await fetchQuoteCostingWorkbench(scope.no, scope.id)
+    }
     if (isWaitingForBom()) {
       if (effectiveBom.value.nodes.length === 0 && effectiveBom.value.state !== 'ERROR' && !effectiveBom.value.blockIssues.length) applyStoredBomGap()
       resetCurrentInputTabs()
